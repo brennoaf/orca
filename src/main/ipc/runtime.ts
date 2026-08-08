@@ -22,6 +22,7 @@ function boundTerminalFitRestore(pending: Promise<boolean>): Promise<boolean> {
 
 export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
   const pendingTerminalFitRestores = new Map<string, Promise<boolean>>()
+  const dispatcher = new RpcDispatcher({ runtime })
   ipcMain.removeHandler('runtime:syncWindowGraph')
   ipcMain.removeHandler('runtime:getStatus')
   ipcMain.removeHandler('runtime:call')
@@ -47,7 +48,7 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
       _event,
       args: { method: string; params?: unknown }
     ): Promise<RuntimeRpcResponse<unknown>> => {
-      return (await new RpcDispatcher({ runtime }).dispatch({
+      return (await dispatcher.dispatch({
         id: 'desktop-ipc',
         authToken: 'desktop-ipc',
         method: args.method,

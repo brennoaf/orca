@@ -57,6 +57,14 @@ import {
 } from '../../../../shared/workspace-cleanup'
 import { normalizeFeatureTipIds, type FeatureTipId } from '../../../../shared/feature-tips'
 import {
+  forgetFloatingWorkspaceAppSessionProfile,
+  getFloatingWorkspaceAppPreference,
+  normalizeFloatingWorkspaceAppPreferences,
+  type FloatingWorkspaceAppId,
+  type FloatingWorkspaceAppPreference,
+  type FloatingWorkspaceAppPreferences
+} from '../../../../shared/floating-workspace-apps'
+import {
   hasFeatureInteraction,
   normalizeFeatureInteractions,
   type FeatureInteractionId,
@@ -995,6 +1003,12 @@ export type UISlice = {
   setBrowserDefaultZoomLevel: (level: number) => void
   browserKagiSessionLink: string | null
   setBrowserKagiSessionLink: (link: string | null) => void
+  floatingWorkspaceApps: FloatingWorkspaceAppPreferences
+  setFloatingWorkspaceAppPreference: (
+    appId: FloatingWorkspaceAppId,
+    updates: Partial<FloatingWorkspaceAppPreference>
+  ) => void
+  clearFloatingWorkspaceAppSessionProfile: (profileId: string) => void
 }
 
 export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get) => ({
@@ -2517,6 +2531,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         browserDefaultUrl: ui.browserDefaultUrl ?? null,
         browserDefaultSearchEngine: ui.browserDefaultSearchEngine ?? null,
         browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(ui.browserDefaultZoomLevel),
+        floatingWorkspaceApps: normalizeFloatingWorkspaceAppPreferences(ui.floatingWorkspaceApps),
         browserKagiSessionLink: normalizeKagiSessionLink(ui.browserKagiSessionLink ?? ''),
         taskResumeState: sanitizeTaskResumeState(ui.taskResumeState),
         featureTipsSeenIds: normalizeFeatureTipIds(ui.featureTipsSeenIds),
@@ -2665,5 +2680,24 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     const normalized = link ? normalizeKagiSessionLink(link) : null
     void window.api.ui.set({ browserKagiSessionLink: normalized }).catch(console.error)
     set({ browserKagiSessionLink: normalized })
+  },
+  floatingWorkspaceApps: {},
+  setFloatingWorkspaceAppPreference: (appId, updates) => {
+    const current = get().floatingWorkspaceApps
+    const next: FloatingWorkspaceAppPreferences = {
+      ...current,
+      [appId]: { ...getFloatingWorkspaceAppPreference(current, appId), ...updates }
+    }
+    void window.api.ui.set({ floatingWorkspaceApps: next }).catch(console.error)
+    set({ floatingWorkspaceApps: next })
+  },
+  clearFloatingWorkspaceAppSessionProfile: (profileId) => {
+    const current = get().floatingWorkspaceApps
+    const next = forgetFloatingWorkspaceAppSessionProfile(current, profileId)
+    if (next === current) {
+      return
+    }
+    void window.api.ui.set({ floatingWorkspaceApps: next }).catch(console.error)
+    set({ floatingWorkspaceApps: next })
   }
 })

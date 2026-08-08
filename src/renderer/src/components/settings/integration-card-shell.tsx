@@ -24,9 +24,13 @@ export function IntegrationCardShell(props: {
 }): React.JSX.Element {
   const shellClass = useIntegrationCardShellClass(props.className)
   const status = props.checking ? (
-    <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" />
+    <span role="status" className="shrink-0">
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-muted-foreground" />
+      <span className="sr-only">{props.statusLabel}</span>
+    </span>
   ) : (
     <span
+      role="status"
       className={cn(
         'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium',
         STATUS_TONE_CLASSES[props.statusTone]

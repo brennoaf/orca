@@ -66,5 +66,48 @@ export const getFloatingWorkspaceSearchEntries = createLocalizedCatalog(() => [
         'status bar'
       )
     ]
+  },
+  {
+    title: translate(
+      'auto.components.settings.floating.workspace.search.appsTitle',
+      'Communications'
+    ),
+    description: translate(
+      'auto.components.settings.floating.workspace.search.appsDescription',
+      'Choose which communication apps appear in the floating workspace new-tab menu and which browser session each one uses.'
+    ),
+    keywords: [
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordWhatsapp',
+        'WhatsApp',
+        { englishOnly: true }
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordSlack',
+        'Slack',
+        { englishOnly: true }
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordDiscord',
+        'Discord',
+        { englishOnly: true }
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordApps',
+        'apps'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordCommunications',
+        'communications'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordChat',
+        'chat'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.floating.workspace.search.appsKeywordSessionProfile',
+        'session profile'
+      )
+    ]
   }
 ])

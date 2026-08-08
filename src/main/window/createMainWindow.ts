@@ -56,9 +56,11 @@ import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId 
 import { resolveWindowCloseAction } from './window-close-decision'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { closeDashboardPopout } from './dashboard-popout-window'
+import { closeDiscordVoiceWindow, registerDiscordVoiceOverlayHost } from './discord-voice-window'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
 import { isMacosTahoeOrNewer } from './macos-tahoe-release'
 import { registerPluginPanelNavigationGuard } from '../plugins/plugin-panel-navigation-guard'
+import { startDiscordVoiceAppLifecycle } from '../messaging/discord-voice-app-lifecycle'
 
 // Why: show/restore/resume can overlap before the size nudge resets; never capture the temporary width as the next baseline.
 const activeRepaintJiggles = new WeakSet<BrowserWindow>()
@@ -240,6 +242,8 @@ export function createMainWindow(
       rawSavedBounds
     )
   }
+  registerDiscordVoiceOverlayHost({ store, getKeybindings: opts?.getKeybindings })
+  startDiscordVoiceAppLifecycle()
   const savedMaximized = store?.getUI().windowMaximized ?? false
   // Why: on first launch fill the primary display work area so the window feels spacious without maximize(); saved bounds win later.
   const defaultBounds = (() => {
@@ -1129,6 +1133,7 @@ export function createMainWindow(
     // alongside so it never orphans as a lone window after the app window is
     // gone (e.g. on macOS where the app stays alive after the window closes).
     closeDashboardPopout()
+    closeDiscordVoiceWindow()
     clearInitialRevealFallbackTimer()
     clearQuitRendererAckTimer()
     // Why: default-deny the Cmd+B carve-out after the window is gone so a stale-true flag can't leak into later state.

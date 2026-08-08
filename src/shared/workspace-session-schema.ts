@@ -205,6 +205,8 @@ const browserViewportPresetIdSchema = z.enum([
   'desktop'
 ])
 
+const floatingWorkspaceAppIdSchema = z.enum(['whatsapp-web', 'slack', 'discord'])
+
 // Why: the z.ZodType<BrowserWorkspace> cast only aligns the static type — it
 // does NOT let new fields survive parsing. z.object strips unknown keys, so
 // every additive field must be listed below (optional+nullable) or it is
@@ -212,6 +214,7 @@ const browserViewportPresetIdSchema = z.enum([
 const browserWorkspaceSchema: z.ZodType<BrowserWorkspace> = z.object({
   id: z.string(),
   worktreeId: z.string(),
+  floatingWorkspaceAppId: floatingWorkspaceAppIdSchema.optional(),
   label: z.string().optional(),
   sessionProfileId: z.string().nullable().optional(),
   // Why: optional+nullable so pre-field sessions still validate; without this

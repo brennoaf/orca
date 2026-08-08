@@ -517,6 +517,21 @@ describe('createBrowserSlice closed browser workspaces', () => {
     ])
     expect(activePage?.title).toBe('Second copy')
   })
+
+  it('preserves the floating app identity when a browser workspace reopens', () => {
+    const store = createTestStore()
+    const tab = store
+      .getState()
+      .createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, 'https://discord.com/app', {
+        floatingWorkspaceAppId: 'discord'
+      })
+    expect(tab.floatingWorkspaceAppId).toBe('discord')
+
+    store.getState().closeBrowserTab(tab.id)
+    const restored = store.getState().reopenClosedBrowserTab(FLOATING_TERMINAL_WORKTREE_ID)
+
+    expect(restored?.floatingWorkspaceAppId).toBe('discord')
+  })
 })
 
 describe('createBrowserSlice runtime guard', () => {

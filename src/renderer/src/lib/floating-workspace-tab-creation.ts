@@ -1,6 +1,14 @@
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
+import type {
+  FloatingWorkspaceApp,
+  FloatingWorkspaceAppId
+} from '../../../shared/floating-workspace-apps'
 import type { BrowserTab, TerminalTab } from '../../../shared/types'
 import { createUntitledMarkdownFileWithTemplateSelection } from './create-untitled-markdown'
+import {
+  resolveFloatingWorkspaceAppSessionProfile,
+  type FloatingWorkspaceAppSessionStore
+} from './floating-workspace-app-session-profile'
 import { getConnectionId } from './connection-context'
 import { detectLanguage } from './language-detect'
 import type { AppState } from '@/store/types'
@@ -17,7 +25,16 @@ type FloatingWorkspaceBrowserStore = Pick<
   'activeGroupIdByWorktree' | 'browserDefaultUrl' | 'createBrowserTab'
 >
 
+type FloatingWorkspaceAppStore = Pick<AppState, 'activeGroupIdByWorktree' | 'createBrowserTab'> &
+  Pick<AppState, 'browserTabsByWorktree' | 'setActiveBrowserTab'> &
+  FloatingWorkspaceAppSessionStore
+
 type FloatingWorkspaceMarkdownStore = Pick<AppState, 'activeGroupIdByWorktree' | 'openFile'>
+
+const floatingWorkspaceAppOpenRequests = new Map<
+  FloatingWorkspaceAppId,
+  Promise<BrowserTab | null>
+>()
 
 export async function createFloatingWorkspaceTerminalTab(
   store: FloatingWorkspaceTerminalStore,
@@ -49,6 +66,54 @@ export async function createFloatingWorkspaceBrowserTab(
     targetGroupId,
     browserRuntimeEnvironmentId: null
   })
+}
+
+async function openOrFocusFloatingWorkspaceAppTabOnce(
+  store: FloatingWorkspaceAppStore,
+  app: FloatingWorkspaceApp
+): Promise<BrowserTab | null> {
+  const existing = (store.browserTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? []).find(
+    (tab) => tab.floatingWorkspaceAppId === app.id
+  )
+  if (existing) {
+    store.setActiveBrowserTab(existing.id)
+    return existing
+  }
+
+  const targetGroupId = store.activeGroupIdByWorktree[FLOATING_TERMINAL_WORKTREE_ID]
+  const profile = await resolveFloatingWorkspaceAppSessionProfile(store, app)
+  if (!profile) {
+    return null
+  }
+
+  return store.createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, app.url, {
+    title: app.label,
+    floatingWorkspaceAppId: app.id,
+    targetGroupId,
+    sessionProfileId: profile.id,
+    sessionPartition: profile.partition,
+    browserRuntimeEnvironmentId: null
+  })
+}
+
+export function openOrFocusFloatingWorkspaceAppTab(
+  store: FloatingWorkspaceAppStore,
+  app: FloatingWorkspaceApp
+): Promise<BrowserTab | null> {
+  const pending = floatingWorkspaceAppOpenRequests.get(app.id)
+  if (pending) {
+    return pending
+  }
+
+  const request = openOrFocusFloatingWorkspaceAppTabOnce(store, app)
+  floatingWorkspaceAppOpenRequests.set(app.id, request)
+  const release = (): void => {
+    if (floatingWorkspaceAppOpenRequests.get(app.id) === request) {
+      floatingWorkspaceAppOpenRequests.delete(app.id)
+    }
+  }
+  void request.then(release, release)
+  return request
 }
 
 export async function createFloatingWorkspaceMarkdownTab(

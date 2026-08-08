@@ -771,11 +771,13 @@ function browserOverlayOwnsShortcutTarget(
 export default function BrowserPane({
   browserTab,
   isActive,
-  findShortcutScope
+  findShortcutScope,
+  inputLocked = false
 }: {
   browserTab: BrowserWorkspaceState
   isActive: boolean
   findShortcutScope?: BrowserFindShortcutScope
+  inputLocked?: boolean
 }): React.JSX.Element {
   const resolvedFindShortcutScope = findShortcutScope ?? (isActive ? 'focused' : 'inactive')
   const activeRuntimeEnvironmentId = useAppStore((s) =>
@@ -875,7 +877,7 @@ export default function BrowserPane({
               }
               isAutomationVisible={automationVisiblePageIds.has(page.id)}
               isMobileDriven={mobileDrivenPageIds.has(page.id)}
-              inputLocked={activeBrowserDriver.kind === 'mobile'}
+              inputLocked={inputLocked || activeBrowserDriver.kind === 'mobile'}
               onUpdatePageState={updateBrowserPageState}
               onSetUrl={setBrowserPageUrl}
             />

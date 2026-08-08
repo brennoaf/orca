@@ -468,6 +468,11 @@
             "creation": {
               "f3785eddc2": "New Browser Tab"
             }
+          },
+          "app": {
+            "labels": {
+              "communications": "Communications"
+            }
           }
         }
       },
@@ -8326,7 +8331,13 @@
               "6f183fa1b9": "floating terminal",
               "a08e482f6d": "floating workspace",
               "b96b5ee6cf": "Enable the floating workspace, choose where new tabs start, and choose where the toggle button appears.",
-              "b2b60e7163": "Floating Workspace"
+              "b2b60e7163": "Floating Workspace",
+              "appsTitle": "Communications",
+              "appsDescription": "Choose which communication apps appear in the floating workspace new-tab menu and which browser session each one uses.",
+              "appsKeywordApps": "apps",
+              "appsKeywordCommunications": "communications",
+              "appsKeywordChat": "chat",
+              "appsKeywordSessionProfile": "session profile"
             }
           }
         },
@@ -10361,6 +10372,11 @@
           "body": "The terminal daemon was started by an Orca install that no longer exists, so macOS can’t attribute its commands to Orca — Accessibility and Automation grants are silently ignored (osascript fails with error -25211). Restarting the daemon fixes this; running terminal sessions will close.",
           "openManageSessions": "Open Manage Sessions",
           "title": "macOS permission grants aren’t reaching terminals"
+        },
+        "FloatingWorkspaceAppsSection": {
+          "dedicatedSession": "Dedicated session",
+          "description": "Choose which apps appear in the floating workspace new-tab menu and which browser session each one uses.",
+          "categoryDescription": "Each app opens as a floating workspace browser tab with its own persistent session."
         }
       },
       "right": {
@@ -12350,7 +12366,8 @@
             "8b14ba6c17": "New Browser Tab",
             "b085fb58b5": "This file has unsaved changes.",
             "5ddc688c52": "\"{{value0}}\" has unsaved changes. Do you want to save before closing?",
-            "25d7817f79": "terminal"
+            "25d7817f79": "terminal",
+            "appSessionProfileFailed": "Could not prepare an isolated session for {{app}}."
           },
           "FloatingTerminalToggleButton": {
             "3b04b065b5": "Show floating workspace",
@@ -15042,6 +15059,170 @@
       "sent": "Session context sent to {{agent}} in a new session.",
       "deliveryFailed": "The new {{agent}} session started, but its context could not be sent.",
       "launchFailed": "Could not start a new {{agent}} session."
+    }
+  },
+  "communicationRail": {
+    "overlaySeparate": "Separate overlay",
+    "overlaySeparateDescription": "Appears automatically when you join a call.",
+    "openApp": "Open {{app}}",
+    "unavailableTooltip": "{{app}} — unavailable",
+    "whatsappUnavailable": "WhatsApp fast responses are not enabled yet.",
+    "slackUnavailable": "Slack fast responses are not enabled yet.",
+    "integrationNeedsAttention": "Saved credentials need attention. Review them in Integrations.",
+    "configureProvider": "Configure {{provider}}",
+    "slackUnconfigured": "Configure Slack credentials in Integrations. Socket Mode transport is not active yet.",
+    "slackConfigured": "Credentials configured. Fast responses are not enabled yet.",
+    "slackVerified": "Credentials verified. Fast responses are not enabled yet.",
+    "zApiUnconfigured": "Configure Z-API credentials and endpoint in Integrations.",
+    "zApiConfigured": "Credentials configured. Fast responses are not enabled yet.",
+    "zApiVerified": "Credentials verified. Fast responses are not enabled yet.",
+    "zApiRelayRequired": "Receiving WhatsApp messages requires an external public HTTPS relay. Orca does not provide one yet.",
+    "discord": {
+      "notConnected": "Discord not connected",
+      "configureCredentials": "Configure the Application ID and Client Secret to connect to Discord desktop.",
+      "openSettings": "Configure Discord",
+      "connecting": "Connecting to Discord desktop…",
+      "outsideCall": "Connected — not in a call",
+      "desktopDisconnected": "Discord desktop disconnected.",
+      "tooltipActive": "Discord — in a call",
+      "tooltipSetup": "Discord — setup required",
+      "tooltipConnecting": "Discord — connecting",
+      "tooltipError": "Discord — connection error",
+      "tooltipIdle": "Discord — not in a call"
+    }
+  },
+  "communicationIntegrations": {
+    "section": {
+      "title": "Communications",
+      "description": "Configure credentials and API endpoints for communication providers used by Orca."
+    },
+    "status": {
+      "checking": "Checking…",
+      "connected": "Connected",
+      "verified": "Verified",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "needsAttention": "Needs attention",
+      "loadFailed": "Could not load communication integration status."
+    },
+    "action": {
+      "configure": "Configure",
+      "edit": "Edit",
+      "test": "Test",
+      "testing": "Testing…"
+    },
+    "dialog": {
+      "title": "Configure {{provider}}",
+      "clearTitle": "Clear {{provider}} integration?",
+      "clearDescription": "This removes the saved credentials and endpoint configuration from this computer.",
+      "clearConfirm": "Clear integration",
+      "clear": "Clear integration",
+      "cancel": "Cancel",
+      "save": "Save",
+      "secretStored": "A token is stored. Leave this field empty to keep it.",
+      "secretClearPending": "The saved token will be cleared when you save.",
+      "clearSavedToken": "Clear saved token",
+      "undoClear": "Undo clear",
+      "advanced": "Advanced",
+      "apiBaseUrl": "API base URL",
+      "apiBaseUrlDescription": "Use the provider default unless your organization supplies a compatible endpoint.",
+      "trustEndpoint": "I trust {{host}} to receive this integration's credentials."
+    },
+    "toast": {
+      "saved": "{{provider}} integration saved",
+      "saveFailed": "Could not save the {{provider}} integration.",
+      "cleared": "{{provider}} integration cleared",
+      "clearFailed": "Could not clear the {{provider}} integration."
+    },
+    "test": {
+      "verified": "{{provider}} credentials verified.",
+      "failed": "{{provider}} verification failed.",
+      "unavailable": "Could not test the {{provider}} integration."
+    },
+    "discord": {
+      "cardDescription": "Discord desktop RPC credentials and call overlay controls.",
+      "dialogDescription": "Use an application from the Discord Developer Portal. The RPC scope is requested when Orca connects.",
+      "applicationId": "Application ID",
+      "applicationIdDescription": "From General Information in the Discord Developer Portal.",
+      "clientSecret": "Client Secret",
+      "clientSecretDescription": "From OAuth2 in the same Discord application."
+    },
+    "slack": {
+      "cardDescription": "Socket Mode credentials for a future fast-response transport.",
+      "transportInactive": "Socket Mode transport and fast responses are not enabled yet.",
+      "dialogDescription": "Store credentials for Slack Socket Mode. Fast-response transport is not active yet.",
+      "appToken": "App Token",
+      "appTokenDescription": "Use an app-level xapp token with Socket Mode enabled.",
+      "userToken": "User OAuth Token",
+      "userTokenDescription": "Use a user xoxp token. Bot tokens are not supported."
+    },
+    "zApi": {
+      "cardDescription": "Z-API credentials and endpoint for WhatsApp transport.",
+      "relayRequired": "Receiving WhatsApp messages requires an external public HTTPS relay. Orca does not provide one yet.",
+      "dialogDescription": "Store the Z-API instance credentials used for WhatsApp transport.",
+      "instanceId": "Instance ID",
+      "instanceIdDescription": "The identifier shown for your Z-API instance.",
+      "instanceToken": "Instance Token",
+      "instanceTokenDescription": "The token assigned to the Z-API instance.",
+      "clientToken": "Client Token",
+      "clientTokenDescription": "The client security token configured for the instance."
+    },
+    "search": {
+      "discordTitle": "Discord Integration",
+      "discordDescription": "Configure Discord application credentials and the call overlay.",
+      "slackTitle": "Slack Integration",
+      "slackDescription": "Configure Slack credentials and an optional API endpoint.",
+      "zApiTitle": "Z-API Integration",
+      "zApiDescription": "Configure Z-API credentials and an endpoint for WhatsApp transport.",
+      "discord": "Discord",
+      "slack": "Slack",
+      "zApi": "Z-API",
+      "whatsapp": "WhatsApp",
+      "credentials": "credentials",
+      "applicationId": "application id",
+      "clientSecret": "client secret",
+      "overlay": "overlay",
+      "endpoint": "endpoint",
+      "socketMode": "Socket Mode",
+      "appToken": "app token",
+      "userToken": "user token",
+      "instance": "instance",
+      "clientToken": "client token"
+    }
+  },
+  "discordVoice": {
+    "recoverableError": {
+      "title": "The call overlay hit an error.",
+      "description": "The overlay could not finish rendering. Retry to remount it, or reopen it."
+    },
+    "channel": {
+      "unknown": "Voice channel"
+    },
+    "state": {
+      "serverMuted": "Muted by a moderator",
+      "selfMuted": "Muted",
+      "serverDeafened": "Deafened by a moderator",
+      "selfDeafened": "Deafened"
+    },
+    "control": {
+      "mute": "Mute",
+      "deafen": "Deafen",
+      "disconnect": "Disconnect"
+    },
+    "action": {
+      "reconnect": "Reconnect",
+      "collapse": "Collapse to pill",
+      "expand": "Expand overlay",
+      "close": "Close overlay"
+    },
+    "empty": {
+      "notConfigured": "Add your Discord application ID and client secret in Settings › Integrations to use the call overlay.",
+      "connecting": "Connecting to Discord…",
+      "discordClosed": "Discord desktop is not open.",
+      "notInCall": "Not in a call."
+    },
+    "error": {
+      "command": "Discord rejected the action"
     }
   },
   "dashboardPopout": {

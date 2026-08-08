@@ -12,10 +12,12 @@ import type { BrowserTab as BrowserTabState } from '../../../../shared/types'
 // the guest mounts and survives tab switches (the root must not be reparented).
 export function FloatingBrowserSlot({
   browserTab,
-  isActive
+  isActive,
+  inputLocked
 }: {
   browserTab: BrowserTabState
   isActive: boolean
+  inputLocked?: boolean
 }): React.JSX.Element {
   const setSlotViewportRef = useCallback(
     (node: HTMLDivElement | null): void => {
@@ -27,7 +29,7 @@ export function FloatingBrowserSlot({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={setSlotViewportRef} className="absolute inset-0 flex min-h-0 flex-col" />
-      <BrowserPane browserTab={browserTab} isActive={isActive} />
+      <BrowserPane browserTab={browserTab} isActive={isActive} inputLocked={inputLocked} />
     </div>
   )
 }

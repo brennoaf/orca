@@ -410,6 +410,52 @@ function makeFile(overrides: Partial<OpenFile> = {}): OpenFile {
   }
 }
 
+function setFloatingBrowserTab(): void {
+  const state = storeBox.state as FloatingPanelStoreState
+  const groupId = 'floating-group'
+  const browserTab: BrowserTab = {
+    id: 'browser-1',
+    worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+    activePageId: 'page-1',
+    pageIds: ['page-1'],
+    url: 'https://discord.com/app',
+    title: 'Discord',
+    loading: false,
+    faviconUrl: null,
+    canGoBack: false,
+    canGoForward: false,
+    loadError: null,
+    createdAt: 1
+  }
+  const unifiedTab: Tab = {
+    id: 'unified-browser-1',
+    entityId: browserTab.id,
+    groupId,
+    worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+    contentType: 'browser',
+    label: browserTab.title,
+    customLabel: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 1
+  }
+  state.browserTabsByWorktree = { [FLOATING_TERMINAL_WORKTREE_ID]: [browserTab] }
+  state.unifiedTabsByWorktree = { [FLOATING_TERMINAL_WORKTREE_ID]: [unifiedTab] }
+  state.groupsByWorktree = {
+    [FLOATING_TERMINAL_WORKTREE_ID]: [
+      {
+        id: groupId,
+        worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+        activeTabId: unifiedTab.id,
+        tabOrder: [unifiedTab.id],
+        recentTabIds: [unifiedTab.id]
+      }
+    ]
+  }
+  state.activeGroupIdByWorktree = { [FLOATING_TERMINAL_WORKTREE_ID]: groupId }
+  state.tabBarOrderByWorktree = { [FLOATING_TERMINAL_WORKTREE_ID]: [unifiedTab.id] }
+}
+
 // Models terminal-tab-actions.closeTerminalTab's store mutation: the real close removes the tab from
 // the floating store *before* it fires onClosed, so the reclaim intent arms on a decremented count.
 function removeFloatingTerminalTabFromStore(entityId: string): void {
@@ -2747,5 +2793,22 @@ describe('FloatingTerminalPanel close behavior', () => {
     expect(mocks.closeTab).toHaveBeenCalledWith('tab-a', { reason: 'cleanup' })
     expect(mocks.closeTab).toHaveBeenCalledWith('tab-b', { reason: 'cleanup' })
     expect(mocks.closeTab).not.toHaveBeenCalledWith('tab-c')
+  })
+
+  it('locks browser input while a manager is open and clears it when the panel closes', async () => {
+    setFloatingBrowserTab()
+    let element = await renderPanel(true)
+    const rail = findByTypeName(element, 'FloatingCommsRail')
+    ;(rail.props.onOpenAppIdChange as (appId: string | null) => void)('discord')
+
+    element = await renderPanel(true)
+    expect(findByTypeName(element, 'FloatingBrowserSlot').props.inputLocked).toBe(true)
+
+    await renderPanel(false)
+    runEffects()
+    element = await renderPanel(false)
+
+    expect(findByTypeName(element, 'FloatingBrowserSlot').props.inputLocked).toBe(false)
+    expect(findByTypeName(element, 'FloatingCommsRail').props.openAppId).toBeNull()
   })
 })

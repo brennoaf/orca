@@ -6,6 +6,7 @@ import { Input } from '../ui/input'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsRow, SettingsSwitchRow } from './SettingsFormControls'
+import { FloatingWorkspaceAppsSection } from './FloatingWorkspaceAppsSection'
 import { getFloatingWorkspaceSearchEntries } from './floating-workspace-search'
 import { matchesSettingsSearch } from './settings-search'
 import { useAppStore } from '../../store'
@@ -195,6 +196,8 @@ export function FloatingWorkspacePane({
           }
         />
       </SearchableSetting>
+
+      <FloatingWorkspaceAppsSection />
     </section>
   )
 }

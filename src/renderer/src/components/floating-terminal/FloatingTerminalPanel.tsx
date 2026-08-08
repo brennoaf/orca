@@ -35,6 +35,11 @@ import { detectLanguage } from '@/lib/language-detect'
 import { buildDuplicatedBrowserTabOptions } from '@/lib/duplicate-browser-tab-options'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { isOrcaCliAvailableOnPath } from '@/lib/agent-skill-cli-prerequisite'
+import type {
+  FloatingWorkspaceApp,
+  FloatingWorkspaceAppId
+} from '../../../../shared/floating-workspace-apps'
+import { openOrFocusFloatingWorkspaceAppTab } from '@/lib/floating-workspace-tab-creation'
 import {
   countVisibleFloatingWorkspaceItems,
   isEventTargetInsideFloatingWorkspacePanel,
@@ -73,6 +78,7 @@ import { useAppStore } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
 import { destroyWorkspaceWebviews } from '@/store/slices/browser-webview-cleanup'
 import { createTerminalPaneHandleRegistry } from './terminal-pane-handle-registry'
+import { FloatingCommsRail } from './comms-rail/FloatingCommsRail'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import {
   keybindingMatchesAction,
@@ -287,6 +293,7 @@ export function FloatingTerminalPanel({
   const pendingReclaimArmByFileIdRef = useRef<Map<string, () => void>>(new Map())
   const saveDialogFileIdRef = useRef<string | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const [openAppId, setOpenAppId] = useState<FloatingWorkspaceAppId | null>(null)
   // Live imperative handles per floating terminal tab, so a double-tap-bound close (which L3's window
   // listener never resolves) can reach the same split-aware pane-close authority directly (F2/F-feas).
   // Its ref callbacks are cached per tab id so a parent render doesn't hand TerminalPane a new
@@ -785,6 +792,28 @@ export function FloatingTerminalPanel({
       browserRuntimeEnvironmentId: null
     })
   }, [activeGroup, browserDefaultUrl, createBrowserTab])
+
+  const createFloatingAppTab = useCallback((app: FloatingWorkspaceApp) => {
+    void openOrFocusFloatingWorkspaceAppTab(useAppStore.getState(), app)
+      .then((tab) => {
+        if (!tab) {
+          toast.error(
+            translate(
+              'auto.components.floating.terminal.FloatingTerminalPanel.appSessionProfileFailed',
+              'Could not prepare an isolated session for {{app}}.',
+              { app: app.label }
+            )
+          )
+        }
+      })
+      .catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (!open) {
+      setOpenAppId(null)
+    }
+  }, [open])
 
   const createFloatingMarkdownTab = useCallback(() => {
     if (!markdownCwd) {
@@ -1791,6 +1820,7 @@ export function FloatingTerminalPanel({
               onNewTerminalTab={() => createFloatingTerminalTab()}
               onNewTerminalWithShell={createFloatingTerminalTab}
               onNewBrowserTab={createFloatingBrowserTab}
+              onNewAppTab={createFloatingAppTab}
               onNewFileTab={createFloatingMarkdownTab}
               onOpenFileTab={openFloatingMarkdownTab}
               newTabMenuOrder="markdown-first"
@@ -1834,112 +1864,124 @@ export function FloatingTerminalPanel({
           />
         </div>
 
-        <div
-          className="relative min-h-0 flex-1 overflow-hidden bg-background"
-          data-contextual-tour-target={
-            hasVisibleFloatingTabs ? 'floating-workspace-surface' : undefined
-          }
-        >
-          {cwd
-            ? tabs
-                .filter((tab) => !parkedTerminalTabIds.has(tab.id))
-                .map((tab) => {
-                  const isActive = tab.id === activeTerminalId
-                  return (
-                    <div
-                      key={`${tab.id}-${tab.generation ?? 0}`}
-                      className={isActive ? 'absolute inset-0' : 'absolute inset-0 hidden'}
-                      aria-hidden={!isActive}
-                    >
-                      <TerminalPane
-                        ref={terminalPaneRegistry.getRefCallback(tab.id)}
-                        tabId={tab.id}
-                        worktreeId={FLOATING_TERMINAL_WORKTREE_ID}
-                        cwd={cwd}
-                        isActive={isActive}
-                        // Why: the closed panel is only CSS-hidden, so gate
-                        // visibility on `open` too. This routes the floating
-                        // terminal through the standard hidden-terminal
-                        // suspend/resume path: no live WebGL context (or glyph
-                        // atlas to corrupt) while hidden, and the resume on
-                        // reopen rebuilds the renderer from scratch.
-                        isVisible={isActive && open}
-                        onPtyExit={(ptyId) => {
-                          if (shouldDeferParkedPtyExitTabClose(tab.id, ptyId)) {
-                            return
-                          }
-                          closeTerminalTab(tab.id, {
-                            reason: 'pty-exit',
-                            lifecyclePtyId: ptyId
-                          })
-                        }}
-                        onCloseTab={() => closeFloatingItemConfirmed(tab.id)}
-                      />
+        <div className="flex min-h-0 flex-1">
+          <div
+            className="relative min-w-0 flex-1 overflow-hidden bg-background"
+            data-contextual-tour-target={
+              hasVisibleFloatingTabs ? 'floating-workspace-surface' : undefined
+            }
+          >
+            {cwd
+              ? tabs
+                  .filter((tab) => !parkedTerminalTabIds.has(tab.id))
+                  .map((tab) => {
+                    const isActive = tab.id === activeTerminalId
+                    return (
+                      <div
+                        key={`${tab.id}-${tab.generation ?? 0}`}
+                        className={isActive ? 'absolute inset-0' : 'absolute inset-0 hidden'}
+                        aria-hidden={!isActive}
+                      >
+                        <TerminalPane
+                          ref={terminalPaneRegistry.getRefCallback(tab.id)}
+                          tabId={tab.id}
+                          worktreeId={FLOATING_TERMINAL_WORKTREE_ID}
+                          cwd={cwd}
+                          isActive={isActive}
+                          // Why: the closed panel is only CSS-hidden, so gate
+                          // visibility on `open` too. This routes the floating
+                          // terminal through the standard hidden-terminal
+                          // suspend/resume path: no live WebGL context (or glyph
+                          // atlas to corrupt) while hidden, and the resume on
+                          // reopen rebuilds the renderer from scratch.
+                          isVisible={isActive && open}
+                          onPtyExit={(ptyId) => {
+                            if (shouldDeferParkedPtyExitTabClose(tab.id, ptyId)) {
+                              return
+                            }
+                            closeTerminalTab(tab.id, {
+                              reason: 'pty-exit',
+                              lifecyclePtyId: ptyId
+                            })
+                          }}
+                          onCloseTab={() => closeFloatingItemConfirmed(tab.id)}
+                        />
+                      </div>
+                    )
+                  })
+              : null}
+            {browserTabs.map((tab) => {
+              const isActive = tab.id === activeBrowserTab?.id
+              return (
+                <div
+                  key={tab.id}
+                  className={isActive ? 'absolute inset-0 flex' : 'absolute inset-0 hidden'}
+                  aria-hidden={!isActive}
+                >
+                  <FloatingBrowserSlot
+                    browserTab={tab}
+                    isActive={open && isActive}
+                    inputLocked={open && openAppId !== null && isActive}
+                  />
+                </div>
+              )
+            })}
+            {simulatorItems.map((tab) => {
+              const isActive = tab.id === activeTab?.id
+              return (
+                <div
+                  key={tab.id}
+                  className={isActive ? 'absolute inset-0 flex' : 'absolute inset-0 hidden'}
+                  aria-hidden={!isActive}
+                >
+                  <EmulatorPane tab={tab} worktreeId={tab.worktreeId} isActive={open && isActive} />
+                </div>
+              )
+            })}
+            {activeEditorFile ? (
+              <div className="absolute inset-0 flex min-h-0 min-w-0">
+                <Suspense
+                  fallback={
+                    <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                      {translate(
+                        'auto.components.floating.terminal.FloatingTerminalPanel.d6b563ae24',
+                        'Loading editor...'
+                      )}
                     </div>
-                  )
-                })
-            : null}
-          {browserTabs.map((tab) => {
-            const isActive = tab.id === activeBrowserTab?.id
-            return (
-              <div
-                key={tab.id}
-                className={isActive ? 'absolute inset-0 flex' : 'absolute inset-0 hidden'}
-                aria-hidden={!isActive}
-              >
-                <FloatingBrowserSlot browserTab={tab} isActive={open && isActive} />
-              </div>
-            )
-          })}
-          {simulatorItems.map((tab) => {
-            const isActive = tab.id === activeTab?.id
-            return (
-              <div
-                key={tab.id}
-                className={isActive ? 'absolute inset-0 flex' : 'absolute inset-0 hidden'}
-                aria-hidden={!isActive}
-              >
-                <EmulatorPane tab={tab} worktreeId={tab.worktreeId} isActive={open && isActive} />
-              </div>
-            )
-          })}
-          {activeEditorFile ? (
-            <div className="absolute inset-0 flex min-h-0 min-w-0">
-              <Suspense
-                fallback={
-                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    {translate(
-                      'auto.components.floating.terminal.FloatingTerminalPanel.d6b563ae24',
-                      'Loading editor...'
-                    )}
-                  </div>
-                }
-              >
-                {/* Why: floating workspace markdown is scratch/local context,
+                  }
+                >
+                  {/* Why: floating workspace markdown is scratch/local context,
                     not a repo review surface that should expose agent notes. */}
-                <EditorPanel
-                  activeFileId={activeEditorFile.id}
-                  activeViewStateId={activeEditorUnifiedId}
-                  markdownAnnotationsEnabled={false}
-                />
-              </Suspense>
-            </div>
-          ) : null}
-          {!hasVisibleFloatingTabs ? (
-            <FloatingTerminalEmptyState
-              onNewTerminal={() => createFloatingTerminalTab()}
-              onNewMarkdown={createFloatingMarkdownTab}
-              onOpenMarkdown={openFloatingMarkdownTab}
-              onNewBrowser={createFloatingBrowserTab}
-              onClose={() => onOpenChange(false)}
-              onFocusPanel={focusPanelForShortcuts}
-              newTerminalShortcut={newTerminalShortcut}
-              newBrowserShortcut={newBrowserShortcut}
-              newMarkdownShortcut={newMarkdownShortcut}
-              openMarkdownShortcut={openMarkdownShortcut}
-              closeShortcut={closeShortcut}
-            />
-          ) : null}
+                  <EditorPanel
+                    activeFileId={activeEditorFile.id}
+                    activeViewStateId={activeEditorUnifiedId}
+                    markdownAnnotationsEnabled={false}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+            {!hasVisibleFloatingTabs ? (
+              <FloatingTerminalEmptyState
+                onNewTerminal={() => createFloatingTerminalTab()}
+                onNewMarkdown={createFloatingMarkdownTab}
+                onOpenMarkdown={openFloatingMarkdownTab}
+                onNewBrowser={createFloatingBrowserTab}
+                onClose={() => onOpenChange(false)}
+                onFocusPanel={focusPanelForShortcuts}
+                newTerminalShortcut={newTerminalShortcut}
+                newBrowserShortcut={newBrowserShortcut}
+                newMarkdownShortcut={newMarkdownShortcut}
+                openMarkdownShortcut={openMarkdownShortcut}
+                closeShortcut={closeShortcut}
+              />
+            ) : null}
+          </div>
+          <FloatingCommsRail
+            panelRef={panelRef}
+            openAppId={openAppId}
+            onOpenAppIdChange={setOpenAppId}
+            onOpenApp={createFloatingAppTab}
+          />
         </div>
       </div>
       {showOrchestrationSetup && activeTabType === 'terminal' ? (

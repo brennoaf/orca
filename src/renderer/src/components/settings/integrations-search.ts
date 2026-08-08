@@ -1,6 +1,7 @@
 import { translate } from '@/i18n/i18n'
 import { translateSearchKeyword } from './settings-search-keywords'
 import { createLocalizedCatalog } from '@/i18n/localized-catalog'
+import { COMMUNICATION_INTEGRATION_SECTION_IDS } from '../../../../shared/communication-integrations'
 
 export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
   {
@@ -204,6 +205,61 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
         'auto.components.settings.integrations.search.a626990bd2',
         'disconnect'
       )
+    ]
+  },
+  {
+    title: translate('communicationIntegrations.search.discordTitle', 'Discord Integration'),
+    description: translate(
+      'communicationIntegrations.search.discordDescription',
+      'Configure Discord application credentials and the call overlay.'
+    ),
+    targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS.discord,
+    keywords: [
+      ...translateSearchKeyword('communicationIntegrations.search.discord', 'Discord', {
+        englishOnly: true
+      }),
+      ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
+      ...translateSearchKeyword('communicationIntegrations.search.applicationId', 'application id'),
+      ...translateSearchKeyword('communicationIntegrations.search.clientSecret', 'client secret'),
+      ...translateSearchKeyword('communicationIntegrations.search.overlay', 'overlay')
+    ]
+  },
+  {
+    title: translate('communicationIntegrations.search.slackTitle', 'Slack Integration'),
+    description: translate(
+      'communicationIntegrations.search.slackDescription',
+      'Configure Slack credentials and an optional API endpoint.'
+    ),
+    targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS.slack,
+    keywords: [
+      ...translateSearchKeyword('communicationIntegrations.search.slack', 'Slack', {
+        englishOnly: true
+      }),
+      ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
+      ...translateSearchKeyword('communicationIntegrations.search.endpoint', 'endpoint'),
+      ...translateSearchKeyword('communicationIntegrations.search.socketMode', 'Socket Mode'),
+      ...translateSearchKeyword('communicationIntegrations.search.appToken', 'app token'),
+      ...translateSearchKeyword('communicationIntegrations.search.userToken', 'user token')
+    ]
+  },
+  {
+    title: translate('communicationIntegrations.search.zApiTitle', 'Z-API Integration'),
+    description: translate(
+      'communicationIntegrations.search.zApiDescription',
+      'Configure Z-API credentials and an endpoint for WhatsApp transport.'
+    ),
+    targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS['z-api'],
+    keywords: [
+      ...translateSearchKeyword('communicationIntegrations.search.zApi', 'Z-API', {
+        englishOnly: true
+      }),
+      ...translateSearchKeyword('communicationIntegrations.search.whatsapp', 'WhatsApp', {
+        englishOnly: true
+      }),
+      ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
+      ...translateSearchKeyword('communicationIntegrations.search.endpoint', 'endpoint'),
+      ...translateSearchKeyword('communicationIntegrations.search.instance', 'instance'),
+      ...translateSearchKeyword('communicationIntegrations.search.clientToken', 'client token')
     ]
   }
 ])

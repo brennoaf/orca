@@ -34,6 +34,8 @@ import { WORKSPACE_PORT_METHODS } from './workspace-ports'
 import { PLUGIN_METHODS } from './plugins'
 import { SKILL_METHODS } from './skills'
 import { CLIPBOARD_METHODS } from './clipboard'
+import { DISCORD_VOICE_METHODS } from './discord-voice'
+import { COMMUNICATION_INTEGRATION_METHODS } from './communication-integrations'
 import { HOST_CAPABILITY_METHODS } from './host-capabilities'
 import { EMULATOR_METHODS } from './emulator'
 import { PAIRING_METHODS } from './pairing'
@@ -78,6 +80,8 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...PLUGIN_METHODS,
   ...SKILL_METHODS,
   ...CLIPBOARD_METHODS,
+  ...DISCORD_VOICE_METHODS,
+  ...COMMUNICATION_INTEGRATION_METHODS,
   ...HOST_CAPABILITY_METHODS,
   ...CLIENT_EVENT_METHODS,
   ...CLIENT_UI_METHODS,

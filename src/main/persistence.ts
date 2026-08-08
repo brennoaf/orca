@@ -254,6 +254,7 @@ import {
 import { normalizeTerminalLineHeight } from '../shared/terminal-line-height-settings'
 import { normalizeUiLanguage } from '../shared/ui-language'
 import { normalizeBrowserPageZoomLevel } from '../shared/browser-page-zoom'
+import { normalizeFloatingWorkspaceAppPreferences } from '../shared/floating-workspace-apps'
 import { persistedUIValuesEqual } from '../shared/persisted-ui-equality'
 import { ActiveViewPreference } from './active-view-preference'
 import {
@@ -5985,6 +5986,9 @@ export class Store {
       browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
         this.state.ui?.browserDefaultZoomLevel
       ),
+      floatingWorkspaceApps: normalizeFloatingWorkspaceAppPreferences(
+        this.state.ui?.floatingWorkspaceApps
+      ),
       showDotfilesByWorktree: normalizeShowDotfilesByWorktree(
         this.state.ui?.showDotfilesByWorktree
       ),
@@ -6097,6 +6101,9 @@ export class Store {
           : normalizeManualRepoOrder(this.state.ui?.manualRepoOrder),
       browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
         updates.browserDefaultZoomLevel ?? this.state.ui?.browserDefaultZoomLevel
+      ),
+      floatingWorkspaceApps: normalizeFloatingWorkspaceAppPreferences(
+        updates.floatingWorkspaceApps ?? this.state.ui?.floatingWorkspaceApps
       ),
       showDotfilesByWorktree:
         updates.showDotfilesByWorktree !== undefined

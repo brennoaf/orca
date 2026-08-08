@@ -19,14 +19,13 @@ import {
 } from '../../../../shared/worktree-card-properties'
 import { isPluginPanelTabKey } from '../../../../shared/plugins/plugin-manifest'
 import type { TaskProvider } from '../../../../shared/types'
+import { FloatingWorkspaceApps } from './floating-workspace-apps-schema'
 import { TaskResumeState } from './task-resume-state-schema'
 import { omitUndefinedValues, tolerateUnknownValues } from './ui-update-value-tolerance'
 
 const NullableString = z.string().nullable()
 const StringArray = z.array(z.string())
-const TaskProviderParam = z.custom<TaskProvider>(isTaskProvider, {
-  message: 'Unknown task provider'
-})
+const TaskSource = z.custom<TaskProvider>(isTaskProvider, { message: 'Unknown task provider' })
 const FeatureTipIds = z.array(z.custom(isFeatureTipId, { message: 'Unknown feature tip id' }))
 const UnknownRecord = z.record(z.string(), z.unknown())
 const UnknownRecordArray = z.array(UnknownRecord)
@@ -155,8 +154,8 @@ export const SettingsUpdate = z
       .unknown()
       .transform((value) => normalizeTuiAgentEnvRecord(value))
       .optional(),
-    defaultTaskSource: TaskProviderParam.optional(),
-    visibleTaskProviders: z.array(TaskProviderParam).optional(),
+    defaultTaskSource: TaskSource.optional(),
+    visibleTaskProviders: z.array(TaskSource).optional(),
     defaultTaskViewPreset: z
       .enum(['issues', 'my-issues', 'prs', 'my-prs', 'review', 'all'])
       .optional(),
@@ -267,6 +266,7 @@ const UiUpdateFields = z
       .optional(),
     browserDefaultZoomLevel: z.number().finite().optional(),
     browserKagiSessionLink: NullableString.optional(),
+    floatingWorkspaceApps: FloatingWorkspaceApps.optional(),
     windowBounds: z
       .object({
         x: z.number().finite(),

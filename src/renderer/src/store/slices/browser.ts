@@ -41,6 +41,7 @@ import type {
   BrowserProfileImportFromBrowserResult,
   BrowserProfileListResult
 } from '../../../../shared/runtime-types'
+import type { FloatingWorkspaceAppId } from '../../../../shared/floating-workspace-apps'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { translate } from '@/i18n/i18n'
 import {
@@ -63,6 +64,7 @@ import { buildValidWorktreeIdsForSessionHydration } from './degraded-repo-worktr
 type CreateBrowserTabOptions = {
   activate?: boolean
   title?: string
+  floatingWorkspaceAppId?: FloatingWorkspaceAppId
   sessionProfileId?: string | null
   sessionPartition?: string | null
   // Place the new tab in a specific group (e.g. "Open Preview to the Side"); defaults to the worktree's active group.
@@ -70,6 +72,10 @@ type CreateBrowserTabOptions = {
   // Explicit "New Tab" focuses the address bar even with a real home URL; link-opened tabs leave it unset.
   focusAddressBar?: boolean
   browserRuntimeEnvironmentId?: string | null
+}
+
+type CreateBrowserSessionProfileOptions = BrowserSessionProfileCreateOptions & {
+  hostId?: ExecutionHostId
 }
 
 type CreateBrowserPageOptions = {
@@ -193,11 +199,11 @@ export type BrowserSlice = {
     summary: BrowserCookieImportSummary | null
     error: string | null
   } | null
-  fetchBrowserSessionProfiles: () => Promise<void>
+  fetchBrowserSessionProfiles: (hostId?: ExecutionHostId) => Promise<BrowserSessionProfile[]>
   createBrowserSessionProfile: (
     scope: 'isolated' | 'imported',
     label: string,
-    options?: BrowserSessionProfileCreateOptions
+    options?: CreateBrowserSessionProfileOptions
   ) => Promise<BrowserSessionProfile | null>
   deleteBrowserSessionProfile: (profileId: string) => Promise<boolean>
   importCookiesToProfile: (profileId: string) => Promise<BrowserCookieImportResult>
@@ -253,11 +259,15 @@ function getBrowserSettingsHostId(
   return state.browserSessionHostIdOverride ?? getSettingsFocusedExecutionHostId(state.settings)
 }
 
+function getRuntimeEnvironmentIdForHost(hostId: ExecutionHostId): string | null {
+  const parsed = parseExecutionHostId(hostId)
+  return parsed?.kind === 'runtime' ? parsed.environmentId : null
+}
+
 function getBrowserSettingsRuntimeEnvironmentId(
   state: Pick<AppState, 'browserSessionHostIdOverride' | 'settings'>
 ): string | null {
-  const parsed = parseExecutionHostId(getBrowserSettingsHostId(state))
-  return parsed?.kind === 'runtime' ? parsed.environmentId : null
+  return getRuntimeEnvironmentIdForHost(getBrowserSettingsHostId(state))
 }
 
 function getBrowserWorktreeHostId(state: AppState, worktreeId: string): ExecutionHostId {
@@ -379,11 +389,13 @@ function buildWorkspaceFromPage(
   page: BrowserPage,
   pageIds: string[],
   sessionProfileId?: string | null,
-  sessionPartition?: string | null
+  sessionPartition?: string | null,
+  floatingWorkspaceAppId?: FloatingWorkspaceAppId
 ): BrowserWorkspace {
   return {
     id,
     worktreeId,
+    ...(floatingWorkspaceAppId ? { floatingWorkspaceAppId } : {}),
     sessionProfileId: sessionProfileId ?? null,
     sessionPartition: sessionPartition ?? null,
     activePageId: page.id,
@@ -581,7 +593,8 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       page,
       [page.id],
       sessionProfileId,
-      options?.sessionPartition
+      options?.sessionPartition,
+      options?.floatingWorkspaceAppId
     )
 
     set((s) => {
@@ -908,6 +921,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
         activate: true,
         sessionProfileId,
         sessionPartition,
+        floatingWorkspaceAppId: snap.floatingWorkspaceAppId,
         targetGroupId: entryToRestore.position?.groupId
       })
       restoreRecentlyClosedTabPosition(get, worktreeId, restored.id, entryToRestore.position)
@@ -921,6 +935,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       activate: true,
       sessionProfileId,
       sessionPartition,
+      floatingWorkspaceAppId: snap.floatingWorkspaceAppId,
       targetGroupId: entryToRestore.position?.groupId,
       browserRuntimeEnvironmentId: firstPage.browserRuntimeEnvironmentId
     })
@@ -1818,9 +1833,9 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     })
   },
 
-  fetchBrowserSessionProfiles: async () => {
-    const hostId = getBrowserSettingsHostId(get())
-    const runtimeEnvironmentId = getBrowserSettingsRuntimeEnvironmentId(get())
+  fetchBrowserSessionProfiles: async (hostIdOverride) => {
+    const hostId = hostIdOverride ?? getBrowserSettingsHostId(get())
+    const runtimeEnvironmentId = getRuntimeEnvironmentIdForHost(hostId)
     if (runtimeEnvironmentId) {
       try {
         const result = await callRuntimeRpc<BrowserProfileListResult>(
@@ -1830,28 +1845,32 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
           { timeoutMs: 15_000 }
         )
         set((s) => profileListByHostUpdate(s, result.profiles, hostId))
+        return result.profiles
       } catch {
         set((s) => profileListByHostUpdate(s, [], hostId))
+        return []
       }
-      return
     }
     try {
       const profiles = (await window.api.browser.sessionListProfiles()) as BrowserSessionProfile[]
       set((s) => profileListByHostUpdate(s, profiles, hostId))
+      return profiles
     } catch {
       /* best-effort — stale profile list is preferable to a crash */
+      return getBrowserProfilesForHost(get(), hostId)
     }
   },
 
   createBrowserSessionProfile: async (scope, label, options) => {
-    const hostId = getBrowserSettingsHostId(get())
-    const runtimeEnvironmentId = getBrowserSettingsRuntimeEnvironmentId(get())
+    const { hostId: hostIdOverride, ...createOptions } = options ?? {}
+    const hostId = hostIdOverride ?? getBrowserSettingsHostId(get())
+    const runtimeEnvironmentId = getRuntimeEnvironmentIdForHost(hostId)
     if (runtimeEnvironmentId) {
       try {
         const result = await callRuntimeRpc<BrowserProfileCreateResult>(
           { kind: 'environment', environmentId: runtimeEnvironmentId },
           'browser.profileCreate',
-          { scope, label, ...options },
+          { scope, label, ...createOptions },
           { timeoutMs: 15_000 }
         )
         const profile = result.profile
@@ -1873,7 +1892,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       const profile = (await window.api.browser.sessionCreateProfile({
         scope,
         label,
-        ...options
+        ...createOptions
       })) as BrowserSessionProfile | null
       if (profile) {
         set((s) => ({
@@ -1943,6 +1962,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
               }
             : {})
         }))
+        get().clearFloatingWorkspaceAppSessionProfile(profileId)
       }
       return ok
     } catch {

@@ -7,6 +7,7 @@ import {
 } from './source-control-integration-cards'
 import { JiraIntegrationCard, LinearIntegrationCard } from './task-tracker-integration-cards'
 import { useIntegrationProviderStatusRefresh } from './use-integration-provider-status-refresh'
+import { CommunicationIntegrationsSection } from './CommunicationIntegrationsSection'
 import { translate } from '@/i18n/i18n'
 export { getIntegrationsPaneSearchEntries } from './integrations-search'
 
@@ -53,6 +54,8 @@ export function IntegrationsPane(): React.JSX.Element {
           <JiraIntegrationCard />
         </div>
       </section>
+
+      <CommunicationIntegrationsSection />
     </div>
   )
 }

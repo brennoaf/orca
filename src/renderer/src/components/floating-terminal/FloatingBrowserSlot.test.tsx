@@ -7,10 +7,15 @@ import { FloatingBrowserSlot } from './FloatingBrowserSlot'
 import { getBrowserOverlaySlotViewport } from '@/components/browser-pane/browser-page-viewport'
 import type { BrowserTab } from '../../../../shared/types'
 
+const browserPaneMock = vi.hoisted(() => vi.fn())
+
 // Why: BrowserPane mounts a real Electron <webview> we can't run in jsdom; stub
 // it so the test isolates the slot-root registration that BrowserPane depends on.
 vi.mock('@/components/browser-pane/BrowserPane', () => ({
-  default: () => null
+  default: (props: unknown) => {
+    browserPaneMock(props)
+    return null
+  }
 }))
 
 function makeBrowserTab(id: string): BrowserTab {
@@ -79,5 +84,23 @@ describe('FloatingBrowserSlot', () => {
     root = null
 
     expect(getBrowserOverlaySlotViewport('floating-browser-2')).toBeNull()
+  })
+
+  it('forwards the external input lock to BrowserPane', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    act(() => {
+      root!.render(
+        <FloatingBrowserSlot
+          browserTab={makeBrowserTab('floating-browser-3')}
+          isActive
+          inputLocked
+        />
+      )
+    })
+
+    expect(browserPaneMock).toHaveBeenLastCalledWith(expect.objectContaining({ inputLocked: true }))
   })
 })

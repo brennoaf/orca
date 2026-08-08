@@ -21,6 +21,10 @@ import type { LargeDiffRenderLimit } from './large-diff-render-limit'
 import type { GitLabProjectSettings } from './gitlab-types'
 import type { TaskProvider } from './task-providers'
 import type { FeatureTipId } from './feature-tips'
+import type {
+  FloatingWorkspaceAppId,
+  FloatingWorkspaceAppPreferences
+} from './floating-workspace-apps'
 import type { ContextualTourId } from './contextual-tours'
 import type {
   FeatureInteractionState,
@@ -998,6 +1002,7 @@ export type BrowserPage = {
 export type BrowserWorkspace = {
   id: string
   worktreeId: string
+  floatingWorkspaceAppId?: FloatingWorkspaceAppId
   /** Stable display label for the outer Orca tab ("Browser 1", "Browser 2", …).
    *  Optional so sessions persisted before this field was added fall back
    *  gracefully to the URL-derived label in getBrowserTabLabel. */
@@ -3489,6 +3494,7 @@ export type PersistedUIState = {
   browserDefaultSearchEngine?: 'google' | 'duckduckgo' | 'bing' | 'kagi' | null
   /** Electron browser zoom level applied when a new local browser tab is created. */
   browserDefaultZoomLevel?: number
+  floatingWorkspaceApps?: FloatingWorkspaceAppPreferences
   /** Optional Kagi private-session link used only when Kagi is the search engine. */
   browserKagiSessionLink?: string | null
   /** Saved window bounds so the app restores last position/size instead of maximizing each launch. */

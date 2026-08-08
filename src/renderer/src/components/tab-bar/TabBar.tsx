@@ -35,6 +35,8 @@ import type { HoveredTabInsertion, TabDragItemData } from '../tab-group/useTabDr
 import { resolveTabIndicatorEdges } from '../tab-group/tab-insertion'
 import { getEditorDisplayLabel } from '@/components/editor/editor-labels'
 import TabBarCreateEntry from './TabBarCreateEntry'
+import { FloatingWorkspaceAppMenuItems } from './FloatingWorkspaceAppMenuItems'
+import type { FloatingWorkspaceApp } from '../../../../shared/floating-workspace-apps'
 import { ShellIcon } from './shell-icons'
 import { resolveWindowsShellLaunchTarget } from './windows-shell-launch'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
@@ -117,6 +119,7 @@ type TabBarProps = {
   /** On Windows, opens a new terminal with a specific shell instead of the default. */
   onNewTerminalWithShell?: (shell: string) => void
   onNewBrowserTab: () => void
+  onNewAppTab?: (app: FloatingWorkspaceApp) => void
   onNewSimulatorTab?: () => void
   onOpenEntry?: (args: TabCreateEntryArgs) => Promise<void>
   terminalOnly?: boolean
@@ -243,6 +246,7 @@ function TabBarInner({
   onNewTerminalTab,
   onNewTerminalWithShell,
   onNewBrowserTab,
+  onNewAppTab,
   onNewSimulatorTab,
   onOpenEntry,
   terminalOnly = false,
@@ -763,6 +767,7 @@ function TabBarInner({
         {newBrowserMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
+        {onNewAppTab ? <FloatingWorkspaceAppMenuItems onSelectApp={onNewAppTab} /> : null}
       </>
     ) : (
       <>
@@ -772,6 +777,7 @@ function TabBarInner({
         {openMarkdownMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
+        {onNewAppTab ? <FloatingWorkspaceAppMenuItems onSelectApp={onNewAppTab} /> : null}
       </>
     )
 

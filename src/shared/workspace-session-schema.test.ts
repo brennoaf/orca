@@ -138,6 +138,37 @@ describe('parseWorkspaceSession', () => {
     )
   })
 
+  it('preserves a floating workspace app identity across hydration', () => {
+    const result = parseWorkspaceSession({
+      activeRepoId: null,
+      activeWorktreeId: null,
+      activeTabId: null,
+      tabsByWorktree: {},
+      terminalLayoutsByTabId: {},
+      browserTabsByWorktree: {
+        wt: [
+          {
+            id: 'browser-1',
+            worktreeId: 'wt',
+            floatingWorkspaceAppId: 'discord',
+            url: 'https://discord.com/app',
+            title: 'Discord',
+            loading: false,
+            faviconUrl: null,
+            canGoBack: false,
+            canGoForward: false,
+            loadError: null,
+            createdAt: 1
+          }
+        ]
+      }
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.browserTabsByWorktree?.wt?.[0]?.floatingWorkspaceAppId).toBe('discord')
+    }
+  })
+
   it('preserves a valid launchAgent on a terminal tab', () => {
     const result = parseWorkspaceSession({
       activeRepoId: null,

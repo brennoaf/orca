@@ -5,14 +5,10 @@ import type { Store } from '../persistence'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { sendToTrustedUIRenderer } from '../ipc/ui'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
-import { stepUIZoomLevel, type UIZoomDirection } from '../../shared/ui-zoom-level'
+import type { UIZoomDirection } from '../../shared/ui-zoom-level'
 import { nativeZoomCommandMatchesKeybindings } from '../../shared/window-shortcut-policy'
-import {
-  keybindingMatchesAction,
-  type KeybindingActionId,
-  type KeybindingInput,
-  type KeybindingOverrides
-} from '../../shared/keybindings'
+import type { KeybindingOverrides } from '../../shared/keybindings'
+import { applyWindowZoomStep, resolveWindowZoomShortcut } from './window-zoom-shortcuts'
 
 const MIN_WIDTH = 480
 const MIN_HEIGHT = 360
@@ -39,32 +35,6 @@ export function isDashboardPopoutRenderer(sender: WebContents): boolean {
   return getDashboardPopoutWindow()?.webContents === sender
 }
 
-function zoomDashboardPopout(window: BrowserWindow, direction: UIZoomDirection): void {
-  const webContents = window.webContents
-  webContents.setZoomLevel(stepUIZoomLevel(webContents.getZoomLevel(), direction))
-}
-
-const ZOOM_SHORTCUTS: readonly [KeybindingActionId, UIZoomDirection][] = [
-  ['zoom.in', 'in'],
-  ['zoom.out', 'out'],
-  ['zoom.reset', 'reset']
-]
-
-function resolveZoomShortcut(
-  input: KeybindingInput,
-  keybindings: KeybindingOverrides | undefined
-): UIZoomDirection | null {
-  // Why: this runs on every keydown; avoid scanning unrelated window shortcuts in the typing path.
-  for (const [actionId, direction] of ZOOM_SHORTCUTS) {
-    if (
-      keybindingMatchesAction(actionId, input, process.platform, keybindings, { context: 'app' })
-    ) {
-      return direction
-    }
-  }
-  return null
-}
-
 /**
  * Apply a zoom step to the pop-out when it is the focused window. Returns false
  * when the pop-out is closed or unfocused so the caller can route the action to
@@ -76,7 +46,7 @@ export function zoomDashboardPopoutIfFocused(direction: UIZoomDirection): boolea
   if (!popout || !popout.isFocused()) {
     return false
   }
-  zoomDashboardPopout(popout, direction)
+  applyWindowZoomStep(popout, direction)
   return true
 }
 
@@ -219,10 +189,10 @@ export function createOrFocusDashboardPopout(
     if (input.type !== 'keyDown') {
       return
     }
-    const direction = resolveZoomShortcut(input, options.getKeybindings?.())
+    const direction = resolveWindowZoomShortcut(input, options.getKeybindings?.())
     if (direction) {
       event.preventDefault()
-      zoomDashboardPopout(window, direction)
+      applyWindowZoomStep(window, direction)
     }
   })
 
@@ -235,7 +205,7 @@ export function createOrFocusDashboardPopout(
       })
     ) {
       event.preventDefault()
-      zoomDashboardPopout(window, direction)
+      applyWindowZoomStep(window, direction)
     }
   })
 
