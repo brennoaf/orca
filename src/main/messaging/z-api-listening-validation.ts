@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import type {
   CommunicationIntegrationRedactedError,
   ZApiListeningValidationSnapshot
@@ -10,7 +10,8 @@ import {
 import type { ZApiListeningValidationDatabase } from './z-api-listening-validation-database'
 import { ZApiTransactionError } from './z-api-transaction-contract'
 
-const VALIDATION_TTL_MS = 180_000
+const VALIDATION_TTL_MS = 300_000
+const VALIDATION_CODE_UPPER_BOUND = 1_000_000
 
 type ActiveValidation = {
   attemptId: string
@@ -22,7 +23,7 @@ type ActiveValidation = {
 type ValidationDependencies = {
   wallNow?: () => number
   monotonicNow?: () => number
-  randomCode?: () => string
+  randomNumber?: () => number
   randomAttemptId?: () => string
 }
 
@@ -87,9 +88,18 @@ export class ZApiListeningValidation {
       this.persist(() => this.store.cancel(active.attemptId))
       this.active = null
     }
-    const code = `orca-${(this.dependencies.randomCode ?? (() => randomBytes(12).toString('hex')))()}`
+    const randomNumber = (
+      this.dependencies.randomNumber ?? (() => randomInt(0, VALIDATION_CODE_UPPER_BOUND))
+    )()
+    const code = `orca-${randomNumber.toString().padStart(6, '0')}`
     const attemptId = (this.dependencies.randomAttemptId ?? randomUUID)()
-    if (!/^orca-[a-f0-9]{24}$/u.test(code) || !attemptId) {
+    if (
+      !Number.isSafeInteger(randomNumber) ||
+      randomNumber < 0 ||
+      randomNumber >= VALIDATION_CODE_UPPER_BOUND ||
+      !/^orca-[0-9]{6}$/u.test(code) ||
+      !attemptId
+    ) {
       throw new ZApiTransactionError(
         'invalid_configuration',
         'Z-API listening validation could not be created.'

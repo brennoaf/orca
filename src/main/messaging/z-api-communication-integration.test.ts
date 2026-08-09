@@ -287,7 +287,7 @@ describe('Z-API communication integration', () => {
       state: 'confirmed',
       attemptId: '11111111-1111-4111-8111-111111111111',
       code: null,
-      deadline: '2026-08-09T00:03:00.000Z',
+      deadline: '2026-08-09T00:05:00.000Z',
       remainingMs: 0,
       confirmedAt: '2026-08-09T00:00:00.000Z',
       error: null
@@ -320,9 +320,9 @@ describe('Z-API communication integration', () => {
     const snapshot = {
       state: 'awaiting' as const,
       attemptId: '11111111-1111-4111-8111-111111111111',
-      code: 'orca-0123456789abcdef01234567',
-      deadline: '2026-08-09T00:03:00.000Z',
-      remainingMs: 180_000,
+      code: 'orca-000042',
+      deadline: '2026-08-09T00:05:00.000Z',
+      remainingMs: 300_000,
       confirmedAt: null,
       error: null
     }

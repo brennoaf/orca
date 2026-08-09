@@ -12,8 +12,8 @@ import { ZApiWebhookReceiver } from './z-api-webhook-receiver'
 const CONFIGURATION_ID = '11111111111111111111111111111111'
 const OTHER_CONFIGURATION_ID = '22222222222222222222222222222222'
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111'
-const CODE_HEX = '0123456789abcdef01234567'
-const CODE = `orca-${CODE_HEX}`
+const CODE_NUMBER = 42
+const CODE = 'orca-000042'
 const INSTANCE_ID = 'instance-1'
 const stores: MessageStore[] = []
 const receivers: ZApiWebhookReceiver[] = []
@@ -39,7 +39,11 @@ function message(
   }
 }
 
-function harness(path: string | ':memory:' = ':memory:', firstAttemptId = ATTEMPT_ID) {
+function harness(
+  path: string | ':memory:' = ':memory:',
+  firstAttemptId = ATTEMPT_ID,
+  randomNumber = CODE_NUMBER
+) {
   let wallNow = 1_000
   let monotonicNow = 500
   let attemptSequence = 0
@@ -48,7 +52,7 @@ function harness(path: string | ':memory:' = ':memory:', firstAttemptId = ATTEMP
   const validation = new ZApiListeningValidation(store.listeningValidation, {
     wallNow: () => wallNow,
     monotonicNow: () => monotonicNow,
-    randomCode: () => CODE_HEX,
+    randomNumber: () => randomNumber,
     randomAttemptId: () => {
       const sequence = attemptSequence++
       return sequence === 0
@@ -107,7 +111,7 @@ afterEach(async () => {
 })
 
 describe('ZApiListeningValidation', () => {
-  it('creates one idempotent 180 second attempt without persisting plaintext', () => {
+  it('creates one idempotent 300 second attempt without persisting plaintext', () => {
     const value = harness()
     const first = value.start()
     const second = value.start()
@@ -116,13 +120,22 @@ describe('ZApiListeningValidation', () => {
       state: 'awaiting',
       attemptId: ATTEMPT_ID,
       code: CODE,
-      deadline: new Date(181_000).toISOString(),
-      remainingMs: 180_000,
+      deadline: new Date(301_000).toISOString(),
+      remainingMs: 300_000,
       confirmedAt: null,
       error: null
     })
     expect(second).toEqual(first)
     expect(value.store.listeningValidation.readAttempt(ATTEMPT_ID)?.codeHash).not.toContain(CODE)
+  })
+
+  it.each([
+    [0, 'orca-000000'],
+    [42, 'orca-000042'],
+    [999_999, 'orca-999999']
+  ])('formats validation code boundary %i as %s', (randomNumber, expected) => {
+    const value = harness(':memory:', ATTEMPT_ID, randomNumber)
+    expect(value.start().code).toBe(expected)
   })
 
   it('uses monotonic time across forward and backward wall-clock jumps', () => {
@@ -132,10 +145,10 @@ describe('ZApiListeningValidation', () => {
     value.setWallNow(9_999_999_999_999)
     expect(value.validation.status(CONFIGURATION_ID)).toMatchObject({
       state: 'awaiting',
-      remainingMs: 180_000
+      remainingMs: 300_000
     })
     value.setWallNow(1)
-    value.setMonotonicNow(180_499)
+    value.setMonotonicNow(300_499)
     expect(value.validation.status(CONFIGURATION_ID)).toMatchObject({
       state: 'awaiting',
       remainingMs: 1
@@ -164,7 +177,7 @@ describe('ZApiListeningValidation', () => {
     value.setWallNow(100)
     value.setMonotonicNow(600)
     const second = value.start()
-    expect(second).toMatchObject({ state: 'awaiting', remainingMs: 180_000 })
+    expect(second).toMatchObject({ state: 'awaiting', remainingMs: 300_000 })
     expect(value.store.listeningValidation.readAttempt(first.attemptId)).toBeNull()
     expect(value.store.listeningValidation.readLatestAttempt(CONFIGURATION_ID)?.attemptId).toBe(
       second.attemptId
@@ -216,7 +229,7 @@ describe('ZApiListeningValidation', () => {
   })
 
   it.each([
-    ['wrong code', 'orca-ffffffffffffffffffffffff'],
+    ['wrong code', 'orca-999999'],
     ['case', CODE.toUpperCase()],
     ['space', `${CODE} `],
     ['unicode', CODE.replace('o', '\u043e')]
@@ -285,7 +298,7 @@ describe('ZApiListeningValidation', () => {
   it('does not confirm expired or cancelled attempts', () => {
     const expired = harness()
     expired.start()
-    expired.setMonotonicNow(180_500)
+    expired.setMonotonicNow(300_500)
     expired.store.ingest(message('expired', CODE), expired.context())
     expect(expired.validation.status(CONFIGURATION_ID).state).toBe('expired')
     expect(expired.store.listeningValidation.readAttempt(ATTEMPT_ID)?.codeHash).toBeNull()
@@ -307,7 +320,7 @@ describe('ZApiListeningValidation', () => {
       throw new Error('Expected awaiting validation.')
     }
     value.setWallNow(1)
-    value.setMonotonicNow(180_500)
+    value.setMonotonicNow(300_500)
     expect(value.validation.cancel(awaiting.attemptId)).toMatchObject({
       state: 'expired',
       remainingMs: 0
@@ -389,7 +402,7 @@ describe('ZApiListeningValidation', () => {
     value.validation.status(CONFIGURATION_ID)
 
     const retry = value.start()
-    expect(retry).toMatchObject({ state: 'awaiting', remainingMs: 180_000 })
+    expect(retry).toMatchObject({ state: 'awaiting', remainingMs: 300_000 })
     expect(value.validation.confirmedAt(CONFIGURATION_ID)).toBeNull()
     expect(value.store.listeningValidation.readAttempt(ATTEMPT_ID)).toBeNull()
   })

@@ -220,9 +220,9 @@ describe('communication integration RPC methods', () => {
     const snapshot = {
       state: 'awaiting',
       attemptId: '11111111-1111-4111-8111-111111111111',
-      code: 'orca-0123456789abcdef01234567',
-      deadline: '2026-08-09T00:03:00.000Z',
-      remainingMs: 180_000,
+      code: 'orca-000042',
+      deadline: '2026-08-09T00:05:00.000Z',
+      remainingMs: 300_000,
       confirmedAt: null,
       error: null
     }

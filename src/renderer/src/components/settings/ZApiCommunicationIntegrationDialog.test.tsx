@@ -20,8 +20,8 @@ const preparedIngress: ZApiPreparedIngressSnapshot = {
   localTunnelTarget: 'http://127.0.0.1:43210'
 }
 const attemptId = '11111111-1111-4111-8111-111111111111'
-const validationCode = 'orca-0123456789abcdef01234567'
-const nextValidationCode = 'orca-89abcdef0123456701234567'
+const validationCode = 'orca-000042'
+const nextValidationCode = 'orca-654321'
 
 const notStartedValidation: ZApiListeningValidationSnapshot = {
   state: 'not_started',
@@ -37,7 +37,7 @@ const awaitingValidation: ZApiListeningValidationSnapshot = {
   state: 'awaiting',
   attemptId,
   code: validationCode,
-  deadline: '2026-08-09T00:03:00.000Z',
+  deadline: '2026-08-09T00:05:00.000Z',
   remainingMs: 125_000,
   confirmedAt: null,
   error: null
@@ -350,7 +350,7 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       ...awaitingValidation,
       attemptId: '22222222-2222-4222-8222-222222222222',
       code: nextValidationCode,
-      remainingMs: 180_000
+      remainingMs: 300_000
     }
     const confirmed: ZApiListeningValidationSnapshot = {
       ...nextAwaiting,
@@ -379,6 +379,7 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       })
     )
     expect(await screen.findByText(nextValidationCode)).toBeVisible()
+    expect(screen.getByText('05:00 remaining')).toBeVisible()
     expect(screen.queryByText(validationCode)).toBeNull()
 
     rerender(

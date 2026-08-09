@@ -144,7 +144,7 @@ function createZApiStatus(): ZApiCommunicationIntegrationStatus {
       state: 'confirmed',
       attemptId: '11111111-1111-4111-8111-111111111111',
       code: null,
-      deadline: '2026-08-09T00:03:00.000Z',
+      deadline: '2026-08-09T00:05:00.000Z',
       remainingMs: 0,
       confirmedAt: '2026-08-09T00:00:00.000Z',
       error: null

@@ -74,9 +74,9 @@ const attemptId = '11111111-1111-4111-8111-111111111111'
 const awaitingValidation: ZApiListeningValidationSnapshot = {
   state: 'awaiting',
   attemptId,
-  code: 'orca-0123456789abcdef01234567',
-  deadline: '2026-08-09T00:03:00.000Z',
-  remainingMs: 180_000,
+  code: 'orca-000042',
+  deadline: '2026-08-09T00:05:00.000Z',
+  remainingMs: 300_000,
   confirmedAt: null,
   error: null
 }
@@ -239,7 +239,7 @@ describe('useZApiTransactionActions', () => {
     const nextAwaiting: ZApiListeningValidationSnapshot = {
       ...awaitingValidation,
       attemptId: nextAttemptId,
-      code: 'orca-89abcdef0123456701234567',
+      code: 'orca-654321',
       remainingMs: 90_000
     }
     const firstPollResult: ZApiCommunicationIntegrationStatus = {
