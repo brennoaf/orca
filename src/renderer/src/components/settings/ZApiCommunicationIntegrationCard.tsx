@@ -12,6 +12,7 @@ import {
 } from './integration-card-shell'
 import { useZApiTransactionActions } from './use-z-api-transaction-actions'
 import { ZApiCommunicationIntegrationDialog } from './ZApiCommunicationIntegrationDialog'
+import { canStartZApiListeningValidation } from './ZApiWebhookVerificationStep'
 
 type ZApiCardPresentation = {
   label: string
@@ -38,7 +39,11 @@ function getPresentation(
       checking: false
     }
   }
-  if (status?.readiness.sendReady && status.readiness.receiveReady) {
+  if (
+    canStartZApiListeningValidation(status) &&
+    status?.readiness.verified &&
+    status.readiness.receiveReady
+  ) {
     return {
       label: translate('communicationIntegrations.status.ready', 'Ready'),
       tone: 'connected',
@@ -99,34 +104,56 @@ export function ZApiCommunicationIntegrationCard(props: {
   const { status, loading, loadError } = props
   const [dialogOpen, setDialogOpen] = useState(false)
   const actions = useZApiTransactionActions()
-  const presentation = getPresentation(status, loading, loadError)
-  const configured = Boolean(status?.readiness.configured) || Boolean(status?.publicWebhookBaseUrl)
-  const statusError = status?.readiness.lastError?.message ?? loadError
+  const currentStatus = status
+  const presentation = getPresentation(currentStatus, loading, loadError)
+  const configured =
+    Boolean(currentStatus?.readiness.configured) || Boolean(currentStatus?.publicWebhookBaseUrl)
+  const statusError = currentStatus?.readiness.lastError?.message ?? loadError
+  const technicalConfigurationReady = canStartZApiListeningValidation(currentStatus)
+  const listeningValidation = currentStatus?.listeningValidation
+  const listeningValidationStatus =
+    listeningValidation?.state === 'confirmed'
+      ? translate(
+          'communicationIntegrations.zApi.listeningValidation.confirmedAt',
+          'Confirmed at {{timestamp}}',
+          { timestamp: new Date(listeningValidation.confirmedAt).toLocaleString() }
+        )
+      : listeningValidation?.state === 'awaiting'
+        ? translate(
+            'communicationIntegrations.zApi.listeningValidation.awaitingShort',
+            'Awaiting confirmation'
+          )
+        : listeningValidation?.state === 'expired'
+          ? translate('communicationIntegrations.zApi.listeningValidation.expiredShort', 'Expired')
+          : translate(
+              'communicationIntegrations.zApi.listeningValidation.notConfirmed',
+              'Not confirmed'
+            )
   const instanceStatus =
-    status?.instanceConnected === true
+    currentStatus?.instanceConnected === true
       ? translate('communicationIntegrations.zApi.connected', 'Connected')
-      : status?.instanceConnected === false
+      : currentStatus?.instanceConnected === false
         ? translate('communicationIntegrations.zApi.disconnected', 'Disconnected')
         : translate('communicationIntegrations.zApi.unknown', 'Unknown')
   const smartphoneStatus =
-    status?.smartphoneConnected === true
+    currentStatus?.smartphoneConnected === true
       ? translate('communicationIntegrations.zApi.connected', 'Connected')
-      : status?.smartphoneConnected === false
+      : currentStatus?.smartphoneConnected === false
         ? translate('communicationIntegrations.zApi.disconnected', 'Disconnected')
         : translate('communicationIntegrations.zApi.unknown', 'Unknown')
   const receiverStatus =
-    status?.ingressPrepared && status.localTunnelTarget
+    currentStatus?.ingressPrepared && currentStatus.localTunnelTarget
       ? translate('communicationIntegrations.zApi.listeningOn', 'Listening on {{target}}', {
-          target: status.localTunnelTarget
+          target: currentStatus.localTunnelTarget
         })
       : translate('communicationIntegrations.zApi.notPrepared', 'Not prepared')
   const publicIngressStatus =
-    status !== null && status.publicIngressVerified
+    currentStatus !== null && currentStatus.publicIngressVerified
       ? translate('communicationIntegrations.zApi.verified', 'Verified')
-      : status?.publicWebhookBaseUrl
+      : currentStatus?.publicWebhookBaseUrl
         ? translate('communicationIntegrations.zApi.notVerified', 'Not verified')
         : translate('communicationIntegrations.zApi.notConfigured', 'Not configured')
-  const webhooksStatus = status?.webhooksConfigured
+  const webhooksStatus = currentStatus?.webhooksConfigured
     ? translate('communicationIntegrations.zApi.configured', 'Configured')
     : translate('communicationIntegrations.zApi.notConfigured', 'Not configured')
 
@@ -157,20 +184,33 @@ export function ZApiCommunicationIntegrationCard(props: {
             {statusError}
           </p>
         ) : null}
+        {!statusError && technicalConfigurationReady && !currentStatus?.readiness.receiveReady ? (
+          <p className="text-xs text-muted-foreground">
+            {listeningValidation?.state === 'awaiting'
+              ? translate(
+                  'communicationIntegrations.zApi.listeningValidation.awaitingNotice',
+                  'Send the WhatsApp validation code to confirm listening.'
+                )
+              : translate(
+                  'communicationIntegrations.zApi.listeningValidation.requiredNotice',
+                  'Validate WhatsApp listening to finish setup.'
+                )}
+          </p>
+        ) : null}
         <ReadinessRow
           label={translate('communicationIntegrations.zApi.instanceReadiness', 'Instance')}
           value={instanceStatus}
-          ready={status?.instanceConnected === true}
+          ready={currentStatus?.instanceConnected === true}
         />
         <ReadinessRow
           label={translate('communicationIntegrations.zApi.smartphoneReadiness', 'Smartphone')}
           value={smartphoneStatus}
-          ready={status?.smartphoneConnected === true}
+          ready={currentStatus?.smartphoneConnected === true}
         />
         <ReadinessRow
           label={translate('communicationIntegrations.zApi.receiverReadiness', 'Local receiver')}
           value={receiverStatus}
-          ready={status?.ingressPrepared === true}
+          ready={currentStatus?.ingressPrepared === true}
         />
         <ReadinessRow
           label={translate(
@@ -178,23 +218,36 @@ export function ZApiCommunicationIntegrationCard(props: {
             'Public ingress'
           )}
           value={publicIngressStatus}
-          ready={status !== null && status.publicIngressVerified}
+          ready={currentStatus !== null && currentStatus.publicIngressVerified}
         />
         <ReadinessRow
           label={translate('communicationIntegrations.zApi.webhooksReadiness', 'Webhooks')}
           value={webhooksStatus}
-          ready={status?.webhooksConfigured === true}
+          ready={currentStatus?.webhooksConfigured === true}
+        />
+        <ReadinessRow
+          label={translate(
+            'communicationIntegrations.zApi.listeningValidation.readiness',
+            'WhatsApp listening'
+          )}
+          value={listeningValidationStatus}
+          ready={
+            listeningValidation?.state === 'confirmed' &&
+            currentStatus?.readiness.receiveReady === true
+          }
         />
       </IntegrationCardDetails>
       <ZApiCommunicationIntegrationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        status={status}
+        status={currentStatus}
         pending={actions.pending}
         error={actions.error ?? status?.readiness.lastError?.message ?? null}
         onPrepare={actions.prepare}
         onDiscardPrepared={actions.discardPrepared}
         onSaveAndConfigure={actions.saveAndConfigure}
+        onStartListeningValidation={actions.startListeningValidation}
+        onCancelListeningValidation={actions.cancelListeningValidation}
         onRemove={actions.remove}
       />
     </IntegrationCardShell>

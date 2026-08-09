@@ -2,13 +2,15 @@
 
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   SaveAndConfigureZApiParams,
-  ZApiCommunicationIntegrationStatus
+  ZApiCommunicationIntegrationStatus,
+  ZApiListeningValidationSnapshot
 } from '../../../../shared/communication-integrations'
+import { useZApiListeningValidation } from './use-z-api-listening-validation'
 import { useZApiTransactionActions } from './use-z-api-transaction-actions'
 import { resetCommunicationIntegrationStatusesForTests } from './use-communication-integration-statuses'
 
@@ -68,6 +70,17 @@ const saveParams: SaveAndConfigureZApiParams = {
   listenPort: 43210
 }
 
+const attemptId = '11111111-1111-4111-8111-111111111111'
+const awaitingValidation: ZApiListeningValidationSnapshot = {
+  state: 'awaiting',
+  attemptId,
+  code: 'orca-0123456789abcdef01234567',
+  deadline: '2026-08-09T00:03:00.000Z',
+  remainingMs: 180_000,
+  confirmedAt: null,
+  error: null
+}
+
 function ActionsHarness(): React.JSX.Element {
   const actions = useZApiTransactionActions()
   return (
@@ -81,11 +94,31 @@ function ActionsHarness(): React.JSX.Element {
       <button type="button" onClick={() => void actions.saveAndConfigure(saveParams)}>
         Save
       </button>
+      <button type="button" onClick={() => void actions.startListeningValidation()}>
+        Start validation
+      </button>
+      <button type="button" onClick={() => void actions.cancelListeningValidation(attemptId)}>
+        Cancel validation
+      </button>
       <button type="button" onClick={() => void actions.remove()}>
         Remove
       </button>
       <span data-testid="pending">{actions.pending ?? 'idle'}</span>
       {actions.error ? <p role="alert">{actions.error}</p> : null}
+    </div>
+  )
+}
+
+function PollHarness(props: {
+  status: ZApiCommunicationIntegrationStatus
+  enabled: boolean
+}): React.JSX.Element {
+  const result = useZApiListeningValidation(props.status, props.enabled)
+  return (
+    <div>
+      <span data-testid="validation-state">{result.validation.state}</span>
+      <span data-testid="remaining-ms">{result.validation.remainingMs ?? 'none'}</span>
+      {result.error ? <p role="alert">{result.error}</p> : null}
     </div>
   )
 }
@@ -98,7 +131,10 @@ describe('useZApiTransactionActions', () => {
     mocks.toastError.mockReset()
   })
 
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
 
   it('uses only the transactional Z-API RPC surface', async () => {
     mocks.callRuntimeRpc.mockImplementation(
@@ -113,6 +149,16 @@ describe('useZApiTransactionActions', () => {
             value: { listenPort: 43210, localTunnelTarget: 'http://127.0.0.1:43210' }
           })
         }
+        if (method === 'communicationIntegrations.zApi.startListeningValidation') {
+          return Promise.resolve({ ok: true, status, value: awaitingValidation })
+        }
+        if (method === 'communicationIntegrations.zApi.cancelListeningValidation') {
+          return Promise.resolve({
+            ok: true,
+            status,
+            value: { ...awaitingValidation, state: 'cancelled', code: null, remainingMs: 0 }
+          })
+        }
         return Promise.resolve({ ok: true, status, value: undefined })
       }
     )
@@ -125,9 +171,23 @@ describe('useZApiTransactionActions', () => {
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('idle'))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('idle'))
+    await user.click(screen.getByRole('button', { name: 'Start validation' }))
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('idle'))
+    await user.click(screen.getByRole('button', { name: 'Cancel validation' }))
+    await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('idle'))
     await user.click(screen.getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('idle'))
 
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'local' },
+      'communicationIntegrations.zApi.startListeningValidation',
+      null
+    )
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'local' },
+      'communicationIntegrations.zApi.cancelListeningValidation',
+      { attemptId }
+    )
     expect(mocks.callRuntimeRpc).toHaveBeenCalledWith(
       { kind: 'local' },
       'communicationIntegrations.zApi.prepareIngress',
@@ -148,8 +208,82 @@ describe('useZApiTransactionActions', () => {
       'communicationIntegrations.zApi.remove',
       null
     )
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('Z-API is ready.')
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      'Z-API is configured. Validate WhatsApp listening to finish.'
+    )
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Z-API integration removed.')
+  })
+
+  it('stops polling while closed and starts one chain when reopened', async () => {
+    vi.useFakeTimers()
+    const awaitingStatus = { ...status, listeningValidation: awaitingValidation }
+    mocks.callRuntimeRpc.mockResolvedValue(awaitingStatus)
+    const { rerender } = render(<PollHarness status={awaitingStatus} enabled />)
+
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledOnce()
+    await act(() => Promise.resolve())
+    rerender(<PollHarness status={awaitingStatus} enabled={false} />)
+    await act(async () => vi.advanceTimersByTimeAsync(3_000))
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledOnce()
+
+    rerender(<PollHarness status={awaitingStatus} enabled />)
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledTimes(2)
+    await act(() => Promise.resolve())
+    await act(async () => vi.advanceTimersByTimeAsync(1_000))
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledTimes(3)
+  })
+
+  it('single-flights an in-flight poll across attempt changes and fences its response', async () => {
+    vi.useFakeTimers()
+    const nextAttemptId = '22222222-2222-4222-8222-222222222222'
+    const nextAwaiting: ZApiListeningValidationSnapshot = {
+      ...awaitingValidation,
+      attemptId: nextAttemptId,
+      code: 'orca-89abcdef0123456701234567',
+      remainingMs: 90_000
+    }
+    const firstPollResult: ZApiCommunicationIntegrationStatus = {
+      ...status,
+      listeningValidation: {
+        ...awaitingValidation,
+        remainingMs: 30_000
+      }
+    }
+    const confirmedNext: ZApiCommunicationIntegrationStatus = {
+      ...status,
+      listeningValidation: {
+        ...nextAwaiting,
+        state: 'confirmed',
+        code: null,
+        deadline: awaitingValidation.deadline,
+        remainingMs: 0,
+        confirmedAt: '2026-08-09T00:01:00.000Z',
+        error: null
+      }
+    }
+    const resolvers: ((value: ZApiCommunicationIntegrationStatus) => void)[] = []
+    mocks.callRuntimeRpc.mockImplementation(
+      () =>
+        new Promise<ZApiCommunicationIntegrationStatus>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+    const firstStatus = { ...status, listeningValidation: awaitingValidation }
+    const nextStatus = { ...status, listeningValidation: nextAwaiting }
+    const { rerender } = render(<PollHarness status={firstStatus} enabled />)
+
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledOnce()
+    rerender(<PollHarness status={nextStatus} enabled />)
+    await act(async () => vi.advanceTimersByTimeAsync(1_000))
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledOnce()
+
+    await act(async () => resolvers[0]!(firstPollResult))
+    expect(screen.getByTestId('remaining-ms')).toHaveTextContent('90000')
+    await act(async () => vi.advanceTimersByTimeAsync(1_000))
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledTimes(2)
+
+    await act(async () => resolvers[1]!(confirmedNext))
+    expect(screen.getByTestId('validation-state')).toHaveTextContent('confirmed')
   })
 
   it('surfaces redacted operation errors and hides thrown transport details', async () => {

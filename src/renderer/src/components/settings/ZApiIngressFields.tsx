@@ -27,6 +27,14 @@ type ZApiIngressFieldsProps = {
   onChangePort: () => void
 }
 
+export function parseZApiListenPort(value: string): number | null {
+  if (!/^\d+$/.test(value)) {
+    return null
+  }
+  const port = Number(value)
+  return Number.isSafeInteger(port) && port >= 1 && port <= 65_535 ? port : null
+}
+
 export function ZApiIngressFields(props: ZApiIngressFieldsProps): React.JSX.Element | null {
   const customPortToggleId = useId()
   const listenPortInputId = useId()

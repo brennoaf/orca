@@ -26,6 +26,8 @@ export type CommunicationIntegrationPendingOperation =
   | 'test'
   | 'prepare'
   | 'discard'
+  | 'validate'
+  | 'cancel-validation'
   | null
 
 export function CommunicationIntegrationDialogFrame(props: {
@@ -41,6 +43,8 @@ export function CommunicationIntegrationDialogFrame(props: {
   onClear: () => Promise<boolean>
   saveLabel?: string
   savingLabel?: string
+  closeOnSave?: boolean
+  footer?: React.ReactNode
   clearConfirmation?: {
     title: string
     description: string
@@ -94,39 +98,48 @@ export function CommunicationIntegrationDialogFrame(props: {
             {props.error}
           </p>
         ) : null}
-        <DialogFooter className="items-center sm:justify-between">
-          <div>
-            {props.configured ? (
-              <Button type="button" variant="ghost" disabled={busy} onClick={() => void clear()}>
-                {props.pending === 'clear' ? <Loader2 className="animate-spin" /> : null}
-                {props.clearConfirmation?.buttonLabel ??
-                  translate('communicationIntegrations.dialog.clear', 'Clear integration')}
+        {props.footer === undefined ? (
+          <DialogFooter className="items-center sm:justify-between">
+            <div>
+              {props.configured ? (
+                <Button type="button" variant="ghost" disabled={busy} onClick={() => void clear()}>
+                  {props.pending === 'clear' ? <Loader2 className="animate-spin" /> : null}
+                  {props.clearConfirmation?.buttonLabel ??
+                    translate('communicationIntegrations.dialog.clear', 'Clear integration')}
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => props.onOpenChange(false)}
+              >
+                {translate('communicationIntegrations.dialog.cancel', 'Cancel')}
               </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => props.onOpenChange(false)}
-            >
-              {translate('communicationIntegrations.dialog.cancel', 'Cancel')}
-            </Button>
-            <Button
-              type="button"
-              disabled={busy || props.saveDisabled}
-              onClick={() =>
-                void props.onSave().then((saved) => saved && props.onOpenChange(false))
-              }
-            >
-              {props.pending === 'save' ? <Loader2 className="animate-spin" /> : null}
-              {props.pending === 'save'
-                ? (props.savingLabel ?? translate('communicationIntegrations.dialog.save', 'Save'))
-                : (props.saveLabel ?? translate('communicationIntegrations.dialog.save', 'Save'))}
-            </Button>
-          </div>
-        </DialogFooter>
+              <Button
+                type="button"
+                disabled={busy || props.saveDisabled}
+                onClick={() =>
+                  void props
+                    .onSave()
+                    .then(
+                      (saved) => saved && props.closeOnSave !== false && props.onOpenChange(false)
+                    )
+                }
+              >
+                {props.pending === 'save' ? <Loader2 className="animate-spin" /> : null}
+                {props.pending === 'save'
+                  ? (props.savingLabel ??
+                    translate('communicationIntegrations.dialog.save', 'Save'))
+                  : (props.saveLabel ?? translate('communicationIntegrations.dialog.save', 'Save'))}
+              </Button>
+            </div>
+          </DialogFooter>
+        ) : (
+          props.footer
+        )}
       </DialogContent>
     </Dialog>
   )

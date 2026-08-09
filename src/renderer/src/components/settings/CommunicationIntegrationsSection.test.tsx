@@ -23,11 +23,13 @@ type MockAction = {
 }
 
 type MockZApiAction = {
-  pending: 'save' | 'clear' | 'prepare' | 'discard' | null
+  pending: 'save' | 'clear' | 'prepare' | 'discard' | 'validate' | 'cancel-validation' | null
   error: string | null
   prepare: ReturnType<typeof vi.fn>
   discardPrepared: ReturnType<typeof vi.fn>
   saveAndConfigure: ReturnType<typeof vi.fn>
+  startListeningValidation: ReturnType<typeof vi.fn>
+  cancelListeningValidation: ReturnType<typeof vi.fn>
   remove: ReturnType<typeof vi.fn>
 }
 
@@ -81,6 +83,8 @@ function createZApiAction(): MockZApiAction {
     prepare: vi.fn(),
     discardPrepared: vi.fn(),
     saveAndConfigure: vi.fn(),
+    startListeningValidation: vi.fn(),
+    cancelListeningValidation: vi.fn(),
     remove: vi.fn()
   }
 }
@@ -136,6 +140,15 @@ function createZApiStatus(): ZApiCommunicationIntegrationStatus {
     publicWebhookBaseUrl: 'https://hooks.example.test',
     publicIngressVerified: true,
     webhooksConfigured: true,
+    listeningValidation: {
+      state: 'confirmed',
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      code: null,
+      deadline: '2026-08-09T00:03:00.000Z',
+      remainingMs: 0,
+      confirmedAt: '2026-08-09T00:00:00.000Z',
+      error: null
+    },
     lastErrorCode: null
   }
 }
@@ -179,23 +192,37 @@ describe('CommunicationIntegrationsSection', () => {
     expect(screen.getByText('Local receiver')).toBeVisible()
     expect(screen.getByText('Public ingress')).toBeVisible()
     expect(screen.getByText('Webhooks')).toBeVisible()
+    expect(screen.getByText('WhatsApp listening')).toBeVisible()
     expect(document.body.textContent).not.toContain('xapp-')
     expect(document.body.textContent).not.toContain('xoxp-')
   })
 
-  it('shows Z-API as ready only when sending and receiving are ready', () => {
+  it('shows Z-API as ready only when verified and receive-ready', () => {
+    const unverified = createZApiStatus()
+    unverified.readiness.verified = false
+    unverified.readiness.verifiedAt = null
+    mocks.statuses = [unverified]
+    renderSection()
+
+    const unverifiedCard = document.querySelector<HTMLElement>(
+      '[data-settings-section="integrations-communications-z-api"]'
+    )
+    expect(within(unverifiedCard as HTMLElement).getByRole('status')).toHaveTextContent(
+      'Needs attention'
+    )
+
     mocks.statuses = [createZApiStatus()]
+    cleanup()
     renderSection()
 
     const zApiCard = document.querySelector<HTMLElement>(
       '[data-settings-section="integrations-communications-z-api"]'
     )
-    expect(zApiCard).not.toBeNull()
     expect(within(zApiCard as HTMLElement).getByRole('status')).toHaveTextContent('Ready')
-    expect(within(zApiCard as HTMLElement).queryByRole('button', { name: 'Test' })).toBeNull()
     expect(
       within(zApiCard as HTMLElement).getByText('Listening on http://127.0.0.1:43210')
     ).toBeVisible()
+    expect(within(zApiCard as HTMLElement).getByText(/Confirmed at/)).toBeVisible()
 
     const degraded = createZApiStatus()
     degraded.readiness.receiveReady = false
@@ -212,6 +239,36 @@ describe('CommunicationIntegrationsSection', () => {
     )
     expect(within(degradedCard as HTMLElement).getByText('Verified')).toBeVisible()
     expect(within(degradedCard as HTMLElement).getByText('Not configured')).toBeVisible()
+  })
+
+  it('shows technical configuration as needing listening validation without an error', () => {
+    const technical = createZApiStatus()
+    technical.readiness.verified = false
+    technical.readiness.receiveReady = false
+    technical.readiness.verifiedAt = null
+    technical.listeningValidation = {
+      state: 'not_started',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: null
+    }
+    mocks.statuses = [technical]
+    renderSection()
+
+    const zApiCard = document.querySelector<HTMLElement>(
+      '[data-settings-section="integrations-communications-z-api"]'
+    )
+    expect(within(zApiCard as HTMLElement).getByRole('status')).toHaveTextContent('Needs attention')
+    expect(
+      within(zApiCard as HTMLElement).getByText('Validate WhatsApp listening to finish setup.')
+    ).toBeVisible()
+    expect(within(zApiCard as HTMLElement).queryByRole('alert')).toBeNull()
+    expect(within(zApiCard as HTMLElement).getByText('Public ingress')).toBeVisible()
+    expect(within(zApiCard as HTMLElement).getByText('Verified')).toBeVisible()
+    expect(within(zApiCard as HTMLElement).getByText('Not confirmed')).toBeVisible()
   })
 
   it('announces loading statuses with text available to assistive technology', () => {

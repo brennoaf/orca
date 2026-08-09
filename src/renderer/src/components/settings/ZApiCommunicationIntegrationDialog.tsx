@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type {
   SaveAndConfigureZApiParams,
   ZApiCommunicationIntegrationStatus,
+  ZApiListeningValidationSnapshot,
   ZApiPreparedIngressSnapshot,
   ZApiSecretMutation
 } from '../../../../shared/communication-integrations'
@@ -20,7 +21,15 @@ import {
   getCommunicationEndpointTrust,
   type CommunicationIntegrationPendingOperation
 } from './CommunicationIntegrationDialogFields'
-import { ZApiIngressFields } from './ZApiIngressFields'
+import { parseZApiListenPort, ZApiIngressFields } from './ZApiIngressFields'
+import { useZApiListeningValidation } from './use-z-api-listening-validation'
+import {
+  NOT_STARTED_Z_API_LISTENING_VALIDATION,
+  canStartZApiListeningValidation,
+  ZApiListeningValidationLaunch,
+  ZApiWebhookVerificationFooter,
+  ZApiWebhookVerificationStep
+} from './ZApiWebhookVerificationStep'
 
 type ZApiCommunicationIntegrationDialogProps = {
   open: boolean
@@ -31,19 +40,15 @@ type ZApiCommunicationIntegrationDialogProps = {
   onPrepare: (listenPort: number) => Promise<ZApiPreparedIngressSnapshot | null>
   onDiscardPrepared: () => Promise<boolean>
   onSaveAndConfigure: (params: SaveAndConfigureZApiParams) => Promise<boolean>
+  onStartListeningValidation: () => Promise<ZApiListeningValidationSnapshot | null>
+  onCancelListeningValidation: (
+    attemptId: string
+  ) => Promise<ZApiListeningValidationSnapshot | null>
   onRemove: () => Promise<boolean>
 }
 
 function secretMutation(value: string): ZApiSecretMutation {
   return value ? { action: 'replace', value } : { action: 'keep' }
-}
-
-function parseListenPort(value: string): number | null {
-  if (!/^\d+$/.test(value)) {
-    return null
-  }
-  const port = Number(value)
-  return Number.isSafeInteger(port) && port >= 1 && port <= 65_535 ? port : null
 }
 
 export function ZApiCommunicationIntegrationDialog({
@@ -55,6 +60,8 @@ export function ZApiCommunicationIntegrationDialog({
   onPrepare,
   onDiscardPrepared,
   onSaveAndConfigure,
+  onStartListeningValidation,
+  onCancelListeningValidation,
   onRemove
 }: ZApiCommunicationIntegrationDialogProps): React.JSX.Element {
   const instanceIdInputId = useId()
@@ -74,13 +81,21 @@ export function ZApiCommunicationIntegrationDialog({
   const [preparedIngress, setPreparedIngress] = useState<ZApiPreparedIngressSnapshot | null>(null)
   const [takeoverConfirmed, setTakeoverConfirmed] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [validationVisible, setValidationVisible] = useState(false)
 
   const authority = getCommunicationEndpointAuthority(baseUrl)
   const defaultAuthority = getCommunicationEndpointAuthority(DEFAULT_Z_API_BASE_URL)
   const endpointTrust = getCommunicationEndpointTrust(baseUrl, DEFAULT_Z_API_BASE_URL)
   const publicWebhookAuthority = getCommunicationEndpointAuthority(publicWebhookBaseUrl)
-  const parsedCustomPort = parseListenPort(customPort)
+  const parsedCustomPort = parseZApiListenPort(customPort)
   const active = status?.publicWebhookBaseUrl !== null && status?.publicWebhookBaseUrl !== undefined
+  const statusValidation = status?.listeningValidation ?? NOT_STARTED_Z_API_LISTENING_VALIDATION
+  const listening = useZApiListeningValidation(
+    status,
+    open && statusValidation.state === 'awaiting'
+  )
+  const validation = listening.validation
+  const technicallyConfigured = canStartZApiListeningValidation(status)
   const removable =
     active ||
     Boolean(status?.readiness.configured) ||
@@ -121,6 +136,19 @@ export function ZApiCommunicationIntegrationDialog({
   }, [open, status])
 
   useEffect(() => setTrusted(false), [authority])
+
+  useEffect(() => {
+    if (!open || !status) {
+      return
+    }
+    if (!technicallyConfigured) {
+      setValidationVisible(false)
+      return
+    }
+    if (!['not_started', 'cancelled', 'confirmed'].includes(validation.state)) {
+      setValidationVisible(true)
+    }
+  }, [open, status, technicallyConfigured, validation.state])
 
   const prepare = async (): Promise<void> => {
     const requestedPort = useCustomPort ? parsedCustomPort : 0
@@ -176,7 +204,24 @@ export function ZApiCommunicationIntegrationDialog({
     })
   }
 
+  const startListeningValidation = async (): Promise<void> => {
+    setValidationVisible(true)
+    await onStartListeningValidation()
+  }
+
+  const cancelListeningValidation = async (attemptId: string): Promise<void> => {
+    if (await onCancelListeningValidation(attemptId)) {
+      setValidationVisible(false)
+    }
+  }
+
+  const finishListeningValidation = (): void => {
+    setValidationVisible(false)
+    onOpenChange(false)
+  }
+
   const busy = pending !== null
+  const showValidation = validationVisible && technicallyConfigured
   const saveDisabled =
     !instanceId.trim() ||
     !secretsAvailable ||
@@ -198,7 +243,21 @@ export function ZApiCommunicationIntegrationDialog({
       configured={removable}
       pending={pending}
       saveDisabled={saveDisabled}
-      error={error}
+      error={showValidation ? null : error}
+      closeOnSave={false}
+      footer={
+        showValidation ? (
+          <ZApiWebhookVerificationFooter
+            validation={validation}
+            pending={pending}
+            canStart={technicallyConfigured}
+            onStart={() => void startListeningValidation()}
+            onCancel={(attemptId) => void cancelListeningValidation(attemptId)}
+            onClose={() => onOpenChange(false)}
+            onDone={finishListeningValidation}
+          />
+        ) : undefined
+      }
       saveLabel={translate('communicationIntegrations.zApi.saveAndConfigure', 'Save and configure')}
       savingLabel={translate(
         'communicationIntegrations.zApi.savingAndConfiguring',
@@ -219,121 +278,138 @@ export function ZApiCommunicationIntegrationDialog({
       onClear={onRemove}
       onSave={saveAndConfigure}
     >
-      <CommunicationIntegrationField
-        id={instanceIdInputId}
-        label={translate('communicationIntegrations.zApi.instanceId', 'Instance ID')}
-        description={translate(
-          'communicationIntegrations.zApi.instanceIdDescription',
-          'The identifier shown for your Z-API instance.'
-        )}
-      >
-        <Input
-          id={instanceIdInputId}
-          value={instanceId}
-          disabled={busy}
-          onChange={(event) => setInstanceId(event.target.value)}
+      {showValidation ? (
+        <ZApiWebhookVerificationStep
+          validation={validation}
+          pending={pending}
+          error={error ?? listening.error}
         />
-      </CommunicationIntegrationField>
-      <CommunicationIntegrationSecretField
-        id={instanceTokenInputId}
-        label={translate('communicationIntegrations.zApi.instanceToken', 'Instance Token')}
-        description={translate(
-          'communicationIntegrations.zApi.instanceTokenDescription',
-          'The token assigned to the Z-API instance.'
-        )}
-        stored={status?.instanceTokenStored ?? false}
-        value={instanceToken}
-        cleared={false}
-        disabled={busy}
-        allowClear={false}
-        onValueChange={setInstanceToken}
-        onClearedChange={() => undefined}
-      />
-      <CommunicationIntegrationSecretField
-        id={clientTokenInputId}
-        label={translate('communicationIntegrations.zApi.clientToken', 'Client Token')}
-        description={translate(
-          'communicationIntegrations.zApi.clientTokenDescription',
-          'The client security token configured for the instance.'
-        )}
-        stored={status?.clientTokenStored ?? false}
-        value={clientToken}
-        cleared={false}
-        disabled={busy}
-        allowClear={false}
-        onValueChange={setClientToken}
-        onClearedChange={() => undefined}
-      />
-      <CommunicationIntegrationEndpointFields
-        baseUrl={baseUrl}
-        defaultBaseUrl={DEFAULT_Z_API_BASE_URL}
-        trusted={trusted}
-        disabled={busy}
-        onBaseUrlChange={setBaseUrl}
-        onTrustedChange={setTrusted}
-      />
-      <ZApiIngressFields
-        preparedIngress={preparedIngress}
-        active={active}
-        busy={busy}
-        pending={pending}
-        useCustomPort={useCustomPort}
-        customPort={customPort}
-        customPortValid={parsedCustomPort !== null}
-        copied={copied}
-        onUseCustomPortChange={setUseCustomPort}
-        onCustomPortChange={setCustomPort}
-        onPrepare={() => void prepare()}
-        onCopy={() => void copyTarget()}
-        onChangePort={() => void changePort()}
-      />
-      <CommunicationIntegrationField
-        id={publicWebhookInputId}
-        label={translate(
-          'communicationIntegrations.zApi.publicWebhookBaseUrl',
-          'Public HTTPS tunnel or reverse proxy URL'
-        )}
-        description={translate(
-          'communicationIntegrations.zApi.publicWebhookBaseUrlDescription',
-          'The public HTTPS base URL that forwards to the local target. Orca adds a private callback path.'
-        )}
-      >
-        <Input
-          id={publicWebhookInputId}
-          type="url"
-          value={publicWebhookBaseUrl}
-          disabled={busy}
-          aria-invalid={publicWebhookBaseUrl.length > 0 && publicWebhookAuthority === null}
-          onChange={(event) => setPublicWebhookBaseUrl(event.target.value)}
-        />
-      </CommunicationIntegrationField>
-      <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
-        <div className="space-y-1">
-          <p className="text-xs font-medium">
-            {translate('communicationIntegrations.zApi.takeoverTitle', 'Webhook takeover')}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {translate(
-              'communicationIntegrations.zApi.takeoverDescription',
-              'Saving replaces every webhook URL for this instance and clears all receive filters. Orca restores the captured webhook configuration when you remove the integration.'
+      ) : (
+        <>
+          <CommunicationIntegrationField
+            id={instanceIdInputId}
+            label={translate('communicationIntegrations.zApi.instanceId', 'Instance ID')}
+            description={translate(
+              'communicationIntegrations.zApi.instanceIdDescription',
+              'The identifier shown for your Z-API instance.'
             )}
-          </p>
-        </div>
-        <div className="flex items-start gap-2">
-          <Checkbox
-            id={takeoverInputId}
-            checked={takeoverConfirmed}
+          >
+            <Input
+              id={instanceIdInputId}
+              value={instanceId}
+              disabled={busy}
+              onChange={(event) => setInstanceId(event.target.value)}
+            />
+          </CommunicationIntegrationField>
+          <CommunicationIntegrationSecretField
+            id={instanceTokenInputId}
+            label={translate('communicationIntegrations.zApi.instanceToken', 'Instance Token')}
+            description={translate(
+              'communicationIntegrations.zApi.instanceTokenDescription',
+              'The token assigned to the Z-API instance.'
+            )}
+            stored={status?.instanceTokenStored ?? false}
+            value={instanceToken}
+            cleared={false}
             disabled={busy}
-            onCheckedChange={(checked) => setTakeoverConfirmed(checked === true)}
+            allowClear={false}
+            onValueChange={setInstanceToken}
+            onClearedChange={() => undefined}
           />
-          <Label htmlFor={takeoverInputId} className="text-xs leading-5">
-            {translate(
-              'communicationIntegrations.zApi.takeoverConfirm',
-              "I understand that Orca will take over this instance's webhooks."
+          <CommunicationIntegrationSecretField
+            id={clientTokenInputId}
+            label={translate('communicationIntegrations.zApi.clientToken', 'Client Token')}
+            description={translate(
+              'communicationIntegrations.zApi.clientTokenDescription',
+              'The client security token configured for the instance.'
             )}
-          </Label>
-        </div>
-      </div>
+            stored={status?.clientTokenStored ?? false}
+            value={clientToken}
+            cleared={false}
+            disabled={busy}
+            allowClear={false}
+            onValueChange={setClientToken}
+            onClearedChange={() => undefined}
+          />
+          <CommunicationIntegrationEndpointFields
+            baseUrl={baseUrl}
+            defaultBaseUrl={DEFAULT_Z_API_BASE_URL}
+            trusted={trusted}
+            disabled={busy}
+            onBaseUrlChange={setBaseUrl}
+            onTrustedChange={setTrusted}
+          />
+          <ZApiIngressFields
+            preparedIngress={preparedIngress}
+            active={active}
+            busy={busy}
+            pending={pending}
+            useCustomPort={useCustomPort}
+            customPort={customPort}
+            customPortValid={parsedCustomPort !== null}
+            copied={copied}
+            onUseCustomPortChange={setUseCustomPort}
+            onCustomPortChange={setCustomPort}
+            onPrepare={() => void prepare()}
+            onCopy={() => void copyTarget()}
+            onChangePort={() => void changePort()}
+          />
+          <CommunicationIntegrationField
+            id={publicWebhookInputId}
+            label={translate(
+              'communicationIntegrations.zApi.publicWebhookBaseUrl',
+              'Public HTTPS tunnel or reverse proxy URL'
+            )}
+            description={translate(
+              'communicationIntegrations.zApi.publicWebhookBaseUrlDescription',
+              'The public HTTPS base URL that forwards to the local target. Orca adds a private callback path.'
+            )}
+          >
+            <Input
+              id={publicWebhookInputId}
+              type="url"
+              value={publicWebhookBaseUrl}
+              disabled={busy}
+              aria-invalid={publicWebhookBaseUrl.length > 0 && publicWebhookAuthority === null}
+              onChange={(event) => setPublicWebhookBaseUrl(event.target.value)}
+            />
+          </CommunicationIntegrationField>
+          <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium">
+                {translate('communicationIntegrations.zApi.takeoverTitle', 'Webhook takeover')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {translate(
+                  'communicationIntegrations.zApi.takeoverDescription',
+                  'Saving replaces every webhook URL for this instance and clears all receive filters. Orca restores the captured webhook configuration when you remove the integration.'
+                )}
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id={takeoverInputId}
+                checked={takeoverConfirmed}
+                disabled={busy}
+                onCheckedChange={(checked) => setTakeoverConfirmed(checked === true)}
+              />
+              <Label htmlFor={takeoverInputId} className="text-xs leading-5">
+                {translate(
+                  'communicationIntegrations.zApi.takeoverConfirm',
+                  "I understand that Orca will take over this instance's webhooks."
+                )}
+              </Label>
+            </div>
+          </div>
+          {technicallyConfigured &&
+          (validation.state === 'not_started' || validation.state === 'cancelled') ? (
+            <ZApiListeningValidationLaunch
+              pending={pending}
+              onStart={() => void startListeningValidation()}
+            />
+          ) : null}
+        </>
+      )}
     </CommunicationIntegrationDialogFrame>
   )
 }

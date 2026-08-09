@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type {
   SaveAndConfigureZApiParams,
   ZApiCommunicationOperationResult,
+  ZApiListeningValidationSnapshot,
   ZApiPreparedIngressSnapshot
 } from '../../../../shared/communication-integrations'
 import { translate } from '@/i18n/i18n'
@@ -21,6 +22,8 @@ export function useZApiTransactionActions(): {
   prepare: (listenPort: number) => Promise<ZApiPreparedIngressSnapshot | null>
   discardPrepared: () => Promise<boolean>
   saveAndConfigure: (params: SaveAndConfigureZApiParams) => Promise<boolean>
+  startListeningValidation: () => Promise<ZApiListeningValidationSnapshot | null>
+  cancelListeningValidation: (attemptId: string) => Promise<ZApiListeningValidationSnapshot | null>
   remove: () => Promise<boolean>
 } {
   const [pending, setPending] = useState<CommunicationIntegrationPendingOperation>(null)
@@ -112,7 +115,12 @@ export function useZApiTransactionActions(): {
         operationError(result.error.message)
         return false
       }
-      toast.success(translate('communicationIntegrations.zApi.readyToast', 'Z-API is ready.'))
+      toast.success(
+        translate(
+          'communicationIntegrations.zApi.configuredToast',
+          'Z-API is configured. Validate WhatsApp listening to finish.'
+        )
+      )
       return true
     } catch {
       operationError(
@@ -122,6 +130,66 @@ export function useZApiTransactionActions(): {
         )
       )
       return false
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const startListeningValidation = async (): Promise<ZApiListeningValidationSnapshot | null> => {
+    setPending('validate')
+    setError(null)
+    try {
+      const result = await applyResult(
+        await callRuntimeRpc<ZApiCommunicationOperationResult<ZApiListeningValidationSnapshot>>(
+          LOCAL_TARGET,
+          'communicationIntegrations.zApi.startListeningValidation',
+          null
+        )
+      )
+      if (!result.ok) {
+        operationError(result.error.message)
+        return null
+      }
+      return result.value
+    } catch {
+      operationError(
+        translate(
+          'communicationIntegrations.zApi.listeningValidation.startFailed',
+          'Could not start listening validation.'
+        )
+      )
+      return null
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const cancelListeningValidation = async (
+    attemptId: string
+  ): Promise<ZApiListeningValidationSnapshot | null> => {
+    setPending('cancel-validation')
+    setError(null)
+    try {
+      const result = await applyResult(
+        await callRuntimeRpc<ZApiCommunicationOperationResult<ZApiListeningValidationSnapshot>>(
+          LOCAL_TARGET,
+          'communicationIntegrations.zApi.cancelListeningValidation',
+          { attemptId }
+        )
+      )
+      if (!result.ok) {
+        operationError(result.error.message)
+        return null
+      }
+      return result.value
+    } catch {
+      operationError(
+        translate(
+          'communicationIntegrations.zApi.listeningValidation.cancelFailed',
+          'Could not cancel listening validation.'
+        )
+      )
+      return null
     } finally {
       setPending(null)
     }
@@ -159,5 +227,14 @@ export function useZApiTransactionActions(): {
     }
   }
 
-  return { pending, error, prepare, discardPrepared, saveAndConfigure, remove }
+  return {
+    pending,
+    error,
+    prepare,
+    discardPrepared,
+    saveAndConfigure,
+    startListeningValidation,
+    cancelListeningValidation,
+    remove
+  }
 }

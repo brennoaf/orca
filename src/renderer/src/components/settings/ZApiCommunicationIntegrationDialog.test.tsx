@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   SaveAndConfigureZApiParams,
   ZApiCommunicationIntegrationStatus,
+  ZApiListeningValidationSnapshot,
   ZApiPreparedIngressSnapshot
 } from '../../../../shared/communication-integrations'
 import { DEFAULT_Z_API_BASE_URL } from '../../../../shared/communication-integrations'
@@ -17,6 +18,29 @@ import { ZApiCommunicationIntegrationDialog } from './ZApiCommunicationIntegrati
 const preparedIngress: ZApiPreparedIngressSnapshot = {
   listenPort: 43210,
   localTunnelTarget: 'http://127.0.0.1:43210'
+}
+const attemptId = '11111111-1111-4111-8111-111111111111'
+const validationCode = 'orca-0123456789abcdef01234567'
+const nextValidationCode = 'orca-89abcdef0123456701234567'
+
+const notStartedValidation: ZApiListeningValidationSnapshot = {
+  state: 'not_started',
+  attemptId: null,
+  code: null,
+  deadline: null,
+  remainingMs: null,
+  confirmedAt: null,
+  error: null
+}
+
+const awaitingValidation: ZApiListeningValidationSnapshot = {
+  state: 'awaiting',
+  attemptId,
+  code: validationCode,
+  deadline: '2026-08-09T00:03:00.000Z',
+  remainingMs: 125_000,
+  confirmedAt: null,
+  error: null
 }
 
 const rejectConfirmation = async (): Promise<boolean> => false
@@ -55,24 +79,59 @@ function createStatus(
   }
 }
 
+function technicalStatus(
+  listeningValidation: ZApiListeningValidationSnapshot = notStartedValidation
+): ZApiCommunicationIntegrationStatus {
+  return createStatus({
+    readiness: {
+      configured: true,
+      verified: false,
+      sendReady: true,
+      receiveReady: false,
+      verifiedAt: null,
+      lastError: null
+    },
+    instanceId: 'active-instance',
+    instanceTokenStored: true,
+    clientTokenStored: true,
+    instanceConnected: true,
+    smartphoneConnected: true,
+    ingressPrepared: true,
+    listenPort: 43210,
+    localTunnelTarget: preparedIngress.localTunnelTarget,
+    publicWebhookBaseUrl: 'https://hooks.example.test',
+    publicIngressVerified: true,
+    webhooksConfigured: true,
+    listeningValidation
+  })
+}
+
 function dialog(props: {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   status?: ZApiCommunicationIntegrationStatus | null
   onPrepare?: (listenPort: number) => Promise<ZApiPreparedIngressSnapshot | null>
   onDiscardPrepared?: () => Promise<boolean>
   onSaveAndConfigure?: (params: SaveAndConfigureZApiParams) => Promise<boolean>
+  onStartListeningValidation?: () => Promise<ZApiListeningValidationSnapshot | null>
+  onCancelListeningValidation?: (
+    attemptId: string
+  ) => Promise<ZApiListeningValidationSnapshot | null>
   onRemove?: () => Promise<boolean>
 }): React.JSX.Element {
   return (
     <ConfirmationDialogContext.Provider value={rejectConfirmation}>
       <ZApiCommunicationIntegrationDialog
-        open
-        onOpenChange={vi.fn()}
+        open={props.open ?? true}
+        onOpenChange={props.onOpenChange ?? vi.fn()}
         status={props.status === undefined ? createStatus() : props.status}
         pending={null}
         error={null}
         onPrepare={props.onPrepare ?? (async () => null)}
         onDiscardPrepared={props.onDiscardPrepared ?? (async () => false)}
         onSaveAndConfigure={props.onSaveAndConfigure ?? (async () => false)}
+        onStartListeningValidation={props.onStartListeningValidation ?? (async () => null)}
+        onCancelListeningValidation={props.onCancelListeningValidation ?? (async () => null)}
         onRemove={props.onRemove ?? (async () => false)}
       />
     </ConfirmationDialogContext.Provider>
@@ -91,8 +150,17 @@ describe('ZApiCommunicationIntegrationDialog', () => {
   it('prepares the receiver before the single transactional save', async () => {
     const user = userEvent.setup()
     const onPrepare = vi.fn(async () => preparedIngress)
-    const onSaveAndConfigure = vi.fn(async () => false)
-    render(dialog({ onPrepare, onSaveAndConfigure }))
+    const onSaveAndConfigure = vi.fn(async () => true)
+    const onStartListeningValidation = vi.fn(async () => awaitingValidation)
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      dialog({
+        onOpenChange,
+        onPrepare,
+        onSaveAndConfigure,
+        onStartListeningValidation
+      })
+    )
 
     await user.type(screen.getByLabelText('Instance ID'), ' instance-id ')
     await user.type(screen.getByLabelText('Instance Token'), 'instance-token')
@@ -135,6 +203,195 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       publicWebhookBaseUrl: 'https://hooks.example.test',
       listenPort: 43210
     })
+    expect(onStartListeningValidation).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    rerender(
+      dialog({
+        status: technicalStatus(),
+        onOpenChange,
+        onPrepare,
+        onSaveAndConfigure,
+        onStartListeningValidation
+      })
+    )
+    expect(screen.getByRole('button', { name: 'Validate listening' })).toBeVisible()
+  })
+
+  it('shows an explicit validation action without starting on open or save', async () => {
+    const user = userEvent.setup()
+    const onStartListeningValidation = vi.fn(async () => awaitingValidation)
+    const onOpenChange = vi.fn()
+    render(
+      dialog({
+        status: technicalStatus(),
+        onOpenChange,
+        onStartListeningValidation
+      })
+    )
+
+    expect(onStartListeningValidation).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Validate listening' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Validate listening' }))
+    await waitFor(() => expect(onStartListeningValidation).toHaveBeenCalledOnce())
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  it('shows an authoritative awaiting code, copies it, and closes without cancelling', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const onCancelListeningValidation = vi.fn(async () => null)
+    const { rerender } = render(
+      dialog({
+        status: technicalStatus(awaitingValidation),
+        onOpenChange,
+        onCancelListeningValidation
+      })
+    )
+
+    await screen.findByText(validationCode)
+    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true')
+    expect(screen.getByRole('timer')).toHaveTextContent('02:05 remaining')
+    expect(screen.getByRole('timer')).toHaveAttribute('aria-live', 'off')
+    expect(screen.getByText(/WhatsApp mobile, web, or desktop/)).toBeVisible()
+    expect(screen.getByText(/Send it to yourself or ask someone/)).toBeVisible()
+    expect(screen.getByText(/Any conversation works/)).toBeVisible()
+    expect(screen.getByText(/Do not use Orca's fast-response composer/)).toBeVisible()
+    expect(screen.queryByLabelText('Instance ID')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Copy validation code' }))
+    expect(window.api.ui.writeClipboardText).toHaveBeenCalledWith(validationCode)
+    await user.click(screen.getAllByRole('button', { name: 'Close' })[0]!)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(onCancelListeningValidation).not.toHaveBeenCalled()
+
+    rerender(
+      dialog({
+        open: false,
+        status: technicalStatus(awaitingValidation),
+        onOpenChange,
+        onCancelListeningValidation
+      })
+    )
+    rerender(
+      dialog({
+        status: technicalStatus(awaitingValidation),
+        onOpenChange,
+        onCancelListeningValidation
+      })
+    )
+    expect(await screen.findByText(validationCode)).toBeVisible()
+  })
+
+  it('renders a redacted failed validation as an alert', async () => {
+    const failed: ZApiListeningValidationSnapshot = {
+      state: 'failed',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: {
+        code: 'message_persistence_failed',
+        message: 'Orca could not persist the validation callback.',
+        field: null
+      }
+    }
+    render(dialog({ status: technicalStatus(failed) }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Orca could not persist the validation callback.'
+    )
+    expect(document.body.textContent).not.toContain('conversationId')
+    expect(document.body.textContent).not.toContain('phone')
+  })
+
+  it('cancels only the validation and returns to the configured form', async () => {
+    const user = userEvent.setup()
+    const cancelled: ZApiListeningValidationSnapshot = {
+      ...awaitingValidation,
+      state: 'cancelled',
+      code: null,
+      remainingMs: 0
+    }
+    const onCancelListeningValidation = vi.fn(async () => cancelled)
+    const { rerender } = render(
+      dialog({
+        status: technicalStatus(awaitingValidation),
+        onCancelListeningValidation
+      })
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Cancel validation' }))
+    await waitFor(() => expect(onCancelListeningValidation).toHaveBeenCalledWith(attemptId))
+    rerender(
+      dialog({
+        status: technicalStatus(cancelled),
+        onCancelListeningValidation
+      })
+    )
+    expect(screen.getByLabelText('Instance ID')).toHaveValue('active-instance')
+    expect(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL')).toHaveValue(
+      'https://hooks.example.test'
+    )
+    expect(screen.getByRole('button', { name: 'Validate listening' })).toBeVisible()
+  })
+
+  it('generates a new code after expiry and presents confirmed completion', async () => {
+    const user = userEvent.setup()
+    const expired: ZApiListeningValidationSnapshot = {
+      ...awaitingValidation,
+      state: 'expired',
+      code: null,
+      remainingMs: 0
+    }
+    const nextAwaiting: ZApiListeningValidationSnapshot = {
+      ...awaitingValidation,
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      code: nextValidationCode,
+      remainingMs: 180_000
+    }
+    const confirmed: ZApiListeningValidationSnapshot = {
+      ...nextAwaiting,
+      state: 'confirmed',
+      code: null,
+      remainingMs: 0,
+      confirmedAt: '2026-08-09T00:01:00.000Z'
+    }
+    const onStartListeningValidation = vi.fn(async () => nextAwaiting)
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      dialog({
+        status: technicalStatus(expired),
+        onOpenChange,
+        onStartListeningValidation
+      })
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Generate a new code' }))
+    await waitFor(() => expect(onStartListeningValidation).toHaveBeenCalledOnce())
+    rerender(
+      dialog({
+        status: technicalStatus(nextAwaiting),
+        onOpenChange,
+        onStartListeningValidation
+      })
+    )
+    expect(await screen.findByText(nextValidationCode)).toBeVisible()
+    expect(screen.queryByText(validationCode)).toBeNull()
+
+    rerender(
+      dialog({
+        status: technicalStatus(confirmed),
+        onOpenChange,
+        onStartListeningValidation
+      })
+    )
+    expect(await screen.findByText('WhatsApp listening confirmed')).toBeVisible()
+    expect(screen.getByText(/Confirmed at/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('reveals and validates a custom port before preparing', async () => {
