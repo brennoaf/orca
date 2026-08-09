@@ -276,11 +276,13 @@ vi.mock('./z-api-communication-integration', () => ({
     ingressPrepared: false,
     listenPort: null,
     localTunnelTarget: null,
+    publicWebhookBaseUrl: null,
     webhooksConfigured: false,
     lastErrorCode: null
   })),
   listZApiConversations: vi.fn(),
   listZApiMessages: vi.fn(),
+  discardPreparedZApiIngress: vi.fn(),
   prepareZApiIngress: vi.fn(),
   removeZApiCommunicationIntegration: vi.fn(async () => ({ ok: true })),
   saveAndConfigureZApi: vi.fn(),

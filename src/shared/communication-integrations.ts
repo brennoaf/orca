@@ -45,6 +45,7 @@ export type CommunicationIntegrationErrorCode =
   | 'invalid_response'
   | 'webhook_state_conflict'
   | 'receiver_unavailable'
+  | 'active_ingress_locked'
   | 'webhook_challenge_failed'
   | 'webhook_restore_failed'
   | 'ambiguous_send'
@@ -119,6 +120,7 @@ export type ZApiCommunicationIntegrationStatus = {
   ingressPrepared: boolean
   listenPort: number | null
   localTunnelTarget: string | null
+  publicWebhookBaseUrl: string | null
   webhooksConfigured: boolean
   lastErrorCode: CommunicationIntegrationErrorCode | null
 }

@@ -23,6 +23,7 @@ import * as SlackStore from './slack-communication-credential-store'
 import { probeSlackCommunicationIntegration } from './slack-communication-probe'
 import * as ZApiStore from './z-api-communication-credential-store'
 import {
+  discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
   listZApiMessages,
@@ -287,6 +288,7 @@ export function testCommunicationIntegration(provider: CommunicationProviderId) 
 }
 
 export {
+  discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
   listZApiMessages,

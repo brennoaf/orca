@@ -29,6 +29,7 @@ export type ZApiTransactionErrorCode =
   | 'not_configured'
   | 'provider_unavailable'
   | 'receiver_unavailable'
+  | 'active_ingress_locked'
   | 'webhook_challenge_failed'
   | 'webhook_state_conflict'
   | 'webhook_restore_failed'

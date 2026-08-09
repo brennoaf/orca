@@ -39,6 +39,7 @@ const TRANSACTION_ERROR_MESSAGES: Record<ZApiTransactionErrorCode, string> = {
   not_configured: 'Z-API is not configured.',
   provider_unavailable: 'Z-API is unavailable.',
   receiver_unavailable: 'The Z-API webhook receiver is unavailable.',
+  active_ingress_locked: 'Remove the active Z-API integration before changing its local port.',
   webhook_challenge_failed: 'The public webhook challenge failed.',
   webhook_state_conflict: 'The Z-API webhook configuration changed unexpectedly.',
   webhook_restore_failed: 'The previous Z-API webhook configuration could not be restored.',
@@ -179,6 +180,7 @@ export function zApiStatusFromRuntime(
     ingressPrepared: serviceStatus.ingress.prepared,
     listenPort,
     localTunnelTarget: listenPort === null ? null : `http://127.0.0.1:${listenPort}`,
+    publicWebhookBaseUrl: configuration?.publicWebhookBaseUrl ?? null,
     webhooksConfigured: serviceStatus.ingress.webhooksVerified,
     lastErrorCode: serviceStatus.lastErrorCode
   }

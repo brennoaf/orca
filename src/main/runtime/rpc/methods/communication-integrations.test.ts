@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   clear: vi.fn<(provider: unknown) => Promise<unknown>>(async () => ({ ok: true })),
   test: vi.fn<(provider: unknown) => Promise<unknown>>(async () => ({ ok: true })),
   zApiStatus: vi.fn(async () => ({})),
+  zApiDiscard: vi.fn(async () => ({})),
   zApiPrepare: vi.fn(async () => ({})),
   zApiSave: vi.fn(async () => ({})),
   zApiConversations: vi.fn(async () => ({})),
@@ -30,6 +31,7 @@ vi.mock('../../../messaging/communication-integration-registry', () => ({
   clearCommunicationIntegration: mocks.clear,
   testCommunicationIntegration: mocks.test,
   getZApiCommunicationIntegrationStatus: mocks.zApiStatus,
+  discardPreparedZApiIngress: mocks.zApiDiscard,
   prepareZApiIngress: mocks.zApiPrepare,
   saveAndConfigureZApi: mocks.zApiSave,
   listZApiConversations: mocks.zApiConversations,
@@ -54,6 +56,7 @@ describe('communication integration RPC methods', () => {
     mocks.save.mockClear()
     mocks.clear.mockClear()
     mocks.test.mockClear()
+    mocks.zApiDiscard.mockClear()
     mocks.zApiPrepare.mockClear()
     mocks.zApiSave.mockClear()
   })
@@ -65,6 +68,7 @@ describe('communication integration RPC methods', () => {
       'communicationIntegrations.clear',
       'communicationIntegrations.test',
       'communicationIntegrations.zApi.prepareIngress',
+      'communicationIntegrations.zApi.discardPreparedIngress',
       'communicationIntegrations.zApi.saveAndConfigure',
       'communicationIntegrations.zApi.getStatus',
       'communicationIntegrations.zApi.listConversations',
@@ -72,7 +76,7 @@ describe('communication integration RPC methods', () => {
       'communicationIntegrations.zApi.sendReply',
       'communicationIntegrations.zApi.remove'
     ])
-    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(11)
+    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(12)
     const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
     expect(indexSource.match(/\.\.\.COMMUNICATION_INTEGRATION_METHODS/g)).toHaveLength(1)
   })
@@ -195,6 +199,13 @@ describe('communication integration RPC methods', () => {
 
     expect(mocks.zApiPrepare).toHaveBeenCalledWith(0)
     expect(mocks.zApiSave).toHaveBeenCalledWith(expect.objectContaining({ listenPort: 4321 }))
+  })
+
+  it('uses null params when discarding an uncommitted Z-API receiver', async () => {
+    const candidate = method('communicationIntegrations.zApi.discardPreparedIngress')
+    expect(candidate.params).toBeNull()
+    await candidate.handler(undefined, {} as RpcContext)
+    expect(mocks.zApiDiscard).toHaveBeenCalledOnce()
   })
 
   it('rejects every method for paired and runtime clients before delegation', async () => {

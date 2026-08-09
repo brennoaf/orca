@@ -210,6 +210,66 @@ describe('ZApiTransactionService', () => {
     })
   })
 
+  it('discards an uncommitted ingress before binding another port', async () => {
+    const value = fixture()
+    vi.mocked(value.receiver.start)
+      .mockResolvedValueOnce({
+        host: '127.0.0.1',
+        port: 32123,
+        path: '/orca/z-api/secret-path'
+      })
+      .mockResolvedValueOnce({
+        host: '127.0.0.1',
+        port: 32124,
+        path: '/orca/z-api/secret-path'
+      })
+
+    await value.service.prepareIngress(0)
+    await expect(value.service.discardPreparedIngress()).resolves.toMatchObject({
+      configured: false,
+      ingress: { prepared: false, listenPort: null }
+    })
+    await expect(value.service.prepareIngress(32124)).resolves.toEqual({
+      listenPort: 32124,
+      localTunnelTarget: 'http://127.0.0.1:32124'
+    })
+
+    expect(value.receiver.stop).toHaveBeenCalledOnce()
+    expect(value.receiver.start).toHaveBeenCalledTimes(2)
+  })
+
+  it('never discards the receiver owned by an active configuration', async () => {
+    const value = fixture(activeJournal())
+    await value.service.recover()
+
+    await expect(value.service.discardPreparedIngress()).rejects.toMatchObject({
+      code: 'active_ingress_locked'
+    })
+    expect(value.receiver.start).toHaveBeenCalledOnce()
+    expect(value.receiver.stop).not.toHaveBeenCalled()
+    expect(value.state()).toEqual(activeJournal())
+  })
+
+  it('preserves pending repair state when discard is requested', async () => {
+    const initial: ZApiTransactionJournalState = {
+      version: 1,
+      provider: 'z-api',
+      active: null,
+      pending: {
+        phase: 'repair_required',
+        configuration: configuration(),
+        rollbackWebhookState: previous
+      }
+    }
+    const value = fixture(initial)
+
+    await expect(value.service.discardPreparedIngress()).rejects.toMatchObject({
+      code: 'webhook_restore_failed'
+    })
+    expect(value.receiver.stop).not.toHaveBeenCalled()
+    expect(value.state()).toEqual(initial)
+  })
+
   it('single-flights concurrent ephemeral ingress preparation', async () => {
     const value = fixture()
     const startup = deferred<{

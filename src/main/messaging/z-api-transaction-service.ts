@@ -53,6 +53,27 @@ export class ZApiTransactionService {
     return this.lock.run(() => this.ingress.stop(this.status))
   }
 
+  discardPreparedIngress(): Promise<ZApiTransactionStatus> {
+    return this.lock.run(async () => {
+      const journal = this.dependencies.journal.read()
+      if (journal.active) {
+        throw new ZApiTransactionError(
+          'active_ingress_locked',
+          'Remove the active Z-API integration before changing its local port.'
+        )
+      }
+      if (journal.pending) {
+        throw new ZApiTransactionError(
+          'webhook_restore_failed',
+          'Resolve the pending Z-API webhook repair before changing its local port.'
+        )
+      }
+      await this.ingress.stop(this.status)
+      this.status.lastErrorCode = null
+      return this.getStatus()
+    })
+  }
+
   async saveAndConfigure(params: ZApiSaveAndConfigureParams): Promise<ZApiTransactionStatus> {
     return this.lock.run(async () => {
       this.status = await saveAndConfigureZApiTransaction({

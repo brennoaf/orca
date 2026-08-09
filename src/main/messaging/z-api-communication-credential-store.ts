@@ -201,6 +201,7 @@ export function getZApiCommunicationStatus(): ZApiCommunicationIntegrationStatus
     ingressPrepared: false,
     listenPort: null,
     localTunnelTarget: null,
+    publicWebhookBaseUrl: null,
     webhooksConfigured: false,
     lastErrorCode: stored?.lastError?.code ?? null
   }
@@ -233,6 +234,7 @@ export function emptyZApiCommunicationStatus(
     ingressPrepared: false,
     listenPort: null,
     localTunnelTarget: null,
+    publicWebhookBaseUrl: null,
     webhooksConfigured: false,
     lastErrorCode: lastError?.code ?? null
   }

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   clearLegacy: vi.fn(),
   closeStore: vi.fn(),
   collectGarbage: vi.fn(),
+  discardPreparedIngress: vi.fn(),
   factory: vi.fn(),
   getStatus: vi.fn(),
   getReplyDestination: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock('./z-api-communication-credential-store', () => ({
     ingressPrepared: false,
     listenPort: null,
     localTunnelTarget: null,
+    publicWebhookBaseUrl: null,
     webhooksConfigured: false,
     lastErrorCode: lastError?.code ?? null
   })),
@@ -172,10 +174,12 @@ describe('Z-API communication integration', () => {
       listenPort: 4321,
       localTunnelTarget: 'http://127.0.0.1:4321'
     })
+    mocks.discardPreparedIngress.mockResolvedValue(mocks.serviceStatus)
     mocks.saveAndConfigure.mockResolvedValue(mocks.serviceStatus)
     mocks.remove.mockResolvedValue(undefined)
     mocks.stopIngress.mockResolvedValue(undefined)
     mocks.factory.mockReturnValue({
+      discardPreparedIngress: mocks.discardPreparedIngress,
       getStatus: mocks.getStatus,
       prepareIngress: mocks.prepareIngress,
       recover: mocks.recover,
@@ -242,6 +246,8 @@ describe('Z-API communication integration', () => {
 
     expect(status.instanceId).toBe('active-instance')
     expect(status.endpoint.baseUrl).toBe('https://active.example.com')
+    expect(status.publicWebhookBaseUrl).toBe('https://hook.example.com')
+    expect(JSON.stringify(status)).not.toContain('/orca/z-api/secret')
     expect(JSON.stringify(conversations)).not.toContain('5511999999999')
     expect(result.ok).toBe(true)
     expect(mocks.prepareIngress).toHaveBeenNthCalledWith(1, 0)
@@ -253,6 +259,21 @@ describe('Z-API communication integration', () => {
       })
     )
     expect(mocks.clearLegacy).toHaveBeenCalledOnce()
+  })
+
+  it('discards an uncommitted receiver before preparing another port', async () => {
+    const api = await integration()
+    await api.prepareZApiIngress(0)
+    await expect(api.discardPreparedZApiIngress()).resolves.toMatchObject({ ok: true })
+    mocks.prepareIngress.mockResolvedValueOnce({
+      listenPort: 5432,
+      localTunnelTarget: 'http://127.0.0.1:5432'
+    })
+    await api.prepareZApiIngress(5432)
+
+    expect(mocks.discardPreparedIngress).toHaveBeenCalledOnce()
+    expect(mocks.prepareIngress).toHaveBeenNthCalledWith(1, 0)
+    expect(mocks.prepareIngress).toHaveBeenNthCalledWith(2, 5432)
   })
 
   it('uses legacy credentials once when no active journal exists', async () => {

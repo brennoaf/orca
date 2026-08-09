@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   clearCommunicationIntegration,
+  discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
   getCommunicationIntegrationStatuses,
   listZApiConversations,
@@ -151,6 +152,14 @@ export const COMMUNICATION_INTEGRATION_METHODS: RpcMethod[] = [
     handler: (params, ctx) => {
       assertLocalWindow(ctx)
       return prepareZApiIngress(params.listenPort)
+    }
+  }),
+  defineMethod({
+    name: 'communicationIntegrations.zApi.discardPreparedIngress',
+    params: null,
+    handler: (_params, ctx) => {
+      assertLocalWindow(ctx)
+      return discardPreparedZApiIngress()
     }
   }),
   defineMethod({

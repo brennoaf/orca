@@ -50,6 +50,15 @@ export async function prepareZApiIngress(
   return runZApiCommunicationOperation((runtime) => runtime.service.prepareIngress(listenPort))
 }
 
+export async function discardPreparedZApiIngress(): Promise<
+  ZApiCommunicationOperationResult<undefined>
+> {
+  return runZApiCommunicationOperation(async (runtime) => {
+    await runtime.service.discardPreparedIngress()
+    return undefined
+  })
+}
+
 export async function saveAndConfigureZApi(
   input: SaveAndConfigureZApiParams
 ): Promise<ZApiCommunicationOperationResult<undefined>> {
