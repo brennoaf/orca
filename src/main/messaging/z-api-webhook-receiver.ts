@@ -1,5 +1,5 @@
-import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { COMMUNICATION_WEBHOOK_CHALLENGE_MARKER } from './communication-webhook-challenge'
 import { routeZApiCallback, ZApiCallbackError } from './z-api-message-normalizer'
 import type { MessageStore } from './message-store'
 
@@ -87,10 +87,8 @@ function requestPathname(req: IncomingMessage): string | null {
   }
 }
 
-function sameNonce(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left)
-  const rightBuffer = Buffer.from(right)
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+function hasChallengeMarker(req: IncomingMessage): boolean {
+  return req.headers['x-orca-webhook-challenge'] === COMMUNICATION_WEBHOOK_CHALLENGE_MARKER
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -226,7 +224,7 @@ export class ZApiWebhookReceiver {
       return
     }
     if (req.method === 'HEAD') {
-      response(res, 204)
+      response(res, hasChallengeMarker(req) ? 204 : 403)
       return
     }
     if (req.method === 'GET') {
@@ -282,6 +280,10 @@ export class ZApiWebhookReceiver {
   }
 
   private handleChallenge(req: IncomingMessage, res: ServerResponse): void {
+    if (!hasChallengeMarker(req)) {
+      response(res, 403)
+      return
+    }
     const challenge = this.pendingChallenge
     if (!challenge) {
       response(res, 403)
@@ -290,11 +292,6 @@ export class ZApiWebhookReceiver {
     if ((this.options.now ?? Date.now)() >= challenge.expiresAt) {
       this.pendingChallenge = null
       response(res, 410)
-      return
-    }
-    const presented = req.headers['x-orca-webhook-challenge']
-    if (typeof presented !== 'string' || !sameNonce(challenge.nonce, presented)) {
-      response(res, 403)
       return
     }
     this.pendingChallenge = null

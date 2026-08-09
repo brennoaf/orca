@@ -7,6 +7,7 @@ import {
 } from './communication-api-endpoint'
 
 const challengeNonceSchema = z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u)
+export const COMMUNICATION_WEBHOOK_CHALLENGE_MARKER = 'orca-v1'
 
 export type CommunicationWebhookChallengeParams = {
   publicWebhookUrl: string
@@ -35,7 +36,7 @@ export async function verifyCommunicationWebhookChallenge(
       defaultBaseUrl: requestEndpoint.baseUrl,
       method: 'GET',
       path: webhookUrl.pathname,
-      headers: { 'X-Orca-Webhook-Challenge': nonce.data },
+      headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER },
       responseType: 'text'
     },
     dependencies

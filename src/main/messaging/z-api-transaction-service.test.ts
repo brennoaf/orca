@@ -142,6 +142,9 @@ function fixture(
     markOutboundFailed: vi.fn()
   }
   const createClient = vi.fn(() => client)
+  const verifyChallenge = vi.fn(async () => {
+    calls.push('verifyChallenge')
+  })
   const service = new ZApiTransactionService({
     journal: {
       read: () => structuredClone(state),
@@ -156,9 +159,7 @@ function fixture(
     messageStore,
     createReceiver: () => receiver,
     createClient,
-    verifyChallenge: async () => {
-      calls.push('verifyChallenge')
-    },
+    verifyChallenge,
     now: () => 1_786_300_000_000,
     randomPath: () => '/orca/z-api/secret-path',
     randomNonce: () => 'nonce_1234567890123456',
@@ -172,6 +173,7 @@ function fixture(
     receiver,
     client,
     createClient,
+    verifyChallenge,
     messageStore
   }
 }
@@ -321,6 +323,29 @@ describe('ZApiTransactionService', () => {
     expect(value.state().pending).toBeNull()
     expect(JSON.stringify(value.service.getStatus())).not.toContain('secret')
     expect(JSON.stringify(value.service.getStatus())).not.toContain('hooks.example.com')
+  })
+
+  it('does not become ready until the public reachability proof completes', async () => {
+    const value = fixture()
+    const proof = deferred<void>()
+    value.verifyChallenge.mockImplementationOnce(() => proof.promise)
+    const save = value.service.saveAndConfigure(await prepare(value))
+    await vi.waitFor(() => expect(value.verifyChallenge).toHaveBeenCalledTimes(1))
+    expect(value.service.getStatus()).toMatchObject({
+      verified: false,
+      sendReady: false,
+      receiveReady: false,
+      ingress: { challengeVerified: false, webhooksVerified: false }
+    })
+    expect(value.client.clearWebhookFilters).not.toHaveBeenCalled()
+    expect(value.client.setEveryWebhooks).not.toHaveBeenCalled()
+    proof.resolve(undefined)
+    await expect(save).resolves.toMatchObject({
+      verified: true,
+      sendReady: true,
+      receiveReady: true,
+      ingress: { challengeVerified: true, webhooksVerified: true }
+    })
   })
 
   it('fails disconnected before challenge, filters, or callback mutation', async () => {

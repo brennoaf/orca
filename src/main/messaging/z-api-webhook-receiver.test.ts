@@ -1,5 +1,14 @@
 import { request as httpRequest } from 'node:http'
+import type { RequestOptions } from 'node:https'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type {
+  CommunicationApiRequestDependencies,
+  CommunicationHttpsRequester
+} from './communication-api-endpoint'
+import {
+  COMMUNICATION_WEBHOOK_CHALLENGE_MARKER,
+  verifyCommunicationWebhookChallenge
+} from './communication-webhook-challenge'
 import { ZApiWebhookReceiver } from './z-api-webhook-receiver'
 import type { NormalizedZApiMessage } from './z-api-message-normalizer'
 
@@ -70,9 +79,10 @@ describe('ZApiWebhookReceiver', () => {
     expect(first).toEqual(second)
     expect(first).toMatchObject({ host: '127.0.0.1', path: '/webhook/secret-path' })
     expect(
-      await fetch(`http://127.0.0.1:${first.port}${first.path}`, { method: 'HEAD' }).then(
-        (response) => response.status
-      )
+      await fetch(`http://127.0.0.1:${first.port}${first.path}`, {
+        method: 'HEAD',
+        headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER }
+      }).then((response) => response.status)
     ).toBe(204)
     await expect(Promise.all([value.stop(), value.stop()])).resolves.toEqual([undefined, undefined])
   })
@@ -182,14 +192,21 @@ describe('ZApiWebhookReceiver', () => {
     const url = `http://127.0.0.1:${endpoint.port}${endpoint.path}`
     expect(await fetch(url).then((response) => response.status)).toBe(403)
     value.armChallenge('challenge_nonce_123456', 10)
-    expect(await fetch(url, { method: 'HEAD' }).then((response) => response.status)).toBe(204)
+    expect(await fetch(url, { method: 'HEAD' }).then((response) => response.status)).toBe(403)
+    expect(await fetch(url).then((response) => response.status)).toBe(403)
     expect(
-      await fetch(url, { headers: { 'X-Orca-Webhook-Challenge': 'wrong_nonce_123456' } }).then(
-        (response) => response.status
-      )
+      await fetch(url, {
+        headers: { 'X-Orca-Webhook-Challenge': 'orca-v0' }
+      }).then((response) => response.status)
     ).toBe(403)
+    expect(
+      await fetch(url, {
+        method: 'HEAD',
+        headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER }
+      }).then((response) => response.status)
+    ).toBe(204)
     const accepted = await fetch(url, {
-      headers: { 'X-Orca-Webhook-Challenge': 'challenge_nonce_123456' }
+      headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER }
     })
     expect(accepted.status).toBe(200)
     expect(accepted.headers.get('content-type')).toBe('text/plain; charset=utf-8')
@@ -199,16 +216,87 @@ describe('ZApiWebhookReceiver', () => {
     expect(await accepted.text()).toBe('challenge_nonce_123456')
     expect(
       await fetch(url, {
-        headers: { 'X-Orca-Webhook-Challenge': 'challenge_nonce_123456' }
+        headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER }
       }).then((response) => response.status)
     ).toBe(403)
     value.armChallenge('challenge_nonce_654321', 10)
     now = 111
     expect(
       await fetch(url, {
-        headers: { 'X-Orca-Webhook-Challenge': 'challenge_nonce_654321' }
+        headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER }
       }).then((response) => response.status)
     ).toBe(410)
+  })
+
+  it('verifies a real receiver through a forwarding proxy only once', async () => {
+    const nonce = 'challenge_nonce_123456'
+    const { value } = receiver()
+    const endpoint = await value.start()
+    const captured: RequestOptions[] = []
+    const requester: CommunicationHttpsRequester = (options, respond) => {
+      captured.push(options)
+      return httpRequest(
+        {
+          hostname: endpoint.host,
+          port: endpoint.port,
+          path: options.path,
+          method: options.method,
+          headers: options.headers
+        },
+        respond
+      )
+    }
+    const dependencies: CommunicationApiRequestDependencies = {
+      resolveDns: async () => [{ address: '104.16.123.96', family: 4 }],
+      request: requester
+    }
+    const params = {
+      publicWebhookUrl: `https://hooks.example.com${endpoint.path}`,
+      nonce
+    }
+    value.armChallenge(nonce)
+    await expect(verifyCommunicationWebhookChallenge(params, dependencies)).resolves.toEqual({
+      verified: true
+    })
+    expect(captured[0]?.headers).toEqual({
+      'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER
+    })
+    expect(JSON.stringify(captured[0])).not.toContain(nonce)
+    await expect(verifyCommunicationWebhookChallenge(params, dependencies)).rejects.toMatchObject({
+      code: 'provider_rejected'
+    })
+  })
+
+  it('allows only one of two concurrent verifier requests to consume the challenge', async () => {
+    const nonce = 'challenge_nonce_123456'
+    const { value } = receiver()
+    const endpoint = await value.start()
+    const requester: CommunicationHttpsRequester = (options, respond) =>
+      httpRequest(
+        {
+          hostname: endpoint.host,
+          port: endpoint.port,
+          path: options.path,
+          method: options.method,
+          headers: options.headers
+        },
+        respond
+      )
+    const dependencies: CommunicationApiRequestDependencies = {
+      resolveDns: async () => [{ address: '104.16.123.96', family: 4 }],
+      request: requester
+    }
+    const params = {
+      publicWebhookUrl: `https://hooks.example.com${endpoint.path}`,
+      nonce
+    }
+    value.armChallenge(nonce)
+    const results = await Promise.allSettled([
+      verifyCommunicationWebhookChallenge(params, dependencies),
+      verifyCommunicationWebhookChallenge(params, dependencies)
+    ])
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1)
   })
 
   it('returns explicit route, method, media-type, payload, and size errors', async () => {

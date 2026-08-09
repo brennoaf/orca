@@ -7,7 +7,10 @@ import type {
   CommunicationHttpsResponse,
   CommunicationHttpsRequester
 } from './communication-api-endpoint'
-import { verifyCommunicationWebhookChallenge } from './communication-webhook-challenge'
+import {
+  COMMUNICATION_WEBHOOK_CHALLENGE_MARKER,
+  verifyCommunicationWebhookChallenge
+} from './communication-webhook-challenge'
 
 const VALID_NONCE = 'nonce_1234567890'
 
@@ -67,8 +70,40 @@ function transport(
   }
 }
 
+function reflectingTransport(): {
+  dependencies: CommunicationApiRequestDependencies
+  options: () => RequestOptions
+} {
+  let captured: RequestOptions | null = null
+  const requester: CommunicationHttpsRequester = (options, respond) => {
+    captured = options
+    const request = new FakeRequest()
+    queueMicrotask(() => {
+      const headers = Array.isArray(options.headers) ? undefined : options.headers
+      const reflected = headers?.['X-Orca-Webhook-Challenge']
+      const response = new FakeResponse(200, { 'content-type': 'text/plain' })
+      respond(response as unknown as CommunicationHttpsResponse)
+      response.emit('data', Buffer.from(typeof reflected === 'string' ? reflected : '', 'utf8'))
+      response.emit('end')
+    })
+    return request as unknown as CommunicationHttpsRequest
+  }
+  return {
+    dependencies: {
+      resolveDns: async () => [{ address: '104.16.123.96', family: 4 }],
+      request: requester
+    },
+    options: () => {
+      if (!captured) {
+        throw new Error('Challenge request options were not captured.')
+      }
+      return captured
+    }
+  }
+}
+
 describe('verifyCommunicationWebhookChallenge', () => {
-  it('verifies an exact public response using only the Orca challenge header', async () => {
+  it('verifies an exact public response without sending the expected value', async () => {
     const nonce = VALID_NONCE
     const fixture = transport(200, nonce)
     await expect(
@@ -85,12 +120,26 @@ describe('verifyCommunicationWebhookChallenge', () => {
       hostname: 'hooks.example.com',
       method: 'GET',
       path: '/orca/webhook',
-      headers: { 'X-Orca-Webhook-Challenge': nonce },
+      headers: { 'X-Orca-Webhook-Challenge': COMMUNICATION_WEBHOOK_CHALLENGE_MARKER },
       servername: 'hooks.example.com'
     })
-    expect(Object.keys(fixture.options().headers ?? {})).toEqual(['X-Orca-Webhook-Challenge'])
+    expect(JSON.stringify(fixture.options())).not.toContain(nonce)
     expect(fixture.request.write).not.toHaveBeenCalled()
     expect(fixture.request.end).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a remote endpoint that only reflects the request', async () => {
+    const fixture = reflectingTransport()
+    await expect(
+      verifyCommunicationWebhookChallenge(
+        {
+          publicWebhookUrl: 'https://hooks.example.com/orca/webhook',
+          nonce: VALID_NONCE
+        },
+        fixture.dependencies
+      )
+    ).rejects.toMatchObject({ code: 'invalid_response' })
+    expect(JSON.stringify(fixture.options())).not.toContain(VALID_NONCE)
   })
 
   it('rejects a challenge mismatch without exposing either response', async () => {
@@ -129,6 +178,26 @@ describe('verifyCommunicationWebhookChallenge', () => {
       )
     ).rejects.toMatchObject({ code: 'redirect_rejected' })
     expect(fixture.request.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains the bounded request timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const request = new FakeRequest()
+      const pending = verifyCommunicationWebhookChallenge(
+        { publicWebhookUrl: 'https://hooks.example.com/webhook', nonce: VALID_NONCE },
+        {
+          resolveDns: async () => [{ address: '104.16.123.96', family: 4 }],
+          request: () => request as unknown as CommunicationHttpsRequest
+        }
+      )
+      const expectation = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expectation
+      expect(request.destroy).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([
