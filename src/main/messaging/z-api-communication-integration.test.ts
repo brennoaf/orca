@@ -87,6 +87,7 @@ vi.mock('./z-api-communication-credential-store', () => ({
     listenPort: null,
     localTunnelTarget: null,
     publicWebhookBaseUrl: null,
+    publicIngressVerified: false,
     webhooksConfigured: false,
     lastErrorCode: lastError?.code ?? null
   })),
@@ -208,6 +209,19 @@ describe('Z-API communication integration', () => {
     expect(mocks.collectGarbage.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.getStatus.mock.invocationCallOrder[0] ?? 0
     )
+  })
+
+  it('exposes public ingress verification independently from webhook verification', async () => {
+    mocks.serviceStatus.ingress.challengeVerified = true
+    mocks.serviceStatus.ingress.webhooksVerified = false
+    const api = await integration()
+
+    const status = await api.getZApiCommunicationIntegrationStatus()
+
+    expect(status.publicIngressVerified).toBe(true)
+    expect(status.webhooksConfigured).toBe(false)
+    expect(JSON.stringify(status)).not.toContain('challengeVerified')
+    expect(JSON.stringify(status)).not.toContain('secretPath')
   })
 
   it('uses active journal credentials instead of divergent legacy credentials', async () => {

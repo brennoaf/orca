@@ -1,18 +1,10 @@
 import { useState } from 'react'
-import {
-  AlertCircle,
-  CheckCircle2,
-  Hash,
-  Loader2,
-  MessageCircle,
-  MessageSquare
-} from 'lucide-react'
+import { AlertCircle, CheckCircle2, Hash, Loader2, MessageSquare } from 'lucide-react'
 import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId,
   DiscordCommunicationIntegrationStatus,
-  SlackCommunicationIntegrationStatus,
-  ZApiCommunicationIntegrationStatus
+  SlackCommunicationIntegrationStatus
 } from '../../../../shared/communication-integrations'
 import { COMMUNICATION_INTEGRATION_SECTION_IDS } from '../../../../shared/communication-integrations'
 import { DiscordVoiceOverlaySwitch } from '@/components/discord-voice/DiscordVoiceOverlaySwitch'
@@ -20,8 +12,7 @@ import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import {
   DiscordCommunicationIntegrationDialog,
-  SlackCommunicationIntegrationDialog,
-  ZApiCommunicationIntegrationDialog
+  SlackCommunicationIntegrationDialog
 } from './CommunicationIntegrationDialog'
 import {
   IntegrationCardDetails,
@@ -34,6 +25,7 @@ import {
   type CommunicationIntegrationTestResult
 } from './use-communication-integration-card-actions'
 import type { CommunicationIntegrationPendingOperation } from './CommunicationIntegrationDialogFields'
+import { ZApiCommunicationIntegrationCard } from './ZApiCommunicationIntegrationCard'
 
 type CardPresentation = {
   label: string
@@ -288,66 +280,6 @@ function SlackCommunicationIntegrationCard({
         </p>
       </IntegrationCardDetails>
       <SlackCommunicationIntegrationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        status={status}
-        pending={actions.pending}
-        error={actions.error}
-        onSave={actions.save}
-        onClear={actions.clear}
-      />
-    </IntegrationCardShell>
-  )
-}
-
-function ZApiCommunicationIntegrationCard({
-  status,
-  loading,
-  loadError
-}: CommonCardProps & { status: ZApiCommunicationIntegrationStatus | null }): React.JSX.Element {
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const actions = useCommunicationIntegrationCardActions('z-api', 'Z-API')
-  const presentation = getCommunicationIntegrationCardPresentation(
-    'z-api',
-    status,
-    loading,
-    loadError
-  )
-  const configured = status?.readiness.configured ?? false
-  const statusError = getStatusError(status, loadError)
-
-  return (
-    <IntegrationCardShell
-      settingsSectionId={COMMUNICATION_INTEGRATION_SECTION_IDS['z-api']}
-      icon={<MessageCircle className="size-5" />}
-      name="Z-API"
-      description={translate(
-        'communicationIntegrations.zApi.cardDescription',
-        'Z-API credentials and endpoint for WhatsApp transport.'
-      )}
-      checking={presentation.checking}
-      statusLabel={presentation.label}
-      statusTone={presentation.tone}
-      actions={
-        <CardActions
-          configured={configured}
-          pending={actions.pending}
-          onConfigure={() => setDialogOpen(true)}
-          onTest={() => void actions.test()}
-        />
-      }
-    >
-      <IntegrationCardDetails>
-        <StatusError message={statusError} />
-        <TestResultLine result={actions.testResult} duplicateError={statusError} />
-        <p className="text-xs text-muted-foreground">
-          {translate(
-            'communicationIntegrations.zApi.relayRequired',
-            'Receiving WhatsApp messages requires an external public HTTPS relay. Orca does not provide one yet.'
-          )}
-        </p>
-      </IntegrationCardDetails>
-      <ZApiCommunicationIntegrationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         status={status}

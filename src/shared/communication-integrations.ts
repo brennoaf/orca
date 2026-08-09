@@ -121,6 +121,7 @@ export type ZApiCommunicationIntegrationStatus = {
   listenPort: number | null
   localTunnelTarget: string | null
   publicWebhookBaseUrl: string | null
+  publicIngressVerified: boolean
   webhooksConfigured: boolean
   lastErrorCode: CommunicationIntegrationErrorCode | null
 }

@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId,
-  SlackCommunicationIntegrationStatus
+  SlackCommunicationIntegrationStatus,
+  ZApiCommunicationIntegrationStatus
 } from '../../../../shared/communication-integrations'
 import { ConfirmationDialogContext } from '@/components/confirmation-dialog-context'
 import { CommunicationIntegrationsSection } from './CommunicationIntegrationsSection'
@@ -21,11 +22,21 @@ type MockAction = {
   test: ReturnType<typeof vi.fn>
 }
 
+type MockZApiAction = {
+  pending: 'save' | 'clear' | 'prepare' | 'discard' | null
+  error: string | null
+  prepare: ReturnType<typeof vi.fn>
+  discardPrepared: ReturnType<typeof vi.fn>
+  saveAndConfigure: ReturnType<typeof vi.fn>
+  remove: ReturnType<typeof vi.fn>
+}
+
 const mocks = vi.hoisted(() => ({
   statuses: [] as CommunicationIntegrationStatus[],
   loading: false,
   error: null as string | null,
-  actions: {} as Record<CommunicationProviderId, MockAction>
+  actions: {} as Record<CommunicationProviderId, MockAction>,
+  zApiAction: {} as MockZApiAction
 }))
 
 vi.mock('./use-communication-integration-statuses', () => ({
@@ -44,6 +55,10 @@ vi.mock('./use-communication-integration-card-actions', () => ({
     mocks.actions[provider]
 }))
 
+vi.mock('./use-z-api-transaction-actions', () => ({
+  useZApiTransactionActions: () => mocks.zApiAction
+}))
+
 vi.mock('@/components/discord-voice/DiscordVoiceOverlaySwitch', () => ({
   DiscordVoiceOverlaySwitch: () => <button type="button">Separate overlay</button>
 }))
@@ -56,6 +71,17 @@ function createAction(): MockAction {
     save: vi.fn(),
     clear: vi.fn(),
     test: vi.fn()
+  }
+}
+
+function createZApiAction(): MockZApiAction {
+  return {
+    pending: null,
+    error: null,
+    prepare: vi.fn(),
+    discardPrepared: vi.fn(),
+    saveAndConfigure: vi.fn(),
+    remove: vi.fn()
   }
 }
 
@@ -83,6 +109,37 @@ function createSlackStatus(
   }
 }
 
+function createZApiStatus(): ZApiCommunicationIntegrationStatus {
+  return {
+    provider: 'z-api',
+    endpoint: {
+      baseUrl: 'https://api.z-api.io',
+      authority: 'api.z-api.io',
+      trust: { kind: 'default' }
+    },
+    readiness: {
+      configured: true,
+      verified: true,
+      sendReady: true,
+      receiveReady: true,
+      verifiedAt: '2026-08-09T00:00:00.000Z',
+      lastError: null
+    },
+    instanceId: 'instance-id',
+    instanceTokenStored: true,
+    clientTokenStored: true,
+    instanceConnected: true,
+    smartphoneConnected: true,
+    ingressPrepared: true,
+    listenPort: 43210,
+    localTunnelTarget: 'http://127.0.0.1:43210',
+    publicWebhookBaseUrl: 'https://hooks.example.test',
+    publicIngressVerified: true,
+    webhooksConfigured: true,
+    lastErrorCode: null
+  }
+}
+
 const rejectConfirmation = async (): Promise<boolean> => false
 
 function renderSection(): void {
@@ -103,6 +160,7 @@ describe('CommunicationIntegrationsSection', () => {
       slack: createAction(),
       'z-api': createAction()
     }
+    mocks.zApiAction = createZApiAction()
   })
 
   afterEach(() => cleanup())
@@ -118,11 +176,42 @@ describe('CommunicationIntegrationsSection', () => {
       'integrations-communications-z-api'
     ])
     expect(screen.getByRole('button', { name: 'Separate overlay' })).toBeVisible()
-    expect(
-      screen.getByText(/Receiving WhatsApp messages requires an external public HTTPS relay/)
-    ).toBeVisible()
+    expect(screen.getByText('Local receiver')).toBeVisible()
+    expect(screen.getByText('Public ingress')).toBeVisible()
+    expect(screen.getByText('Webhooks')).toBeVisible()
     expect(document.body.textContent).not.toContain('xapp-')
     expect(document.body.textContent).not.toContain('xoxp-')
+  })
+
+  it('shows Z-API as ready only when sending and receiving are ready', () => {
+    mocks.statuses = [createZApiStatus()]
+    renderSection()
+
+    const zApiCard = document.querySelector<HTMLElement>(
+      '[data-settings-section="integrations-communications-z-api"]'
+    )
+    expect(zApiCard).not.toBeNull()
+    expect(within(zApiCard as HTMLElement).getByRole('status')).toHaveTextContent('Ready')
+    expect(within(zApiCard as HTMLElement).queryByRole('button', { name: 'Test' })).toBeNull()
+    expect(
+      within(zApiCard as HTMLElement).getByText('Listening on http://127.0.0.1:43210')
+    ).toBeVisible()
+
+    const degraded = createZApiStatus()
+    degraded.readiness.receiveReady = false
+    degraded.webhooksConfigured = false
+    mocks.statuses = [degraded]
+    cleanup()
+    renderSection()
+
+    const degradedCard = document.querySelector<HTMLElement>(
+      '[data-settings-section="integrations-communications-z-api"]'
+    )
+    expect(within(degradedCard as HTMLElement).getByRole('status')).toHaveTextContent(
+      'Needs attention'
+    )
+    expect(within(degradedCard as HTMLElement).getByText('Verified')).toBeVisible()
+    expect(within(degradedCard as HTMLElement).getByText('Not configured')).toBeVisible()
   })
 
   it('announces loading statuses with text available to assistive technology', () => {
@@ -134,6 +223,12 @@ describe('CommunicationIntegrationsSection', () => {
     for (const status of statuses) {
       expect(status).toHaveTextContent('Checking…')
     }
+    const zApiCard = document.querySelector<HTMLElement>(
+      '[data-settings-section="integrations-communications-z-api"]'
+    )
+    expect(
+      within(zApiCard as HTMLElement).getByRole('button', { name: 'Configure' })
+    ).toBeDisabled()
   })
 
   it('renders a failed Test message exactly once and announces it as an alert', () => {

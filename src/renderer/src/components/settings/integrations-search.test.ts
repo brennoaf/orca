@@ -17,8 +17,12 @@ describe('communications integration search', () => {
     expect(communicationEntries.find((entry) => entry.title.includes('Slack'))?.keywords).toContain(
       'Socket Mode'
     )
-    expect(communicationEntries.find((entry) => entry.title.includes('Z-API'))?.keywords).toContain(
-      'WhatsApp'
+    const zApiKeywords = communicationEntries.find((entry) =>
+      entry.title.includes('Z-API')
+    )?.keywords
+    expect(zApiKeywords).toContain('WhatsApp')
+    expect(zApiKeywords).toEqual(
+      expect.arrayContaining(['webhook', 'receiver', 'tunnel', 'public URL', 'local port'])
     )
     expect(communicationEntries.flatMap((entry) => entry.keywords)).toContain('endpoint')
   })

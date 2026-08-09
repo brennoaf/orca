@@ -2,13 +2,9 @@ import { useEffect, useId, useState } from 'react'
 import type {
   DiscordCommunicationIntegrationStatus,
   SaveCommunicationIntegrationParams,
-  SlackCommunicationIntegrationStatus,
-  ZApiCommunicationIntegrationStatus
+  SlackCommunicationIntegrationStatus
 } from '../../../../shared/communication-integrations'
-import {
-  DEFAULT_SLACK_API_BASE_URL,
-  DEFAULT_Z_API_BASE_URL
-} from '../../../../shared/communication-integrations'
+import { DEFAULT_SLACK_API_BASE_URL } from '../../../../shared/communication-integrations'
 import { Input } from '@/components/ui/input'
 import { translate } from '@/i18n/i18n'
 import {
@@ -208,135 +204,6 @@ export function SlackCommunicationIntegrationDialog({
       <CommunicationIntegrationEndpointFields
         baseUrl={baseUrl}
         defaultBaseUrl={DEFAULT_SLACK_API_BASE_URL}
-        trusted={trusted}
-        disabled={pending !== null}
-        onBaseUrlChange={setBaseUrl}
-        onTrustedChange={setTrusted}
-      />
-    </CommunicationIntegrationDialogFrame>
-  )
-}
-
-export function ZApiCommunicationIntegrationDialog({
-  open,
-  onOpenChange,
-  status,
-  pending,
-  error,
-  onSave,
-  onClear
-}: ProviderDialogProps<ZApiCommunicationIntegrationStatus>): React.JSX.Element {
-  const instanceIdInputId = useId()
-  const instanceTokenInputId = useId()
-  const clientTokenInputId = useId()
-  const [instanceId, setInstanceId] = useState('')
-  const [instanceToken, setInstanceToken] = useState('')
-  const [clientToken, setClientToken] = useState('')
-  const [clearInstanceToken, setClearInstanceToken] = useState(false)
-  const [clearClientToken, setClearClientToken] = useState(false)
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_Z_API_BASE_URL)
-  const [trusted, setTrusted] = useState(false)
-  const authority = getCommunicationEndpointAuthority(baseUrl)
-  const defaultAuthority = getCommunicationEndpointAuthority(DEFAULT_Z_API_BASE_URL)
-  const endpointTrust = getCommunicationEndpointTrust(baseUrl, DEFAULT_Z_API_BASE_URL)
-
-  useEffect(() => {
-    if (open) {
-      setInstanceId(status?.instanceId ?? '')
-      setInstanceToken('')
-      setClientToken('')
-      setClearInstanceToken(false)
-      setClearClientToken(false)
-      setBaseUrl(status?.endpoint.baseUrl ?? DEFAULT_Z_API_BASE_URL)
-      setTrusted(false)
-    }
-  }, [open, status?.endpoint.baseUrl, status?.instanceId])
-
-  useEffect(() => setTrusted(false), [authority])
-
-  const customEndpoint = authority !== null && authority !== defaultAuthority
-  const missingInitialSecrets =
-    (!status?.instanceTokenStored && !instanceToken) || (!status?.clientTokenStored && !clientToken)
-
-  return (
-    <CommunicationIntegrationDialogFrame
-      open={open}
-      onOpenChange={onOpenChange}
-      providerName="Z-API"
-      description={translate(
-        'communicationIntegrations.zApi.dialogDescription',
-        'Store the Z-API instance credentials used for WhatsApp transport.'
-      )}
-      configured={status?.readiness.configured ?? false}
-      pending={pending}
-      saveDisabled={
-        !instanceId.trim() ||
-        endpointTrust === null ||
-        (customEndpoint && !trusted) ||
-        missingInitialSecrets
-      }
-      error={error}
-      onClear={onClear}
-      onSave={() => {
-        if (endpointTrust === null) {
-          return Promise.reject(new Error('The API endpoint is invalid.'))
-        }
-        return onSave({
-          provider: 'z-api',
-          baseUrl,
-          endpointTrust,
-          instanceId: instanceId.trim(),
-          instanceToken: getCommunicationSecretMutation(instanceToken, clearInstanceToken),
-          clientToken: getCommunicationSecretMutation(clientToken, clearClientToken)
-        })
-      }}
-    >
-      <CommunicationIntegrationField
-        id={instanceIdInputId}
-        label={translate('communicationIntegrations.zApi.instanceId', 'Instance ID')}
-        description={translate(
-          'communicationIntegrations.zApi.instanceIdDescription',
-          'The identifier shown for your Z-API instance.'
-        )}
-      >
-        <Input
-          id={instanceIdInputId}
-          value={instanceId}
-          disabled={pending !== null}
-          onChange={(event) => setInstanceId(event.target.value)}
-        />
-      </CommunicationIntegrationField>
-      <CommunicationIntegrationSecretField
-        id={instanceTokenInputId}
-        label={translate('communicationIntegrations.zApi.instanceToken', 'Instance Token')}
-        description={translate(
-          'communicationIntegrations.zApi.instanceTokenDescription',
-          'The token assigned to the Z-API instance.'
-        )}
-        stored={status?.instanceTokenStored ?? false}
-        value={instanceToken}
-        cleared={clearInstanceToken}
-        disabled={pending !== null}
-        onValueChange={setInstanceToken}
-        onClearedChange={setClearInstanceToken}
-      />
-      <CommunicationIntegrationSecretField
-        id={clientTokenInputId}
-        label={translate('communicationIntegrations.zApi.clientToken', 'Client Token')}
-        description={translate(
-          'communicationIntegrations.zApi.clientTokenDescription',
-          'The client security token configured for the instance.'
-        )}
-        stored={status?.clientTokenStored ?? false}
-        value={clientToken}
-        cleared={clearClientToken}
-        disabled={pending !== null}
-        onValueChange={setClientToken}
-        onClearedChange={setClearClientToken}
-      />
-      <CommunicationIntegrationEndpointFields
-        baseUrl={baseUrl}
-        defaultBaseUrl={DEFAULT_Z_API_BASE_URL}
         trusted={trusted}
         disabled={pending !== null}
         onBaseUrlChange={setBaseUrl}

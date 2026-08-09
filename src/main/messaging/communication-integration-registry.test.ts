@@ -277,6 +277,7 @@ vi.mock('./z-api-communication-integration', () => ({
     listenPort: null,
     localTunnelTarget: null,
     publicWebhookBaseUrl: null,
+    publicIngressVerified: false,
     webhooksConfigured: false,
     lastErrorCode: null
   })),

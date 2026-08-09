@@ -246,7 +246,7 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
     title: translate('communicationIntegrations.search.zApiTitle', 'Z-API Integration'),
     description: translate(
       'communicationIntegrations.search.zApiDescription',
-      'Configure Z-API credentials and an endpoint for WhatsApp transport.'
+      'Configure Z-API credentials, webhooks, and the local WhatsApp receiver.'
     ),
     targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS['z-api'],
     keywords: [
@@ -259,7 +259,12 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
       ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
       ...translateSearchKeyword('communicationIntegrations.search.endpoint', 'endpoint'),
       ...translateSearchKeyword('communicationIntegrations.search.instance', 'instance'),
-      ...translateSearchKeyword('communicationIntegrations.search.clientToken', 'client token')
+      ...translateSearchKeyword('communicationIntegrations.search.clientToken', 'client token'),
+      ...translateSearchKeyword('communicationIntegrations.search.webhook', 'webhook'),
+      ...translateSearchKeyword('communicationIntegrations.search.receiver', 'receiver'),
+      ...translateSearchKeyword('communicationIntegrations.search.tunnel', 'tunnel'),
+      ...translateSearchKeyword('communicationIntegrations.search.publicUrl', 'public URL'),
+      ...translateSearchKeyword('communicationIntegrations.search.localPort', 'local port')
     ]
   }
 ])

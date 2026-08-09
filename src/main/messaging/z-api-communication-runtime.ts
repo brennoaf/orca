@@ -181,6 +181,7 @@ export function zApiStatusFromRuntime(
     listenPort,
     localTunnelTarget: listenPort === null ? null : `http://127.0.0.1:${listenPort}`,
     publicWebhookBaseUrl: configuration?.publicWebhookBaseUrl ?? null,
+    publicIngressVerified: serviceStatus.ingress.challengeVerified,
     webhooksConfigured: serviceStatus.ingress.webhooksVerified,
     lastErrorCode: serviceStatus.lastErrorCode
   }

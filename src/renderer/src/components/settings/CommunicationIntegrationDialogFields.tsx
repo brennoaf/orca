@@ -20,7 +20,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { translate } from '@/i18n/i18n'
 
-export type CommunicationIntegrationPendingOperation = 'save' | 'clear' | 'test' | null
+export type CommunicationIntegrationPendingOperation =
+  | 'save'
+  | 'clear'
+  | 'test'
+  | 'prepare'
+  | 'discard'
+  | null
 
 export function CommunicationIntegrationDialogFrame(props: {
   open: boolean
@@ -33,6 +39,14 @@ export function CommunicationIntegrationDialogFrame(props: {
   error: string | null
   onSave: () => Promise<boolean>
   onClear: () => Promise<boolean>
+  saveLabel?: string
+  savingLabel?: string
+  clearConfirmation?: {
+    title: string
+    description: string
+    confirmLabel: string
+    buttonLabel: string
+  }
   children: React.ReactNode
 }): React.JSX.Element {
   const confirm = useConfirmationDialog()
@@ -40,16 +54,22 @@ export function CommunicationIntegrationDialogFrame(props: {
 
   const clear = async (): Promise<void> => {
     const approved = await confirm({
-      title: translate(
-        'communicationIntegrations.dialog.clearTitle',
-        'Clear {{provider}} integration?',
-        { provider: props.providerName }
-      ),
-      description: translate(
-        'communicationIntegrations.dialog.clearDescription',
-        'This removes the saved credentials and endpoint configuration from this computer.'
-      ),
-      confirmLabel: translate('communicationIntegrations.dialog.clearConfirm', 'Clear integration'),
+      title:
+        props.clearConfirmation?.title ??
+        translate(
+          'communicationIntegrations.dialog.clearTitle',
+          'Clear {{provider}} integration?',
+          { provider: props.providerName }
+        ),
+      description:
+        props.clearConfirmation?.description ??
+        translate(
+          'communicationIntegrations.dialog.clearDescription',
+          'This removes the saved credentials and endpoint configuration from this computer.'
+        ),
+      confirmLabel:
+        props.clearConfirmation?.confirmLabel ??
+        translate('communicationIntegrations.dialog.clearConfirm', 'Clear integration'),
       confirmVariant: 'destructive'
     })
     if (approved && (await props.onClear())) {
@@ -79,7 +99,8 @@ export function CommunicationIntegrationDialogFrame(props: {
             {props.configured ? (
               <Button type="button" variant="ghost" disabled={busy} onClick={() => void clear()}>
                 {props.pending === 'clear' ? <Loader2 className="animate-spin" /> : null}
-                {translate('communicationIntegrations.dialog.clear', 'Clear integration')}
+                {props.clearConfirmation?.buttonLabel ??
+                  translate('communicationIntegrations.dialog.clear', 'Clear integration')}
               </Button>
             ) : null}
           </div>
@@ -100,7 +121,9 @@ export function CommunicationIntegrationDialogFrame(props: {
               }
             >
               {props.pending === 'save' ? <Loader2 className="animate-spin" /> : null}
-              {translate('communicationIntegrations.dialog.save', 'Save')}
+              {props.pending === 'save'
+                ? (props.savingLabel ?? translate('communicationIntegrations.dialog.save', 'Save'))
+                : (props.saveLabel ?? translate('communicationIntegrations.dialog.save', 'Save'))}
             </Button>
           </div>
         </DialogFooter>
@@ -134,6 +157,7 @@ export function CommunicationIntegrationSecretField(props: {
   value: string
   cleared: boolean
   disabled: boolean
+  allowClear?: boolean
   onValueChange: (value: string) => void
   onClearedChange: (cleared: boolean) => void
 }): React.JSX.Element {
@@ -164,17 +188,22 @@ export function CommunicationIntegrationSecretField(props: {
                   'A token is stored. Leave this field empty to keep it.'
                 )}
           </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={props.disabled}
-            onClick={() => props.onClearedChange(!props.cleared)}
-          >
-            {props.cleared
-              ? translate('communicationIntegrations.dialog.undoClear', 'Undo clear')
-              : translate('communicationIntegrations.dialog.clearSavedToken', 'Clear saved token')}
-          </Button>
+          {props.allowClear !== false ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={props.disabled}
+              onClick={() => props.onClearedChange(!props.cleared)}
+            >
+              {props.cleared
+                ? translate('communicationIntegrations.dialog.undoClear', 'Undo clear')
+                : translate(
+                    'communicationIntegrations.dialog.clearSavedToken',
+                    'Clear saved token'
+                  )}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </CommunicationIntegrationField>
