@@ -82,6 +82,7 @@ export function refreshCommunicationIntegrationStatuses(options?: {
 
 export function useCommunicationIntegrationStatuses(options?: {
   refreshWhen?: boolean
+  disabled?: boolean
 }): CommunicationIntegrationStatusesSnapshot & {
   getStatus: (provider: CommunicationProviderId) => CommunicationIntegrationStatus | null
   refresh: () => Promise<void>
@@ -89,14 +90,17 @@ export function useCommunicationIntegrationStatuses(options?: {
   const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   useEffect(() => {
+    if (options?.disabled) {
+      return
+    }
     void refreshCommunicationIntegrationStatuses()
-  }, [])
+  }, [options?.disabled])
 
   useEffect(() => {
-    if (options?.refreshWhen) {
+    if (options?.refreshWhen && !options.disabled) {
       void refreshCommunicationIntegrationStatuses()
     }
-  }, [options?.refreshWhen])
+  }, [options?.disabled, options?.refreshWhen])
 
   const getStatus = useCallback(
     (provider: CommunicationProviderId) =>

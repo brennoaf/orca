@@ -11,6 +11,14 @@ import type {
   DashboardSpawnAgentArgs
 } from '../shared/dashboard-snapshot'
 import type {
+  FloatingCommsAction,
+  FloatingCommsDiscordCommand,
+  FloatingCommsOpenRequest,
+  FloatingCommsOpenResult,
+  FloatingCommsSurfaceState
+} from '../shared/floating-comms-surface'
+import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
+import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
 } from '../shared/terminal-preview'
@@ -2289,6 +2297,49 @@ const api = {
         checklist?: Partial<OnboardingState['checklist']>
       }
     ): Promise<OnboardingState> => ipcRenderer.invoke('onboarding:update', updates)
+  },
+
+  floatingComms: {
+    open: (request: FloatingCommsOpenRequest) => ipcRenderer.invoke('floatingComms:open', request),
+    update: (request: FloatingCommsOpenRequest): Promise<FloatingCommsOpenResult | null> =>
+      ipcRenderer.invoke('floatingComms:update', request),
+    close: (): Promise<void> => ipcRenderer.invoke('floatingComms:close'),
+    measure: (height: number): Promise<void> => ipcRenderer.invoke('floatingComms:measure', height),
+    getState: (): Promise<FloatingCommsSurfaceState> =>
+      ipcRenderer.invoke('floatingComms:getState'),
+    discordCommand: (command: FloatingCommsDiscordCommand) =>
+      ipcRenderer.invoke('floatingComms:discordCommand', command),
+    action: (action: FloatingCommsAction): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:action', action),
+    onStateChanged: (callback: (appId: FloatingWorkspaceAppId) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, appId: FloatingWorkspaceAppId): void =>
+        callback(appId)
+      ipcRenderer.on('floatingComms:stateChanged', listener)
+      return () => ipcRenderer.removeListener('floatingComms:stateChanged', listener)
+    },
+    onVisibilityChanged: (callback: (visible: boolean) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, visible: boolean): void =>
+        callback(visible)
+      ipcRenderer.on('floatingComms:visibilityChanged', listener)
+      return () => ipcRenderer.removeListener('floatingComms:visibilityChanged', listener)
+    },
+    onClosed: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on('floatingComms:closed', listener)
+      return () => ipcRenderer.removeListener('floatingComms:closed', listener)
+    },
+    onFallback: (callback: (appId: FloatingWorkspaceAppId) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, appId: FloatingWorkspaceAppId): void =>
+        callback(appId)
+      ipcRenderer.on('floatingComms:fallback', listener)
+      return () => ipcRenderer.removeListener('floatingComms:fallback', listener)
+    },
+    onAction: (callback: (action: FloatingCommsAction) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, action: FloatingCommsAction): void =>
+        callback(action)
+      ipcRenderer.on('floatingComms:action', listener)
+      return () => ipcRenderer.removeListener('floatingComms:action', listener)
+    }
   },
 
   dashboard: {

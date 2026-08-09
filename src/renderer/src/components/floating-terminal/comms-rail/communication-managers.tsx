@@ -3,10 +3,9 @@ import type {
   DiscordVoiceSnapshot,
   DiscordVoiceParticipant
 } from '../../../../../shared/discord-voice'
-import {
-  COMMUNICATION_INTEGRATION_SECTION_IDS,
-  type CommunicationIntegrationStatus,
-  type CommunicationProviderId
+import type {
+  CommunicationIntegrationStatus,
+  CommunicationProviderId
 } from '../../../../../shared/communication-integrations'
 import {
   listEnabledFloatingWorkspaceApps,
@@ -16,15 +15,29 @@ import {
 } from '../../../../../shared/floating-workspace-apps'
 import { Button } from '@/components/ui/button'
 import { DiscordVoiceControls } from '@/components/discord-voice/DiscordVoiceControls'
-import { DiscordVoiceOverlaySwitch } from '@/components/discord-voice/DiscordVoiceOverlaySwitch'
 import { DiscordVoiceParticipantRow } from '@/components/discord-voice/DiscordVoiceParticipantRow'
 import {
   callDiscordVoice,
   useDiscordVoiceSnapshot
 } from '@/components/discord-voice/useDiscordVoiceSnapshot'
-import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
-import { useCommunicationIntegrationStatuses } from '@/components/settings/use-communication-integration-statuses'
+import {
+  useCommunicationManagerRuntime,
+  useCommunicationManagerStatuses
+} from './communication-manager-runtime'
+import { ZApiCommunicationManagerPresentation } from './ZApiCommunicationManager'
+import {
+  CommunicationOverlayControl,
+  useOpenCommunicationSettings
+} from './communication-manager-actions'
+
+export { getCommunicationSettingsTarget } from './communication-manager-actions'
+
+export {
+  CommunicationManagerRuntimeProvider,
+  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT,
+  type CommunicationManagerRuntime
+} from './communication-manager-runtime'
 
 export type CommunicationManagerStatus =
   | { kind: 'unavailable'; reason: string }
@@ -47,47 +60,6 @@ export type CommunicationManager = {
   Presentation: ComponentType<CommunicationManagerPresentationProps>
 }
 
-function OverlayControl(): React.JSX.Element {
-  return (
-    <div className="border-t border-border/60 px-3 py-2">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-xs font-medium">
-            {translate('communicationRail.overlaySeparate', 'Separate overlay')}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {translate(
-              'communicationRail.overlaySeparateDescription',
-              'Appears automatically when you join a call.'
-            )}
-          </p>
-        </div>
-        <DiscordVoiceOverlaySwitch />
-      </div>
-    </div>
-  )
-}
-
-export function getCommunicationSettingsTarget(provider: CommunicationProviderId) {
-  return {
-    pane: 'integrations' as const,
-    repoId: null,
-    sectionId: COMMUNICATION_INTEGRATION_SECTION_IDS[provider]
-  }
-}
-
-function openCommunicationSettings(provider: CommunicationProviderId): void {
-  const store = useAppStore.getState()
-  store.openSettingsTarget(getCommunicationSettingsTarget(provider))
-  store.openSettingsPage()
-}
-
-function runDiscordCommand(method: string, apply: (next: DiscordVoiceSnapshot) => void): void {
-  void callDiscordVoice(method)
-    .then(apply)
-    .catch((error: unknown) => console.error(`[discord-voice] ${method} failed:`, error))
-}
-
 function ParticipantList({
   participants
 }: {
@@ -102,12 +74,26 @@ function ParticipantList({
   )
 }
 
+function runDiscordCommand(
+  command: (method: string, params?: unknown) => Promise<DiscordVoiceSnapshot>,
+  method: string,
+  apply: (next: DiscordVoiceSnapshot) => void
+): void {
+  void command(method)
+    .then(apply)
+    .catch((error: unknown) => console.error(`[discord-voice] ${method} failed:`, error))
+}
+
 function DiscordContent({
   snapshot,
-  apply
+  apply,
+  command,
+  openSettings
 }: {
   snapshot: DiscordVoiceSnapshot
   apply: (next: DiscordVoiceSnapshot) => void
+  command: (method: string, params?: unknown) => Promise<DiscordVoiceSnapshot>
+  openSettings: (provider: CommunicationProviderId) => void
 }): React.JSX.Element {
   let stateContent: React.JSX.Element
   const popoverState = getDiscordPopoverState(snapshot)
@@ -123,12 +109,7 @@ function DiscordContent({
             'Configure the Application ID and Client Secret to connect to Discord desktop.'
           )}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => openCommunicationSettings('discord')}
-        >
+        <Button type="button" variant="outline" size="sm" onClick={() => openSettings('discord')}>
           {translate('communicationRail.discord.openSettings', 'Configure Discord')}
         </Button>
       </div>
@@ -140,7 +121,7 @@ function DiscordContent({
           {snapshot.channelName ?? translate('discordVoice.channel.unknown', 'Voice channel')}
         </div>
         <ParticipantList participants={snapshot.participants} />
-        <DiscordVoiceControls snapshot={snapshot} apply={apply} />
+        <DiscordVoiceControls snapshot={snapshot} apply={apply} command={command} />
       </div>
     )
   } else if (popoverState === 'connecting') {
@@ -157,7 +138,7 @@ function DiscordContent({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => runDiscordCommand('discordVoice.reconnect', apply)}
+          onClick={() => runDiscordCommand(command, 'discordVoice.reconnect', apply)}
         >
           {translate('discordVoice.action.reconnect', 'Reconnect')}
         </Button>
@@ -182,7 +163,7 @@ function DiscordContent({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => runDiscordCommand('discordVoice.reconnect', apply)}
+          onClick={() => runDiscordCommand(command, 'discordVoice.reconnect', apply)}
         >
           {translate('discordVoice.action.reconnect', 'Reconnect')}
         </Button>
@@ -193,7 +174,7 @@ function DiscordContent({
   return (
     <>
       {stateContent}
-      <OverlayControl />
+      <CommunicationOverlayControl />
     </>
   )
 }
@@ -238,8 +219,11 @@ function DiscordPresentation({
   isPopoverOpen,
   children
 }: CommunicationManagerPresentationProps): React.JSX.Element {
-  useCommunicationIntegrationStatuses({ refreshWhen: isPopoverOpen })
-  const { snapshot, apply } = useDiscordVoiceSnapshot({ activePolling: isPopoverOpen })
+  const runtime = useCommunicationManagerRuntime()
+  useCommunicationManagerStatuses(runtime, isPopoverOpen)
+  const command = runtime?.commandDiscord ?? callDiscordVoice
+  const openSettings = useOpenCommunicationSettings()
+  const { snapshot, apply } = useDiscordVoiceSnapshot({ activePolling: isPopoverOpen, command })
   const status = getDiscordCommunicationStatus(snapshot)
   const tooltip = (() => {
     if (status.kind === 'active') {
@@ -258,7 +242,18 @@ function DiscordPresentation({
   })()
   return (
     <>
-      {children({ status, tooltip, content: <DiscordContent snapshot={snapshot} apply={apply} /> })}
+      {children({
+        status,
+        tooltip,
+        content: (
+          <DiscordContent
+            snapshot={snapshot}
+            apply={apply}
+            command={command}
+            openSettings={openSettings}
+          />
+        )
+      })}
     </>
   )
 }
@@ -281,6 +276,7 @@ function UnavailableContent(props: {
   verifiedCopy: string
   unconfiguredCopy: string
   persistentCopy?: string
+  openSettings: (provider: CommunicationProviderId) => void
 }): React.JSX.Element {
   const setupCopy =
     props.setupState === 'verified'
@@ -304,7 +300,7 @@ function UnavailableContent(props: {
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => openCommunicationSettings(props.provider)}
+          onClick={() => props.openSettings(props.provider)}
         >
           {translate('communicationRail.configureProvider', 'Configure {{provider}}', {
             provider: props.providerName
@@ -319,7 +315,9 @@ function SlackPresentation({
   isPopoverOpen,
   children
 }: CommunicationManagerPresentationProps): React.JSX.Element {
-  const { getStatus } = useCommunicationIntegrationStatuses({ refreshWhen: isPopoverOpen })
+  const runtime = useCommunicationManagerRuntime()
+  const { getStatus } = useCommunicationManagerStatuses(runtime, isPopoverOpen)
+  const openSettings = useOpenCommunicationSettings()
   const status = getStatus('slack')
   const setupState = integrationSetupState(status?.provider === 'slack' ? status : null)
   const reason = translate(
@@ -337,6 +335,7 @@ function SlackPresentation({
           <UnavailableContent
             provider="slack"
             providerName="Slack"
+            openSettings={openSettings}
             setupState={setupState}
             unconfiguredCopy={translate(
               'communicationRail.slackUnconfigured',
@@ -357,55 +356,9 @@ function SlackPresentation({
   )
 }
 
-function ZApiPresentation({
-  isPopoverOpen,
-  children
-}: CommunicationManagerPresentationProps): React.JSX.Element {
-  const { getStatus } = useCommunicationIntegrationStatuses({ refreshWhen: isPopoverOpen })
-  const status = getStatus('z-api')
-  const setupState = integrationSetupState(status?.provider === 'z-api' ? status : null)
-  const reason = translate(
-    'communicationRail.whatsappUnavailable',
-    'WhatsApp fast responses are not enabled yet.'
-  )
-  return (
-    <>
-      {children({
-        status: { kind: 'unavailable', reason },
-        tooltip: translate('communicationRail.unavailableTooltip', '{{app}} — unavailable', {
-          app: 'WhatsApp Web'
-        }),
-        content: (
-          <UnavailableContent
-            provider="z-api"
-            providerName="Z-API"
-            setupState={setupState}
-            unconfiguredCopy={translate(
-              'communicationRail.zApiUnconfigured',
-              'Configure Z-API credentials and endpoint in Integrations.'
-            )}
-            configuredCopy={translate(
-              'communicationRail.zApiConfigured',
-              'Credentials configured. Fast responses are not enabled yet.'
-            )}
-            verifiedCopy={translate(
-              'communicationRail.zApiVerified',
-              'Credentials verified. Fast responses are not enabled yet.'
-            )}
-            persistentCopy={translate(
-              'communicationRail.zApiRelayRequired',
-              'Receiving WhatsApp messages requires an external public HTTPS relay. Orca does not provide one yet.'
-            )}
-          />
-        )
-      })}
-    </>
-  )
-}
-
 export const COMMUNICATION_MANAGER_REGISTRY: Record<FloatingWorkspaceAppId, CommunicationManager> =
   {
-    'whatsapp-web': { Presentation: ZApiPresentation },
+    'whatsapp-web': { Presentation: ZApiCommunicationManagerPresentation },
     slack: { Presentation: SlackPresentation },
     discord: { Presentation: DiscordPresentation }
   }

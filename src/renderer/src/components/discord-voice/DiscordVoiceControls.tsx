@@ -18,17 +18,19 @@ function localParticipant(snapshot: DiscordVoiceSnapshot): DiscordVoiceParticipa
 
 export function DiscordVoiceControls({
   snapshot,
-  apply
+  apply,
+  command = callDiscordVoice
 }: {
   snapshot: DiscordVoiceSnapshot
   apply: (next: DiscordVoiceSnapshot) => void
+  command?: (method: string, params?: unknown) => Promise<DiscordVoiceSnapshot>
 }): React.JSX.Element {
   const self = localParticipant(snapshot)
   const muted = self?.selfMute ?? false
   const deafened = self?.selfDeaf ?? false
 
   const run = (method: string, params?: unknown, failure?: string): void => {
-    void callDiscordVoice(method, params)
+    void command(method, params)
       .then(apply)
       .catch((error: unknown) => {
         console.error(`[discord-voice] ${method} failed:`, error)

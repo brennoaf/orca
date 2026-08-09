@@ -308,6 +308,7 @@ export const electronViteConfig: UserConfig = {
           index: resolve('src/renderer/index.html'),
           popout: resolve('src/renderer/popout.html'),
           discordVoice: resolve('src/renderer/discord-voice.html'),
+          floatingComms: resolve('src/renderer/floating-comms.html'),
           web: resolve('src/renderer/web-index.html')
         }
       }

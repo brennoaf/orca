@@ -110,7 +110,7 @@ describe('communication managers', () => {
     )
   })
 
-  it('keeps Slack and Z-API unavailable without send UI and explains the relay gap', () => {
+  it('keeps Slack unavailable and keeps Z-API send UI gated by readiness', () => {
     const renderPresentation = (id: 'slack' | 'whatsapp-web'): string => {
       const props = {
         isPopoverOpen: false,
@@ -127,8 +127,7 @@ describe('communication managers', () => {
     expect(slack).toContain(
       'Configure Slack credentials in Integrations. Socket Mode transport is not active yet.'
     )
-    expect(zApi).toContain('Configure Z-API credentials and endpoint in Integrations.')
-    expect(zApi).toContain('external public HTTPS relay')
+    expect(zApi).toContain('Loading WhatsApp fast responses')
     expect(`${slack}${zApi}`).not.toMatch(/send|composer|unread/i)
   })
 })

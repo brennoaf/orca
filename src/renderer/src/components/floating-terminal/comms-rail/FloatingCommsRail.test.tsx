@@ -2,7 +2,7 @@
 
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FloatingWorkspaceAppId } from '../../../../../shared/floating-workspace-apps'
 import { FloatingCommsRail } from './FloatingCommsRail'
 
@@ -72,78 +72,124 @@ function Harness({ panel }: { panel: HTMLDivElement }): React.JSX.Element {
 describe('FloatingCommsRail', () => {
   let root: Root | null = null
   let container: HTMLDivElement | null = null
+  let notifyClosed: (() => void) | null = null
+  let notifyFallback: ((appId: FloatingWorkspaceAppId) => void) | null = null
+  let releaseClosed: ReturnType<typeof vi.fn>
+  let releaseAction: ReturnType<typeof vi.fn>
+  let releaseFallback: ReturnType<typeof vi.fn>
 
   afterEach(() => {
     act(() => root?.unmount())
     container?.remove()
     root = null
     container = null
+    notifyClosed = null
+    notifyFallback = null
     storeBox.floatingWorkspaceApps = {}
   })
 
-  it('keeps one controlled popover and reanchors it to the selected button', () => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-
-    act(() => root!.render(<Harness panel={container!} />))
-    expect(container.querySelectorAll('[data-testid="popover-root"]')).toHaveLength(1)
-    expect(container.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(0)
-
-    const slack = container.querySelector('button[aria-label^="Slack"]') as HTMLButtonElement
-    act(() => slack.click())
-    expect(container.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(1)
-    expect(
-      Array.from(
-        (container.querySelector('button[aria-label^="Slack"]') as HTMLButtonElement).children
-      ).some((child) => child.classList.contains('w-[2px]'))
-    ).toBe(true)
-    expect(
-      Array.from(
-        (container.querySelector('button[aria-label^="Discord"]') as HTMLButtonElement).children
-      ).some((child) => child.classList.contains('w-[2px]'))
-    ).toBe(false)
-    expect(
-      container.querySelector('[data-testid="popover-anchor"] button')?.getAttribute('aria-label')
-    ).toMatch(/^Slack/)
-
-    const discord = container.querySelector('button[aria-label^="Discord"]') as HTMLButtonElement
-    act(() => discord.click())
-    expect(container.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(1)
-    expect(
-      Array.from(
-        (container.querySelector('button[aria-label^="Slack"]') as HTMLButtonElement).children
-      ).some((child) => child.classList.contains('w-[2px]'))
-    ).toBe(false)
-    expect(
-      Array.from(
-        (container.querySelector('button[aria-label^="Discord"]') as HTMLButtonElement).children
-      ).some((child) => child.classList.contains('w-[2px]'))
-    ).toBe(true)
-    expect(
-      container.querySelector('[data-testid="popover-anchor"] button')?.getAttribute('aria-label')
-    ).toMatch(/^Discord/)
-
-    const selectedDiscord = container.querySelector(
-      'button[aria-label^="Discord"]'
-    ) as HTMLButtonElement
-    act(() => selectedDiscord.click())
-    expect(container.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(0)
+  beforeEach(() => {
+    releaseClosed = vi.fn()
+    releaseAction = vi.fn()
+    releaseFallback = vi.fn()
+    Object.assign(window, {
+      api: {
+        floatingComms: {
+          open: vi.fn(() => Promise.resolve({ mode: 'dom' })),
+          update: vi.fn(() => Promise.resolve({ mode: 'window' as const })),
+          close: vi.fn(() => Promise.resolve()),
+          onClosed: vi.fn((callback: () => void) => {
+            notifyClosed = callback
+            return releaseClosed
+          }),
+          onFallback: vi.fn((callback: (appId: FloatingWorkspaceAppId) => void) => {
+            notifyFallback = callback
+            return releaseFallback
+          }),
+          onAction: vi.fn(() => releaseAction)
+        }
+      }
+    })
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      }
+    )
   })
 
-  it('closes the popover and releases the input lock when the selected app is disabled', () => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
+  function mountHarness(): HTMLDivElement {
+    const panel = document.createElement('div')
+    container = panel
+    document.body.appendChild(panel)
+    const mountedRoot = createRoot(panel)
+    root = mountedRoot
+    act(() => mountedRoot.render(<Harness panel={panel} />))
+    return panel
+  }
 
-    act(() => root!.render(<Harness panel={container!} />))
-    const discord = container.querySelector('button[aria-label^="Discord"]') as HTMLButtonElement
-    act(() => discord.click())
-    expect(container.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
+  function railButton(panel: HTMLDivElement, label: string): HTMLButtonElement {
+    const button = panel.querySelector(`button[aria-label^="${label}"]`)
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`${label} rail button was not rendered`)
+    }
+    return button
+  }
+
+  it('keeps one controlled popover and reanchors it to the selected button', async () => {
+    const panel = mountHarness()
+    expect(panel.querySelectorAll('[data-testid="popover-root"]')).toHaveLength(1)
+    expect(panel.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(0)
+
+    const slack = railButton(panel, 'Slack')
+    await act(async () => slack.click())
+    expect(panel.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(1)
+    expect(
+      Array.from(railButton(panel, 'Slack').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(true)
+    expect(
+      Array.from(railButton(panel, 'Discord').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(false)
+    expect(
+      panel.querySelector('[data-testid="popover-anchor"] button')?.getAttribute('aria-label')
+    ).toMatch(/^Slack/)
+
+    const discord = railButton(panel, 'Discord')
+    await act(async () => discord.click())
+    expect(panel.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(1)
+    expect(
+      Array.from(railButton(panel, 'Slack').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(false)
+    expect(
+      Array.from(railButton(panel, 'Discord').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(true)
+    expect(
+      panel.querySelector('[data-testid="popover-anchor"] button')?.getAttribute('aria-label')
+    ).toMatch(/^Discord/)
+
+    const selectedDiscord = railButton(panel, 'Discord')
+    await act(async () => selectedDiscord.click())
+    expect(panel.querySelectorAll('[data-testid="popover-anchor"]')).toHaveLength(0)
+  })
+
+  it('closes the popover and releases the input lock when the selected app is disabled', async () => {
+    const panel = mountHarness()
+    const discord = railButton(panel, 'Discord')
+    await act(async () => discord.click())
+    expect(panel.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
       'true'
     )
     expect(
-      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
     ).toBe('true')
 
     storeBox.floatingWorkspaceApps = {
@@ -151,13 +197,13 @@ describe('FloatingCommsRail', () => {
       slack: { enabled: false },
       discord: { enabled: false }
     }
-    act(() => root!.render(<Harness panel={container!} />))
+    act(() => root?.render(<Harness panel={panel} />))
 
-    expect(container.querySelector('button[aria-label^="Discord"]')).toBeNull()
-    expect(container.querySelector('[data-testid="popover-root"]')).toBeNull()
-    expect(container.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
+    expect(panel.querySelector('button[aria-label^="Discord"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="popover-root"]')).toBeNull()
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
     expect(
-      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
     ).toBe('false')
   })
 
@@ -167,11 +213,107 @@ describe('FloatingCommsRail', () => {
       slack: { enabled: false },
       discord: { enabled: false }
     }
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
+    const panel = mountHarness()
+    expect(panel.querySelector('[data-testid="popover-root"]')).toBeNull()
+  })
 
-    act(() => root!.render(<Harness panel={container!} />))
-    expect(container.querySelector('[data-testid="popover-root"]')).toBeNull()
+  it('keeps webview input locked for the native surface and cleans IPC listeners', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = document.createElement('div')
+    container = panel
+    document.body.appendChild(panel)
+    root = createRoot(panel)
+
+    act(() => root?.render(<Harness panel={panel} />))
+    const discord = panel.querySelector('button[aria-label^="Discord"]')
+    if (!(discord instanceof HTMLButtonElement)) {
+      throw new Error('Discord rail button was not rendered')
+    }
+    await act(async () => discord.click())
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
+
+    act(() => notifyClosed?.())
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('false')
+    act(() => root?.unmount())
+    root = null
+    expect(releaseClosed).toHaveBeenCalledOnce()
+    expect(releaseAction).toHaveBeenCalledOnce()
+    expect(releaseFallback).toHaveBeenCalledOnce()
+  })
+
+  it('uses the DOM surface when a stale preload lacks floating communications IPC', async () => {
+    Object.assign(window.api, { floatingComms: undefined })
+    const panel = document.createElement('div')
+    container = panel
+    document.body.appendChild(panel)
+    root = createRoot(panel)
+
+    act(() => root?.render(<Harness panel={panel} />))
+    const slack = panel.querySelector('button[aria-label^="Slack"]')
+    if (!(slack instanceof HTMLButtonElement)) {
+      throw new Error('Slack rail button was not rendered')
+    }
+    await act(async () => slack.click())
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(1)
+  })
+
+  it('keeps input locked when native repositioning activates the DOM fallback', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+
+    await act(async () => railButton(panel, 'Discord').click())
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
+    act(() => notifyFallback?.('discord'))
+
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(1)
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+  })
+
+  it('materializes fallback after a native update reports lost placement', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+
+    await act(async () => railButton(panel, 'Discord').click())
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
+    vi.mocked(floatingComms.update).mockResolvedValueOnce({ mode: 'dom' })
+    await act(async () => window.dispatchEvent(new Event('resize')))
+
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(1)
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+  })
+
+  it('ignores a fallback event for a stale app request', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+
+    await act(async () => railButton(panel, 'Slack').click())
+    act(() => notifyFallback?.('discord'))
+
+    expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
   })
 })

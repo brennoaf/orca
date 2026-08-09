@@ -9,6 +9,8 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { DiscordVoiceSnapshot } from '../shared/discord-voice'
+import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type { BrowserFindSource } from '../shared/browser-find-source'
 import type {
   DashboardRevealAgentArgs,
@@ -16,6 +18,13 @@ import type {
   DashboardSnapshot,
   DashboardSpawnAgentArgs
 } from '../shared/dashboard-snapshot'
+import type {
+  FloatingCommsAction,
+  FloatingCommsDiscordCommand,
+  FloatingCommsOpenRequest,
+  FloatingCommsOpenResult,
+  FloatingCommsSurfaceState
+} from '../shared/floating-comms-surface'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
@@ -1181,6 +1190,20 @@ export type PluginMarketplaceHostInstallPreview = {
 
 export type PreloadApi = {
   app: AppApi
+  floatingComms: {
+    open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
+    update: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult | null>
+    close: () => Promise<void>
+    measure: (height: number) => Promise<void>
+    getState: () => Promise<FloatingCommsSurfaceState>
+    discordCommand: (command: FloatingCommsDiscordCommand) => Promise<DiscordVoiceSnapshot>
+    action: (action: FloatingCommsAction) => Promise<void>
+    onStateChanged: (callback: (appId: FloatingWorkspaceAppId) => void) => () => void
+    onVisibilityChanged: (callback: (visible: boolean) => void) => () => void
+    onClosed: (callback: () => void) => () => void
+    onFallback: (callback: (appId: FloatingWorkspaceAppId) => void) => () => void
+    onAction: (callback: (action: FloatingCommsAction) => void) => () => void
+  }
   orcaProfiles: {
     list: () => Promise<OrcaProfileListResult>
     authStatus: () => Promise<OrcaProfileAuthStatus>

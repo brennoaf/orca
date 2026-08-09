@@ -498,6 +498,16 @@ export function FloatingTerminalPanel({
           ? 'simulator'
           : 'editor'
 
+  useEffect(() => {
+    setOpenAppId(null)
+    const surface = window.api.floatingComms
+    if (surface) {
+      void surface
+        .close()
+        .catch((error: unknown) => console.error('[floating-comms] close failed:', error))
+    }
+  }, [activeTab?.id, open])
+
   useContextualTour('floating-workspace', open, 'floating_workspace_visible', {
     recordFeatureInteraction: tourInteractionSnapshot?.recordFeatureInteractionForTour ?? false,
     featureInteractionPersisted: tourInteractionSnapshot?.persisted,
@@ -1865,6 +1875,12 @@ export function FloatingTerminalPanel({
         </div>
 
         <div className="flex min-h-0 flex-1">
+          <FloatingCommsRail
+            panelRef={panelRef}
+            openAppId={openAppId}
+            onOpenAppIdChange={setOpenAppId}
+            onOpenApp={createFloatingAppTab}
+          />
           <div
             className="relative min-w-0 flex-1 overflow-hidden bg-background"
             data-contextual-tour-target={
@@ -1976,12 +1992,6 @@ export function FloatingTerminalPanel({
               />
             ) : null}
           </div>
-          <FloatingCommsRail
-            panelRef={panelRef}
-            openAppId={openAppId}
-            onOpenAppIdChange={setOpenAppId}
-            onOpenApp={createFloatingAppTab}
-          />
         </div>
       </div>
       {showOrchestrationSetup && activeTabType === 'terminal' ? (

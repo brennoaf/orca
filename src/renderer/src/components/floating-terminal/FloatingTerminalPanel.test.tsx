@@ -662,6 +662,19 @@ function findByProp(node: unknown, propName: string): ReactElementLike {
   return found
 }
 
+function findByClassName(node: unknown, className: string): ReactElementLike {
+  let found: ReactElementLike | null = null
+  visit(node, (entry) => {
+    if (entry.props.className === className) {
+      found = entry
+    }
+  })
+  if (!found) {
+    throw new Error(`${className} not found`)
+  }
+  return found
+}
+
 function collectPropValues(node: unknown, propName: string): unknown[] {
   const values: unknown[] = []
   visit(node, (entry) => {
@@ -893,6 +906,7 @@ describe('FloatingTerminalPanel close behavior', () => {
         },
         browser: { notifyActiveTabChanged: vi.fn() },
         cli: { getInstallStatus: mocks.getInstallStatus },
+        floatingComms: { close: vi.fn(() => Promise.resolve()) },
         ui: { setFloatingFocus: mocks.setFloatingFocus }
       },
       innerHeight: 800,
@@ -2810,5 +2824,19 @@ describe('FloatingTerminalPanel close behavior', () => {
 
     expect(findByTypeName(element, 'FloatingBrowserSlot').props.inputLocked).toBe(false)
     expect(findByTypeName(element, 'FloatingCommsRail').props.openAppId).toBeNull()
+  })
+
+  it('mounts the communications rail on the left of workspace content', async () => {
+    const element = await renderPanel(true)
+    const contentRow = findByClassName(element, 'flex min-h-0 flex-1')
+    const children = Array.isArray(contentRow.props.children)
+      ? contentRow.props.children
+      : [contentRow.props.children]
+    const rail = children[0] as ReactElementLike
+    const workspace = children[1] as ReactElementLike
+    const railName =
+      typeof rail.type === 'function' ? (rail.type as { name?: string }).name : rail.type
+    expect(railName).toBe('FloatingCommsRail')
+    expect(workspace.props.className).toContain('min-w-0 flex-1')
   })
 })

@@ -21,9 +21,11 @@ export function callDiscordVoice<TResult = DiscordVoiceSnapshot>(
 }
 
 export function useDiscordVoiceSnapshot({
-  activePolling = true
+  activePolling = true,
+  command = callDiscordVoice
 }: {
   activePolling?: boolean
+  command?: (method: string, params?: unknown) => Promise<DiscordVoiceSnapshot>
 } = {}): {
   snapshot: DiscordVoiceSnapshot
   apply: (next: DiscordVoiceSnapshot) => void
@@ -66,7 +68,7 @@ export function useDiscordVoiceSnapshot({
         return
       }
       try {
-        const next = await callDiscordVoice('discordVoice.getState')
+        const next = await command('discordVoice.getState')
         if (!disposed) {
           apply(next)
         }
@@ -92,7 +94,7 @@ export function useDiscordVoiceSnapshot({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearTimer()
     }
-  }, [activePolling, apply])
+  }, [activePolling, apply, command])
 
   return { snapshot, apply }
 }

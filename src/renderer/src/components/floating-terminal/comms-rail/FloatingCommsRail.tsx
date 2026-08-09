@@ -1,17 +1,25 @@
-import { useLayoutEffect, type RefObject } from 'react'
-import { ExternalLink } from 'lucide-react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject
+} from 'react'
+import type { FloatingCommsOpenRequest } from '../../../../../shared/floating-comms-surface'
 import type {
   FloatingWorkspaceApp,
   FloatingWorkspaceAppId
 } from '../../../../../shared/floating-workspace-apps'
-import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { FLOATING_WORKSPACE_APP_ICONS } from '@/lib/floating-workspace-app-icons'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
-import { translate } from '@/i18n/i18n'
+import { CommunicationManagerSurfaceContent } from './CommunicationManagerSurfaceContent'
 import {
+  getCommunicationSettingsTarget,
   listEnabledCommunicationManagers,
   type CommunicationManager
 } from './communication-managers'
@@ -23,31 +31,45 @@ type FloatingCommsRailProps = {
   onOpenApp: (app: FloatingWorkspaceApp) => void
 }
 
+function reportFloatingCommsError(operation: string, error: unknown): void {
+  console.error(`[floating-comms] ${operation} failed:`, error)
+}
+
+function requestFor(appId: FloatingWorkspaceAppId, element: HTMLElement): FloatingCommsOpenRequest {
+  const rect = element.getBoundingClientRect()
+  return {
+    appId,
+    anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    height: 420
+  }
+}
+
 function RailItem({
   app,
   manager,
   selected,
-  panelRef,
+  domFallback,
   onSelect,
-  onOpenApp
+  onOpenApp,
+  buttonRef,
+  portalContainer
 }: {
   app: FloatingWorkspaceApp
   manager: CommunicationManager
   selected: boolean
-  panelRef: RefObject<HTMLDivElement | null>
+  domFallback: boolean
   onSelect: () => void
   onOpenApp: () => void
+  buttonRef: (element: HTMLButtonElement | null) => void
+  portalContainer: HTMLDivElement | null
 }): React.JSX.Element {
   const Icon = FLOATING_WORKSPACE_APP_ICONS[app.id]
-
   return (
     <manager.Presentation isPopoverOpen={selected}>
       {(presentation) => {
-        if (selected && !panelRef.current) {
-          throw new Error('Floating communications popover requires the panel portal container')
-        }
         const button = (
           <button
+            ref={buttonRef}
             type="button"
             className={cn(
               'relative flex size-10 items-center justify-center outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
@@ -63,44 +85,33 @@ function RailItem({
               <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-status-success" />
             ) : null}
             {selected ? (
-              <span className="absolute right-0 top-[25%] bottom-[25%] w-[2px] bg-foreground rounded-l" />
+              <span className="absolute right-0 top-[25%] bottom-[25%] w-[2px] rounded-l bg-foreground" />
             ) : null}
           </button>
         )
-
         return (
           <>
             <Tooltip>
               <TooltipTrigger asChild>
-                {selected ? <PopoverAnchor asChild>{button}</PopoverAnchor> : button}
+                {selected && domFallback ? <PopoverAnchor asChild>{button}</PopoverAnchor> : button}
               </TooltipTrigger>
               <TooltipContent side="left">{presentation.tooltip}</TooltipContent>
             </Tooltip>
-            {selected ? (
+            {selected && domFallback ? (
               <PopoverContent
-                portalContainer={panelRef.current}
-                collisionBoundary={panelRef.current}
+                portalContainer={portalContainer}
+                collisionBoundary={portalContainer}
                 side="left"
                 align="start"
                 sideOffset={8}
+                collisionPadding={8}
                 className="popover-scroll-content scrollbar-sleek max-h-[min(420px,var(--radix-popover-content-available-height))] w-80 overflow-y-auto p-0"
               >
-                <div className="border-b border-border/60 px-3 py-2 text-sm font-semibold">
-                  {app.label}
-                </div>
-                {presentation.content}
-                <div className="border-t border-border/60 p-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2"
-                    onClick={onOpenApp}
-                  >
-                    <ExternalLink className="size-4" />
-                    {translate('communicationRail.openApp', 'Open {{app}}', { app: app.label })}
-                  </Button>
-                </div>
+                <CommunicationManagerSurfaceContent
+                  app={app}
+                  content={presentation.content}
+                  onOpenApp={onOpenApp}
+                />
               </PopoverContent>
             ) : null}
           </>
@@ -117,13 +128,113 @@ export function FloatingCommsRail({
   onOpenApp
 }: FloatingCommsRailProps): React.JSX.Element | null {
   const preferences = useAppStore((state) => state.floatingWorkspaceApps)
-  const entries = listEnabledCommunicationManagers(preferences)
+  const entries = useMemo(() => listEnabledCommunicationManagers(preferences), [preferences])
+  const [domFallback, setDomFallback] = useState(false)
+  const buttonRefs = useRef(new Map<FloatingWorkspaceAppId, HTMLButtonElement>())
+  const openAppIdRef = useRef(openAppId)
+  const requestSequenceRef = useRef(0)
+  const entriesRef = useRef(entries)
+  const onOpenAppRef = useRef(onOpenApp)
+  entriesRef.current = entries
+  onOpenAppRef.current = onOpenApp
+  openAppIdRef.current = openAppId
+  const releaseLocal = useCallback(() => {
+    requestSequenceRef.current += 1
+    setDomFallback(false)
+    onOpenAppIdChange(null)
+  }, [onOpenAppIdChange])
+  const close = useCallback(() => {
+    releaseLocal()
+    const surface = window.api.floatingComms
+    if (surface) {
+      void surface.close().catch((error: unknown) => reportFloatingCommsError('close', error))
+    }
+  }, [releaseLocal])
 
   useLayoutEffect(() => {
     if (openAppId !== null && !entries.some(({ app }) => app.id === openAppId)) {
-      onOpenAppIdChange(null)
+      close()
     }
-  }, [entries, onOpenAppIdChange, openAppId])
+  }, [close, entries, openAppId])
+
+  useEffect(() => {
+    const surface = window.api.floatingComms
+    return surface ? surface.onClosed(releaseLocal) : undefined
+  }, [releaseLocal])
+
+  useEffect(() => {
+    const surface = window.api.floatingComms
+    return surface
+      ? surface.onFallback((appId) => {
+          if (openAppIdRef.current === appId) {
+            setDomFallback(true)
+          }
+        })
+      : undefined
+  }, [])
+
+  useEffect(() => {
+    const surface = window.api.floatingComms
+    return surface?.onAction((action) => {
+      if (action.type === 'open-app') {
+        const app = entriesRef.current.find((entry) => entry.app.id === action.appId)?.app
+        if (app) {
+          onOpenAppRef.current(app)
+        }
+      } else {
+        const store = useAppStore.getState()
+        store.openSettingsTarget(getCommunicationSettingsTarget(action.provider))
+        store.openSettingsPage()
+      }
+      releaseLocal()
+    })
+  }, [releaseLocal])
+
+  useLayoutEffect(() => {
+    if (!openAppId || domFallback) {
+      return
+    }
+    const button = buttonRefs.current.get(openAppId)
+    if (!button) {
+      return
+    }
+    const update = (): void => {
+      const surface = window.api.floatingComms
+      if (!surface) {
+        setDomFallback(true)
+        return
+      }
+      const sequence = requestSequenceRef.current
+      void surface
+        .update(requestFor(openAppId, button))
+        .then((result) => {
+          if (
+            result?.mode === 'dom' &&
+            requestSequenceRef.current === sequence &&
+            openAppIdRef.current === openAppId
+          ) {
+            setDomFallback(true)
+          }
+        })
+        .catch((error: unknown) => {
+          reportFloatingCommsError('update', error)
+          close()
+        })
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(button)
+    if (panelRef.current) {
+      observer.observe(panelRef.current)
+    }
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [close, domFallback, openAppId, panelRef])
 
   if (entries.length === 0) {
     return null
@@ -132,24 +243,60 @@ export function FloatingCommsRail({
   return (
     <Popover
       modal={false}
-      open={openAppId !== null}
+      open={openAppId !== null && domFallback}
       onOpenChange={(open) => {
         if (!open) {
-          onOpenAppIdChange(null)
+          close()
         }
       }}
     >
-      <div className="flex w-10 shrink-0 flex-col border-l bg-background/95">
+      <div className="flex w-10 shrink-0 flex-col border-r bg-background/95">
         {entries.map(({ app, manager }) => (
           <RailItem
             key={app.id}
             app={app}
             manager={manager}
             selected={openAppId === app.id}
-            panelRef={panelRef}
-            onSelect={() => onOpenAppIdChange(openAppId === app.id ? null : app.id)}
+            domFallback={domFallback}
+            portalContainer={panelRef.current}
+            buttonRef={(element) => {
+              if (element) {
+                buttonRefs.current.set(app.id, element)
+              } else {
+                buttonRefs.current.delete(app.id)
+              }
+            }}
+            onSelect={() => {
+              if (openAppId === app.id) {
+                close()
+                return
+              }
+              const button = buttonRefs.current.get(app.id)
+              if (!button) {
+                return
+              }
+              const sequence = requestSequenceRef.current + 1
+              requestSequenceRef.current = sequence
+              onOpenAppIdChange(app.id)
+              const surface = window.api.floatingComms
+              if (!surface) {
+                setDomFallback(true)
+                return
+              }
+              void surface
+                .open(requestFor(app.id, button))
+                .then((result) => {
+                  if (requestSequenceRef.current === sequence && openAppIdRef.current === app.id) {
+                    setDomFallback(result.mode === 'dom')
+                  }
+                })
+                .catch((error: unknown) => {
+                  reportFloatingCommsError('open', error)
+                  close()
+                })
+            }}
             onOpenApp={() => {
-              onOpenAppIdChange(null)
+              close()
               onOpenApp(app)
             }}
           />
