@@ -75,3 +75,31 @@ export function reconcileOutboundSent(
     throw error
   }
 }
+
+export function markOutboundDeliveryStatus(
+  db: SyncDatabase,
+  clientMessageId: string,
+  instanceId: string,
+  status: 'unknown' | 'failed'
+): void {
+  const result = db
+    .prepare(
+      `UPDATE messages SET delivery_status = ?
+       WHERE provider = 'z-api' AND instance_id = ? AND client_message_id = ?`
+    )
+    .run(status, instanceId, clientMessageId)
+  if (result.changes !== 1) {
+    throw new Error('Outbound message was not found.')
+  }
+}
+
+export function recoverPendingOutbound(db: SyncDatabase): number {
+  return Number(
+    db
+      .prepare(
+        `UPDATE messages SET delivery_status = 'unknown'
+         WHERE provider = 'z-api' AND direction = 'outbound' AND delivery_status = 'pending'`
+      )
+      .run().changes
+  )
+}

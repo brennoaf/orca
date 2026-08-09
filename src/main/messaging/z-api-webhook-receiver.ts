@@ -17,7 +17,7 @@ export type ZApiWebhookReceiverEndpoint = {
 type ReceiverOptions = {
   port: number
   path: string
-  expectedInstanceId: string
+  expectedInstanceId: string | null
   store: Pick<MessageStore, 'ingest'>
   onError: (error: Error) => void
   now?: () => number
@@ -114,6 +114,7 @@ export class ZApiWebhookReceiver {
   private startPromise: Promise<ZApiWebhookReceiverEndpoint> | null = null
   private stopPromise: Promise<void> | null = null
   private pendingChallenge: PendingChallenge | null = null
+  private expectedInstanceId: string | null
 
   constructor(options: ReceiverOptions) {
     if (!Number.isSafeInteger(options.port) || options.port < 0 || options.port > 65_535) {
@@ -121,12 +122,21 @@ export class ZApiWebhookReceiver {
     }
     validatePath(options.path)
     if (
-      !options.expectedInstanceId ||
-      options.expectedInstanceId.trim() !== options.expectedInstanceId
+      options.expectedInstanceId !== null &&
+      (!options.expectedInstanceId ||
+        options.expectedInstanceId.trim() !== options.expectedInstanceId)
     ) {
       throw new Error('Z-API expected instance ID is invalid.')
     }
     this.options = options
+    this.expectedInstanceId = options.expectedInstanceId
+  }
+
+  setExpectedInstanceId(instanceId: string | null): void {
+    if (instanceId !== null && (!instanceId || instanceId.trim() !== instanceId)) {
+      throw new Error('Z-API expected instance ID is invalid.')
+    }
+    this.expectedInstanceId = instanceId
   }
 
   armChallenge(nonce: string, ttlMs = DEFAULT_CHALLENGE_TTL_MS): void {
@@ -241,10 +251,15 @@ export class ZApiWebhookReceiver {
       response(res, 415)
       return
     }
+    if (this.expectedInstanceId === null) {
+      req.resume()
+      response(res, 503)
+      return
+    }
     try {
       const payload = await readJson(req)
       const routed = routeZApiCallback(payload)
-      if (routed.instanceId !== this.options.expectedInstanceId) {
+      if (routed.instanceId !== this.expectedInstanceId) {
         response(res, 403)
         return
       }

@@ -156,6 +156,25 @@ describe('ZApiWebhookReceiver', () => {
     expect(ingest).not.toHaveBeenCalled()
   })
 
+  it('rejects callbacks until an expected instance is configured', async () => {
+    const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+    const onError = vi.fn()
+    const value = new ZApiWebhookReceiver({
+      port: 0,
+      path: '/webhook/secret-path',
+      expectedInstanceId: null,
+      store: { ingest },
+      onError
+    })
+    receivers.push(value)
+    const endpoint = await value.start()
+    expect(await post(endpoint.port, endpoint.path, JSON.stringify(payload()))).toBe(503)
+    expect(ingest).not.toHaveBeenCalled()
+    value.setExpectedInstanceId('instance-1')
+    expect(await post(endpoint.port, endpoint.path, JSON.stringify(payload()))).toBe(204)
+    expect(ingest).toHaveBeenCalledTimes(1)
+  })
+
   it('proves reachability with a single-use expiring challenge', async () => {
     let now = 100
     const { value } = receiver({ now: () => now })

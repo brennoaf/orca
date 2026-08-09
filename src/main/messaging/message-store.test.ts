@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
+import SyncDatabase from '../sqlite/sync-database'
 import { MessageStore } from './message-store'
 import type { NormalizedZApiMessage } from './z-api-message-normalizer'
 
@@ -80,7 +81,7 @@ describe('MessageStore', () => {
     ])
   })
 
-  it('records outbound pending, sent, and unknown states idempotently', () => {
+  it('records outbound pending, sent, unknown, and failed states idempotently', () => {
     const value = store()
     const first = value.registerOutboundPending({
       instanceId: 'instance-1',
@@ -107,6 +108,19 @@ describe('MessageStore', () => {
       providerMessageId: 'provider-1',
       deliveryStatus: 'sent'
     })
+    value.registerOutboundPending({
+      instanceId: 'instance-1',
+      conversationAddress: 'chat-1',
+      clientMessageId: 'client-failed',
+      text: 'falhou',
+      occurredAt: 11
+    })
+    value.markOutboundFailed('client-failed', 'instance-1')
+    expect(
+      value
+        .listRecentMessages(value.listConversations()[0]!.id)
+        .find((item) => item.clientMessageId === 'client-failed')
+    ).toMatchObject({ deliveryStatus: 'failed' })
   })
 
   it('atomically reconciles a sent-by-me callback that arrives before send completion', () => {
@@ -203,5 +217,100 @@ describe('MessageStore', () => {
       providerMessageId: 'persisted',
       text: 'persisted'
     })
+  })
+
+  it('recovers only inherited pending outbound messages as unknown on restart', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'orca-messaging-recovery-'))
+    directories.push(directory)
+    const path = join(directory, 'orca-messaging.db')
+    const first = new MessageStore(path)
+    first.registerOutboundPending({
+      instanceId: 'instance-1',
+      conversationAddress: 'chat-1',
+      clientMessageId: 'inherited-pending',
+      text: 'antes do restart',
+      occurredAt: 10
+    })
+    first.close()
+    const restarted = new MessageStore(path)
+    stores.push(restarted)
+    expect(restarted.recoverPendingOutbound()).toBe(1)
+    restarted.registerOutboundPending({
+      instanceId: 'instance-1',
+      conversationAddress: 'chat-1',
+      clientMessageId: 'current-pending',
+      text: 'depois do restart',
+      occurredAt: 20
+    })
+    expect(restarted.recoverPendingOutbound()).toBe(0)
+    const messages = restarted.listRecentMessages(restarted.listConversations()[0]!.id)
+    expect(messages.find((item) => item.clientMessageId === 'inherited-pending')).toMatchObject({
+      deliveryStatus: 'unknown'
+    })
+    expect(messages.find((item) => item.clientMessageId === 'current-pending')).toMatchObject({
+      deliveryStatus: 'pending'
+    })
+  })
+
+  it('migrates a v1 database to failed-capable v2 without losing data', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'orca-messaging-store-v1-'))
+    directories.push(directory)
+    const path = join(directory, 'orca-messaging.db')
+    const legacy = new SyncDatabase(path)
+    legacy.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK(provider IN ('z-api')),
+        instance_id TEXT NOT NULL,
+        address TEXT NOT NULL,
+        display_name TEXT,
+        last_message_at INTEGER NOT NULL,
+        UNIQUE(provider, instance_id, address)
+      );
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('z-api')),
+        instance_id TEXT NOT NULL,
+        provider_message_id TEXT,
+        client_message_id TEXT,
+        sender_address TEXT,
+        sender_name TEXT,
+        direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+        content_kind TEXT NOT NULL CHECK(content_kind IN ('text', 'unsupported')),
+        body TEXT,
+        provider_content_type TEXT,
+        occurred_at INTEGER NOT NULL,
+        delivery_status TEXT NOT NULL CHECK(delivery_status IN ('received', 'pending', 'sent', 'unknown')),
+        UNIQUE(provider, instance_id, provider_message_id),
+        UNIQUE(provider, instance_id, client_message_id)
+      );
+      CREATE INDEX idx_messaging_conversations_recent
+        ON conversations(last_message_at DESC, id DESC);
+      CREATE INDEX idx_messaging_messages_recent
+        ON messages(conversation_id, occurred_at DESC, id DESC);
+      CREATE INDEX idx_messaging_messages_ttl ON messages(occurred_at);
+      INSERT INTO conversations(
+        id, provider, instance_id, address, display_name, last_message_at
+      ) VALUES (1, 'z-api', 'instance-1', 'chat-1', 'Chat', 10);
+      INSERT INTO messages(
+        id, conversation_id, provider, instance_id, client_message_id, direction,
+        content_kind, body, occurred_at, delivery_status
+      ) VALUES (1, 1, 'z-api', 'instance-1', 'legacy-client', 'outbound', 'text', 'legacy', 10, 'pending');
+      PRAGMA user_version = 1;
+    `)
+    legacy.close()
+    const migrated = new MessageStore(path)
+    stores.push(migrated)
+    migrated.markOutboundFailed('legacy-client', 'instance-1')
+    expect(migrated.listRecentMessages(1)).toEqual([
+      expect.objectContaining({
+        id: 1,
+        clientMessageId: 'legacy-client',
+        text: 'legacy',
+        deliveryStatus: 'failed'
+      })
+    ])
   })
 })

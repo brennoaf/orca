@@ -281,6 +281,24 @@ describe('ZApiCommunicationClient', () => {
     )
   })
 
+  it('sets every webhook without taking a second snapshot', async () => {
+    const fixture = client([{ body: { value: true } }])
+    await expect(
+      fixture.client.setEveryWebhooks('https://hooks.example.com/orca/webhook', false)
+    ).resolves.toBeUndefined()
+    expect(fixture.options).toHaveLength(1)
+    expect(fixture.options[0]).toMatchObject({
+      method: 'PUT',
+      path: '/instances/instance%3Aid/token/instance%2Btoken/update-every-webhooks'
+    })
+    expect(fixture.requests[0]?.write).toHaveBeenCalledWith(
+      JSON.stringify({
+        value: 'https://hooks.example.com/orca/webhook',
+        notifySentByMe: false
+      })
+    )
+  })
+
   it.each([
     ...INVALID_REQUIRED_WEBHOOK_BODIES,
     {

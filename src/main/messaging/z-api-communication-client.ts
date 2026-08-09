@@ -21,16 +21,7 @@ import {
   type ZApiSendTextParams,
   type ZApiSendTextResult
 } from './z-api-communication-client-contract'
-const REQUIRED_WEBHOOK_URL_FIELDS = [
-  'connectedCallbackUrl',
-  'deliveryCallbackUrl',
-  'disconnectedCallbackUrl',
-  'messageStatusCallbackUrl',
-  'presenceChatCallbackUrl',
-  'receivedAndDeliveryCallbackUrl',
-  'receivedCallbackUrl',
-  'receivedStatusCallbackUrl'
-] as const
+import { restorableZApiWebhookState } from './z-api-webhook-state'
 
 export class ZApiAmbiguousSendError extends CommunicationApiError {
   readonly deliveryAmbiguous = true
@@ -121,37 +112,6 @@ function optionalBoolean(record: Record<string, unknown>, key: string): boolean 
   return record[key]
 }
 
-function webhookStateConflict(): CommunicationApiError {
-  return new CommunicationApiError(
-    'webhook_state_conflict',
-    'The existing Z-API webhook state cannot be restored safely.'
-  )
-}
-
-function restorableWebhookState(state: ZApiInstanceWebhookState): ZApiRestorableWebhookState {
-  const urls = REQUIRED_WEBHOOK_URL_FIELDS.map((field) => state[field])
-  const first = urls[0]
-  if (
-    first === null ||
-    first.length === 0 ||
-    state.receiveCallbackSentByMe === null ||
-    urls.some((value) => value === null || value.length === 0 || value !== first) ||
-    (state.initialDataCallbackUrl !== null &&
-      state.initialDataCallbackUrl.length > 0 &&
-      state.initialDataCallbackUrl !== first)
-  ) {
-    throw webhookStateConflict()
-  }
-  try {
-    if (normalizeCommunicationApiEndpoint(first).baseUrl !== first) {
-      throw webhookStateConflict()
-    }
-  } catch {
-    throw webhookStateConflict()
-  }
-  return { webhookUrl: first, receiveCallbackSentByMe: state.receiveCallbackSentByMe }
-}
-
 function validateSendTextParams(params: ZApiSendTextParams): void {
   if (
     params.destination.length === 0 ||
@@ -219,18 +179,22 @@ export class ZApiCommunicationClient {
   }
 
   async getRestorableWebhookState(): Promise<ZApiRestorableWebhookState> {
-    return restorableWebhookState(await this.getInstanceWebhookState())
+    return restorableZApiWebhookState(await this.getInstanceWebhookState())
   }
 
   async updateEveryWebhooks(publicWebhookUrl: string): Promise<ZApiRestorableWebhookState> {
     const restoreState = await this.getRestorableWebhookState()
-    const webhookEndpoint = normalizeCommunicationApiEndpoint(publicWebhookUrl)
-    await this.putEveryWebhooks(webhookEndpoint.baseUrl, true)
+    await this.setEveryWebhooks(publicWebhookUrl, true)
     return restoreState
   }
 
+  async setEveryWebhooks(publicWebhookUrl: string, notifySentByMe: boolean): Promise<void> {
+    const webhookEndpoint = normalizeCommunicationApiEndpoint(publicWebhookUrl)
+    await this.putEveryWebhooks(webhookEndpoint.baseUrl, notifySentByMe)
+  }
+
   async restoreEveryWebhooks(state: ZApiRestorableWebhookState): Promise<void> {
-    const validated = restorableWebhookState({
+    const validated = restorableZApiWebhookState({
       connectedCallbackUrl: state.webhookUrl,
       deliveryCallbackUrl: state.webhookUrl,
       disconnectedCallbackUrl: state.webhookUrl,

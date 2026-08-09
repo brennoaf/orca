@@ -1,7 +1,7 @@
 import { chmodSync, existsSync } from 'node:fs'
 import type SyncDatabase from '../sqlite/sync-database'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 export const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 export const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 200
@@ -28,7 +28,7 @@ export type MessagingMessage = {
   text: string | null
   providerContentType: string | null
   occurredAt: number
-  deliveryStatus: 'received' | 'pending' | 'sent' | 'unknown'
+  deliveryStatus: 'received' | 'pending' | 'sent' | 'unknown' | 'failed'
 }
 
 export type MessagingReplyDestination = {
@@ -128,7 +128,7 @@ export function parseMessage(row: MessageRow): MessagingMessage {
   if (contentKind !== 'text' && contentKind !== 'unsupported') {
     throw new Error('Invalid messaging database content kind.')
   }
-  if (!['received', 'pending', 'sent', 'unknown'].includes(deliveryStatus)) {
+  if (!['received', 'pending', 'sent', 'unknown', 'failed'].includes(deliveryStatus)) {
     throw new Error('Invalid messaging database delivery status.')
   }
   return {
@@ -183,7 +183,7 @@ export function initializeMessageStoreDatabase(
       body TEXT,
       provider_content_type TEXT,
       occurred_at INTEGER NOT NULL,
-      delivery_status TEXT NOT NULL CHECK(delivery_status IN ('received', 'pending', 'sent', 'unknown')),
+      delivery_status TEXT NOT NULL CHECK(delivery_status IN ('received', 'pending', 'sent', 'unknown', 'failed')),
       UNIQUE(provider, instance_id, provider_message_id),
       UNIQUE(provider, instance_id, client_message_id)
     );
@@ -193,7 +193,47 @@ export function initializeMessageStoreDatabase(
       ON messages(conversation_id, occurred_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_messaging_messages_ttl ON messages(occurred_at);
   `)
-  if (version === 0) {
+  if (version === 1) {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      DROP INDEX idx_messaging_messages_recent;
+      DROP INDEX idx_messaging_messages_ttl;
+      ALTER TABLE messages RENAME TO messages_v1;
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('z-api')),
+        instance_id TEXT NOT NULL,
+        provider_message_id TEXT,
+        client_message_id TEXT,
+        sender_address TEXT,
+        sender_name TEXT,
+        direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+        content_kind TEXT NOT NULL CHECK(content_kind IN ('text', 'unsupported')),
+        body TEXT,
+        provider_content_type TEXT,
+        occurred_at INTEGER NOT NULL,
+        delivery_status TEXT NOT NULL CHECK(delivery_status IN ('received', 'pending', 'sent', 'unknown', 'failed')),
+        UNIQUE(provider, instance_id, provider_message_id),
+        UNIQUE(provider, instance_id, client_message_id)
+      );
+      INSERT INTO messages(
+        id, conversation_id, provider, instance_id, provider_message_id, client_message_id,
+        sender_address, sender_name, direction, content_kind, body, provider_content_type,
+        occurred_at, delivery_status
+      ) SELECT
+        id, conversation_id, provider, instance_id, provider_message_id, client_message_id,
+        sender_address, sender_name, direction, content_kind, body, provider_content_type,
+        occurred_at, delivery_status
+      FROM messages_v1;
+      DROP TABLE messages_v1;
+      CREATE INDEX idx_messaging_messages_recent
+        ON messages(conversation_id, occurred_at DESC, id DESC);
+      CREATE INDEX idx_messaging_messages_ttl ON messages(occurred_at);
+      COMMIT;
+    `)
+  }
+  if (version < SCHEMA_VERSION) {
     db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
   if (dbPath === ':memory:' || process.platform === 'win32') {

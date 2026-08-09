@@ -1,6 +1,10 @@
 import SyncDatabase from '../sqlite/sync-database'
 import type { NormalizedZApiMessage } from './z-api-message-normalizer'
-import { reconcileOutboundSent } from './message-store-outbound-reconciliation'
+import {
+  markOutboundDeliveryStatus,
+  reconcileOutboundSent,
+  recoverPendingOutbound
+} from './message-store-outbound-reconciliation'
 import { collectMessageStoreGarbage } from './message-store-retention'
 import {
   DEFAULT_MAX_CONVERSATIONS,
@@ -36,6 +40,7 @@ export class MessageStore {
   private readonly maxConversations: number
   private gcPromise: Promise<MessagingGcResult> | null = null
   private closed = false
+  private outboundRecoveryCompleted = false
 
   constructor(dbPath: string | ':memory:', options: MessageStoreOptions = {}) {
     this.ttlMs = positiveInteger(options.ttlMs, DEFAULT_TTL_MS)
@@ -206,15 +211,22 @@ export class MessageStore {
 
   markOutboundUnknown(clientMessageId: string, instanceId: string): void {
     this.ensureOpen()
-    const result = this.db
-      .prepare(
-        `UPDATE messages SET delivery_status = 'unknown'
-         WHERE provider = 'z-api' AND instance_id = ? AND client_message_id = ?`
-      )
-      .run(instanceId, clientMessageId)
-    if (result.changes !== 1) {
-      throw new Error('Outbound message was not found.')
+    markOutboundDeliveryStatus(this.db, clientMessageId, instanceId, 'unknown')
+  }
+
+  markOutboundFailed(clientMessageId: string, instanceId: string): void {
+    this.ensureOpen()
+    markOutboundDeliveryStatus(this.db, clientMessageId, instanceId, 'failed')
+  }
+
+  recoverPendingOutbound(): number {
+    this.ensureOpen()
+    if (this.outboundRecoveryCompleted) {
+      return 0
     }
+    const recovered = recoverPendingOutbound(this.db)
+    this.outboundRecoveryCompleted = true
+    return recovered
   }
 
   listConversations(limit = this.maxConversations): MessagingConversation[] {
