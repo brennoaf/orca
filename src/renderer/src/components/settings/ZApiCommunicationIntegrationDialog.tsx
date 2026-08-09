@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Copy, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
   SaveAndConfigureZApiParams,
@@ -8,7 +7,6 @@ import type {
   ZApiSecretMutation
 } from '../../../../shared/communication-integrations'
 import { DEFAULT_Z_API_BASE_URL } from '../../../../shared/communication-integrations'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,6 +20,7 @@ import {
   getCommunicationEndpointTrust,
   type CommunicationIntegrationPendingOperation
 } from './CommunicationIntegrationDialogFields'
+import { ZApiIngressFields } from './ZApiIngressFields'
 
 type ZApiCommunicationIntegrationDialogProps = {
   open: boolean
@@ -44,7 +43,7 @@ function parseListenPort(value: string): number | null {
     return null
   }
   const port = Number(value)
-  return Number.isSafeInteger(port) && port >= 0 && port <= 65_535 ? port : null
+  return Number.isSafeInteger(port) && port >= 1 && port <= 65_535 ? port : null
 }
 
 export function ZApiCommunicationIntegrationDialog({
@@ -62,8 +61,6 @@ export function ZApiCommunicationIntegrationDialog({
   const instanceTokenInputId = useId()
   const clientTokenInputId = useId()
   const publicWebhookInputId = useId()
-  const listenPortInputId = useId()
-  const localTargetInputId = useId()
   const takeoverInputId = useId()
   const hydratedOpenRef = useRef(false)
   const [instanceId, setInstanceId] = useState('')
@@ -72,7 +69,8 @@ export function ZApiCommunicationIntegrationDialog({
   const [baseUrl, setBaseUrl] = useState(DEFAULT_Z_API_BASE_URL)
   const [trusted, setTrusted] = useState(false)
   const [publicWebhookBaseUrl, setPublicWebhookBaseUrl] = useState('')
-  const [listenPort, setListenPort] = useState('0')
+  const [useCustomPort, setUseCustomPort] = useState(false)
+  const [customPort, setCustomPort] = useState('')
   const [preparedIngress, setPreparedIngress] = useState<ZApiPreparedIngressSnapshot | null>(null)
   const [takeoverConfirmed, setTakeoverConfirmed] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -81,7 +79,7 @@ export function ZApiCommunicationIntegrationDialog({
   const defaultAuthority = getCommunicationEndpointAuthority(DEFAULT_Z_API_BASE_URL)
   const endpointTrust = getCommunicationEndpointTrust(baseUrl, DEFAULT_Z_API_BASE_URL)
   const publicWebhookAuthority = getCommunicationEndpointAuthority(publicWebhookBaseUrl)
-  const parsedPort = parseListenPort(listenPort)
+  const parsedCustomPort = parseListenPort(customPort)
   const active = status?.publicWebhookBaseUrl !== null && status?.publicWebhookBaseUrl !== undefined
   const removable =
     active ||
@@ -91,9 +89,6 @@ export function ZApiCommunicationIntegrationDialog({
   const secretsAvailable =
     (status?.instanceTokenStored || Boolean(instanceToken)) &&
     (status?.clientTokenStored || Boolean(clientToken))
-  const preparedPortMatches =
-    preparedIngress !== null && parsedPort !== null && preparedIngress.listenPort === parsedPort
-
   useEffect(() => {
     if (!open) {
       hydratedOpenRef.current = false
@@ -108,9 +103,12 @@ export function ZApiCommunicationIntegrationDialog({
     setBaseUrl(status.endpoint.baseUrl)
     setTrusted(false)
     setPublicWebhookBaseUrl(status.publicWebhookBaseUrl ?? '')
-    setListenPort(String(status.listenPort ?? 0))
+    setUseCustomPort(false)
+    setCustomPort('')
     setPreparedIngress(
-      status.ingressPrepared && status.listenPort !== null && status.localTunnelTarget
+      (status.ingressPrepared || status.publicWebhookBaseUrl !== null) &&
+        status.listenPort !== null &&
+        status.localTunnelTarget
         ? {
             listenPort: status.listenPort,
             localTunnelTarget: status.localTunnelTarget
@@ -125,13 +123,13 @@ export function ZApiCommunicationIntegrationDialog({
   useEffect(() => setTrusted(false), [authority])
 
   const prepare = async (): Promise<void> => {
-    if (parsedPort === null) {
+    const requestedPort = useCustomPort ? parsedCustomPort : 0
+    if (requestedPort === null) {
       return
     }
-    const prepared = await onPrepare(parsedPort)
+    const prepared = await onPrepare(requestedPort)
     if (prepared) {
       setPreparedIngress(prepared)
-      setListenPort(String(prepared.listenPort))
       setCopied(false)
     }
   }
@@ -139,6 +137,8 @@ export function ZApiCommunicationIntegrationDialog({
   const changePort = async (): Promise<void> => {
     if (await onDiscardPrepared()) {
       setPreparedIngress(null)
+      setUseCustomPort(false)
+      setCustomPort('')
       setCopied(false)
     }
   }
@@ -162,7 +162,7 @@ export function ZApiCommunicationIntegrationDialog({
   }
 
   const saveAndConfigure = (): Promise<boolean> => {
-    if (endpointTrust === null || parsedPort === null || parsedPort === 0 || !preparedPortMatches) {
+    if (endpointTrust === null || preparedIngress === null) {
       return Promise.resolve(false)
     }
     return onSaveAndConfigure({
@@ -172,19 +172,18 @@ export function ZApiCommunicationIntegrationDialog({
       apiBaseUrl: baseUrl,
       endpointTrust,
       publicWebhookBaseUrl: publicWebhookBaseUrl.trim(),
-      listenPort: parsedPort
+      listenPort: preparedIngress.listenPort
     })
   }
 
   const busy = pending !== null
-  const portLocked = active || preparedIngress !== null
   const saveDisabled =
     !instanceId.trim() ||
     !secretsAvailable ||
     endpointTrust === null ||
     (customEndpoint && !trusted) ||
     publicWebhookAuthority === null ||
-    !preparedPortMatches ||
+    preparedIngress === null ||
     !takeoverConfirmed
 
   return (
@@ -273,15 +272,30 @@ export function ZApiCommunicationIntegrationDialog({
         onBaseUrlChange={setBaseUrl}
         onTrustedChange={setTrusted}
       />
+      <ZApiIngressFields
+        preparedIngress={preparedIngress}
+        active={active}
+        busy={busy}
+        pending={pending}
+        useCustomPort={useCustomPort}
+        customPort={customPort}
+        customPortValid={parsedCustomPort !== null}
+        copied={copied}
+        onUseCustomPortChange={setUseCustomPort}
+        onCustomPortChange={setCustomPort}
+        onPrepare={() => void prepare()}
+        onCopy={() => void copyTarget()}
+        onChangePort={() => void changePort()}
+      />
       <CommunicationIntegrationField
         id={publicWebhookInputId}
         label={translate(
           'communicationIntegrations.zApi.publicWebhookBaseUrl',
-          'Public webhook base URL'
+          'Public HTTPS tunnel or reverse proxy URL'
         )}
         description={translate(
           'communicationIntegrations.zApi.publicWebhookBaseUrlDescription',
-          'The HTTPS base URL from your tunnel. Orca adds a private callback path.'
+          'The public HTTPS base URL that forwards to the local target. Orca adds a private callback path.'
         )}
       >
         <Input
@@ -293,93 +307,6 @@ export function ZApiCommunicationIntegrationDialog({
           onChange={(event) => setPublicWebhookBaseUrl(event.target.value)}
         />
       </CommunicationIntegrationField>
-      <CommunicationIntegrationField
-        id={listenPortInputId}
-        label={translate('communicationIntegrations.zApi.localPort', 'Local port')}
-        description={translate(
-          'communicationIntegrations.zApi.localPortDescription',
-          'Use 0 to let Orca choose an available port.'
-        )}
-      >
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            id={listenPortInputId}
-            inputMode="numeric"
-            value={listenPort}
-            disabled={busy || portLocked}
-            aria-invalid={parsedPort === null}
-            onChange={(event) => setListenPort(event.target.value)}
-          />
-          {preparedIngress && !active ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void changePort()}
-            >
-              {pending === 'discard' ? <Loader2 className="animate-spin" /> : null}
-              {translate('communicationIntegrations.zApi.changePort', 'Change port')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy || active || parsedPort === null}
-              onClick={() => void prepare()}
-            >
-              {pending === 'prepare' ? <Loader2 className="animate-spin" /> : null}
-              {pending === 'prepare'
-                ? translate('communicationIntegrations.zApi.preparingReceiver', 'Preparing…')
-                : translate('communicationIntegrations.zApi.prepareReceiver', 'Prepare receiver')}
-            </Button>
-          )}
-        </div>
-        {active ? (
-          <p className="text-[11px] text-muted-foreground">
-            {translate(
-              'communicationIntegrations.zApi.activePortLocked',
-              'Remove the integration before changing the active receiver port.'
-            )}
-          </p>
-        ) : null}
-      </CommunicationIntegrationField>
-      {preparedIngress ? (
-        <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
-          <div className="space-y-1">
-            <Label htmlFor={localTargetInputId} className="text-xs font-medium">
-              {translate(
-                'communicationIntegrations.zApi.localTunnelTarget',
-                'Tunnel this local target'
-              )}
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              {translate(
-                'communicationIntegrations.zApi.localTunnelTargetDescription',
-                'Forward your public HTTPS tunnel to this loopback address.'
-              )}
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              id={localTargetInputId}
-              readOnly
-              value={preparedIngress.localTunnelTarget}
-              className="font-mono"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void copyTarget()}
-            >
-              <Copy />
-              {copied
-                ? translate('communicationIntegrations.zApi.copied', 'Copied')
-                : translate('communicationIntegrations.zApi.copy', 'Copy')}
-            </Button>
-          </div>
-        </div>
-      ) : null}
       <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
         <div className="space-y-1">
           <p className="text-xs font-medium">

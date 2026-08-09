@@ -97,15 +97,27 @@ describe('ZApiCommunicationIntegrationDialog', () => {
     await user.type(screen.getByLabelText('Instance ID'), ' instance-id ')
     await user.type(screen.getByLabelText('Instance Token'), 'instance-token')
     await user.type(screen.getByLabelText('Client Token'), 'client-token')
-    await user.type(screen.getByLabelText('Public webhook base URL'), 'https://hooks.example.test')
+    await user.type(
+      screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL'),
+      'https://hooks.example.test'
+    )
 
+    expect(onPrepare).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox', { name: 'Use a custom local port' })).not.toBeChecked()
+    expect(screen.queryByLabelText('Local port')).toBeNull()
     expect(screen.getByRole('button', { name: 'Save and configure' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Prepare receiver' }))
+    await user.click(screen.getByRole('button', { name: 'Prepare receiving' }))
     await waitFor(() => expect(onPrepare).toHaveBeenCalledWith(0))
-    expect(screen.getByLabelText('Local port')).toHaveValue('43210')
-    expect(screen.getByRole('textbox', { name: 'Tunnel this local target' })).toHaveValue(
+    expect(screen.queryByRole('checkbox', { name: 'Use a custom local port' })).toBeNull()
+    expect(screen.queryByLabelText('Local port')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Local tunnel target' })).toHaveValue(
       'http://127.0.0.1:43210'
     )
+    expect(
+      screen.getByText(/must forward requests, including their paths, to this local target/i)
+    ).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(window.api.ui.writeClipboardText).toHaveBeenCalledWith('http://127.0.0.1:43210')
 
     await user.click(
       screen.getByRole('checkbox', {
@@ -125,6 +137,39 @@ describe('ZApiCommunicationIntegrationDialog', () => {
     })
   })
 
+  it('reveals and validates a custom port before preparing', async () => {
+    const user = userEvent.setup()
+    const customPreparedIngress = {
+      listenPort: 43211,
+      localTunnelTarget: 'http://127.0.0.1:43211'
+    }
+    const onPrepare = vi.fn(async () => customPreparedIngress)
+    render(dialog({ onPrepare }))
+
+    await user.click(screen.getByRole('checkbox', { name: 'Use a custom local port' }))
+    const portInput = screen.getByLabelText('Local port')
+    const prepareButton = screen.getByRole('button', { name: 'Prepare receiving' })
+
+    expect(portInput).toHaveValue('')
+    expect(prepareButton).toBeDisabled()
+    await user.type(portInput, '0')
+    expect(prepareButton).toBeDisabled()
+    await user.clear(portInput)
+    await user.type(portInput, '65536')
+    expect(prepareButton).toBeDisabled()
+    await user.clear(portInput)
+    await user.type(portInput, '43211')
+    expect(prepareButton).toBeEnabled()
+    await user.click(prepareButton)
+
+    await waitFor(() => expect(onPrepare).toHaveBeenCalledWith(43211))
+    expect(screen.queryByLabelText('Local port')).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Use a custom local port' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Local tunnel target' })).toHaveValue(
+      customPreparedIngress.localTunnelTarget
+    )
+  })
+
   it('rehydrates active public settings without exposing stored secrets or unlocking the port', () => {
     render(
       dialog({
@@ -140,7 +185,7 @@ describe('ZApiCommunicationIntegrationDialog', () => {
           instanceId: 'active-instance',
           instanceTokenStored: true,
           clientTokenStored: true,
-          ingressPrepared: true,
+          ingressPrepared: false,
           listenPort: 43210,
           localTunnelTarget: preparedIngress.localTunnelTarget,
           publicWebhookBaseUrl: 'https://hooks.example.test',
@@ -152,14 +197,20 @@ describe('ZApiCommunicationIntegrationDialog', () => {
     expect(screen.getByLabelText('Instance ID')).toHaveValue('active-instance')
     expect(screen.getByLabelText('Instance Token')).toHaveValue('')
     expect(screen.getByLabelText('Client Token')).toHaveValue('')
-    expect(screen.getByLabelText('Public webhook base URL')).toHaveValue(
+    expect(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL')).toHaveValue(
       'https://hooks.example.test'
     )
-    expect(screen.getByLabelText('Local port')).toHaveValue('43210')
-    expect(screen.getByLabelText('Local port')).toBeDisabled()
+    expect(screen.queryByLabelText('Local port')).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Use a custom local port' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Local tunnel target' })).toHaveValue(
+      preparedIngress.localTunnelTarget
+    )
     expect(
-      screen.getByText('Remove the integration before changing the active receiver port.')
+      screen.getByText(
+        'The local target stays fixed while this integration is active. Remove the integration to change its port.'
+      )
     ).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Change port' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Remove integration' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Clear saved token' })).toBeNull()
   })
@@ -187,15 +238,17 @@ describe('ZApiCommunicationIntegrationDialog', () => {
     })
     const { rerender } = render(dialog({ status: null }))
 
-    expect(screen.getByLabelText('Public webhook base URL')).toHaveValue('')
+    expect(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL')).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Save and configure' })).toBeDisabled()
 
     rerender(dialog({ status: activeStatus }))
     await waitFor(() => {
-      expect(screen.getByLabelText('Public webhook base URL')).toHaveValue(
+      expect(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL')).toHaveValue(
         'https://hooks.example.test'
       )
-      expect(screen.getByLabelText('Local port')).toHaveValue('43210')
+      expect(screen.getByRole('textbox', { name: 'Local tunnel target' })).toHaveValue(
+        preparedIngress.localTunnelTarget
+      )
     })
     await user.click(
       screen.getByRole('checkbox', {
@@ -204,8 +257,11 @@ describe('ZApiCommunicationIntegrationDialog', () => {
     )
     expect(screen.getByRole('button', { name: 'Save and configure' })).toBeEnabled()
 
-    await user.clear(screen.getByLabelText('Public webhook base URL'))
-    await user.type(screen.getByLabelText('Public webhook base URL'), 'https://draft.example.test')
+    await user.clear(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL'))
+    await user.type(
+      screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL'),
+      'https://draft.example.test'
+    )
     rerender(
       dialog({
         status: {
@@ -215,7 +271,7 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       })
     )
 
-    expect(screen.getByLabelText('Public webhook base URL')).toHaveValue(
+    expect(screen.getByLabelText('Public HTTPS tunnel or reverse proxy URL')).toHaveValue(
       'https://draft.example.test'
     )
     expect(screen.getByRole('button', { name: 'Save and configure' })).toBeEnabled()
@@ -235,11 +291,14 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       })
     )
 
-    expect(screen.getByLabelText('Local port')).toBeDisabled()
+    expect(screen.queryByLabelText('Local port')).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Use a custom local port' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Change port' }))
     await waitFor(() => expect(onDiscardPrepared).toHaveBeenCalledOnce())
-    expect(screen.getByLabelText('Local port')).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Use a custom local port' })).not.toBeChecked()
+    expect(screen.queryByLabelText('Local port')).toBeNull()
     expect(screen.queryByDisplayValue(preparedIngress.localTunnelTarget)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Prepare receiving' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Save and configure' })).toBeDisabled()
   })
 })
