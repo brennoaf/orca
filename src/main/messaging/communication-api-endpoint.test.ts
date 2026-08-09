@@ -22,7 +22,10 @@ class FakeResponse extends EventEmitter {
   readonly destroy = vi.fn()
   readonly resume = vi.fn()
 
-  constructor(readonly statusCode: number) {
+  constructor(
+    readonly statusCode: number,
+    readonly headers: Readonly<Record<string, string>>
+  ) {
     super()
   }
 }
@@ -32,6 +35,7 @@ type ResponseFixture = {
   chunks?: readonly Buffer[]
   requestError?: boolean
   responseError?: boolean
+  contentType?: string | null
 }
 
 function transport(fixture: ResponseFixture): {
@@ -50,7 +54,12 @@ function transport(fixture: ResponseFixture): {
         request.emit('error', new Error('contains-secret'))
         return
       }
-      const response = new FakeResponse(fixture.statusCode)
+      const response = new FakeResponse(
+        fixture.statusCode,
+        fixture.contentType === null
+          ? {}
+          : { 'content-type': fixture.contentType ?? 'application/json' }
+      )
       capturedResponse = response
       respond(response as unknown as CommunicationHttpsResponse)
       if (fixture.responseError) {
@@ -310,6 +319,64 @@ describe('requestCommunicationApi', () => {
       servername: 'api.example.com',
       path: '/base/status'
     })
+  })
+
+  it('supports PUT JSON requests', async () => {
+    const fixture = transport({ statusCode: 200, chunks: [Buffer.from('{"value":true}')] })
+    await expect(
+      defaultRequest(fixture.dependencies, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: '{"value":"https://webhook.example.com"}'
+      })
+    ).resolves.toEqual({ statusCode: 200, body: { value: true } })
+    expect(fixture.options()).toMatchObject({
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' }
+    })
+    expect(fixture.request.write).toHaveBeenCalledWith('{"value":"https://webhook.example.com"}')
+  })
+
+  it('returns a bounded text response', async () => {
+    const fixture = transport({
+      statusCode: 200,
+      chunks: [Buffer.from('challenge-value')],
+      contentType: 'text/plain; charset=utf-8'
+    })
+    await expect(defaultRequest(fixture.dependencies, { responseType: 'text' })).resolves.toEqual({
+      statusCode: 200,
+      body: 'challenge-value'
+    })
+  })
+
+  it.each(['application/json; charset=utf-8', 'application/problem+json'])(
+    'accepts JSON media type %s',
+    async (contentType) => {
+      const fixture = transport({ statusCode: 200, chunks: [Buffer.from('{}')], contentType })
+      await expect(defaultRequest(fixture.dependencies)).resolves.toEqual({
+        statusCode: 200,
+        body: {}
+      })
+    }
+  )
+
+  it.each(['text/html', 'text/plain', null])(
+    'rejects JSON response media type %s',
+    async (contentType) => {
+      const fixture = transport({ statusCode: 200, chunks: [Buffer.from('{}')], contentType })
+      await expect(defaultRequest(fixture.dependencies)).rejects.toMatchObject({
+        code: 'invalid_response',
+        message: 'Provider response type is invalid.'
+      })
+      expect(fixture.response().destroy).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('rejects a JSON media type for a text response', async () => {
+    const fixture = transport({ statusCode: 200, chunks: [Buffer.from('value')] })
+    await expect(
+      defaultRequest(fixture.dependencies, { responseType: 'text' })
+    ).rejects.toMatchObject({ code: 'invalid_response' })
   })
 
   it('rejects redirects without following them', async () => {
