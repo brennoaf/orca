@@ -43,6 +43,12 @@ export type CommunicationIntegrationErrorCode =
   | 'rate_limited'
   | 'provider_rejected'
   | 'invalid_response'
+  | 'webhook_state_conflict'
+  | 'receiver_unavailable'
+  | 'webhook_challenge_failed'
+  | 'webhook_restore_failed'
+  | 'ambiguous_send'
+  | 'message_persistence_failed'
   | 'network_error'
   | 'provider_unavailable'
 
@@ -109,6 +115,12 @@ export type ZApiCommunicationIntegrationStatus = {
   instanceTokenStored: boolean
   clientTokenStored: boolean
   instanceConnected: boolean | null
+  smartphoneConnected: boolean | null
+  ingressPrepared: boolean
+  listenPort: number | null
+  localTunnelTarget: string | null
+  webhooksConfigured: boolean
+  lastErrorCode: CommunicationIntegrationErrorCode | null
 }
 
 export type CommunicationIntegrationStatus =
@@ -146,6 +158,69 @@ export type SaveZApiCommunicationIntegrationParams = {
   instanceToken: CommunicationSecretMutation
   clientToken: CommunicationSecretMutation
 }
+
+export type ZApiSecretMutation = { action: 'keep' } | { action: 'replace'; value: string }
+
+export type SaveAndConfigureZApiParams = {
+  instanceId: string
+  instanceToken: ZApiSecretMutation
+  clientToken: ZApiSecretMutation
+  apiBaseUrl: string
+  endpointTrust: CommunicationEndpointTrust
+  publicWebhookBaseUrl: string
+  listenPort: number
+}
+
+export type ZApiPreparedIngressSnapshot = {
+  listenPort: number
+  localTunnelTarget: string
+}
+
+export type ZApiConversationSnapshot = {
+  id: number
+  displayName: string | null
+  lastMessageAt: number
+}
+
+export type ZApiMessageSnapshot = {
+  id: number
+  conversationId: number
+  providerMessageId: string | null
+  senderName: string | null
+  direction: 'inbound' | 'outbound'
+  contentKind: 'text' | 'unsupported'
+  text: string | null
+  providerContentType: string | null
+  occurredAt: number
+  deliveryStatus: 'received' | 'pending' | 'sent' | 'unknown' | 'failed'
+}
+
+export type ZApiConversationPage = {
+  conversations: ZApiConversationSnapshot[]
+  nextOffset: number | null
+}
+
+export type ZApiMessagePage = {
+  messages: ZApiMessageSnapshot[]
+  nextOffset: number | null
+}
+
+export type ZApiSendReplyResult = {
+  providerMessageId: string
+  deliveryStatus: 'sent'
+}
+
+export type ZApiCommunicationOperationResult<T = undefined> =
+  | {
+      ok: true
+      status: ZApiCommunicationIntegrationStatus
+      value: T
+    }
+  | {
+      ok: false
+      status: ZApiCommunicationIntegrationStatus
+      error: CommunicationIntegrationRedactedError
+    }
 
 export type SaveCommunicationIntegrationParams =
   | SaveDiscordCommunicationIntegrationParams

@@ -30,7 +30,10 @@ export class ZApiTransactionIngress {
       throw new ZApiTransactionError('invalid_configuration', 'Webhook port is invalid.')
     }
     if (this.ingress) {
-      if (this.ingress.requestedPort !== requestedPort) {
+      if (
+        this.ingress.requestedPort !== requestedPort &&
+        this.ingress.endpoint.port !== requestedPort
+      ) {
         throw new ZApiTransactionError(
           'receiver_unavailable',
           'A webhook receiver is already using another port.'

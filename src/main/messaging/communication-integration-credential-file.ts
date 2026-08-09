@@ -101,6 +101,12 @@ const ERROR_CODES: readonly CommunicationIntegrationErrorCode[] = [
   'rate_limited',
   'provider_rejected',
   'invalid_response',
+  'webhook_state_conflict',
+  'receiver_unavailable',
+  'webhook_challenge_failed',
+  'webhook_restore_failed',
+  'ambiguous_send',
+  'message_persistence_failed',
   'network_error',
   'provider_unavailable'
 ]

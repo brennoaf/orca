@@ -88,7 +88,22 @@ export class ZApiTransactionService {
 
   async remove(): Promise<void> {
     await this.lock.run(async () => {
-      const journal = this.dependencies.journal.read()
+      let journal = this.dependencies.journal.read()
+      if (journal.pending) {
+        await recoverZApiPendingTransaction({
+          pending: journal.pending,
+          active: journal.active,
+          status: this.status,
+          dependencies: this.dependencies
+        })
+        journal = this.dependencies.journal.read()
+      }
+      if (journal.pending) {
+        throw new ZApiTransactionError(
+          'webhook_restore_failed',
+          'Z-API recovery must complete before removal.'
+        )
+      }
       const active = journal.active
       if (active) {
         const pending: ZApiTransactionPending = {
@@ -103,6 +118,13 @@ export class ZApiTransactionService {
           status: this.status,
           dependencies: this.dependencies
         })
+        journal = this.dependencies.journal.read()
+        if (journal.pending) {
+          throw new ZApiTransactionError(
+            'webhook_restore_failed',
+            'Z-API webhook restoration must complete before removal.'
+          )
+        }
       }
       this.dependencies.journal.clear()
       await this.ingress.stop(this.status)

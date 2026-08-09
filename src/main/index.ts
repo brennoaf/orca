@@ -265,6 +265,7 @@ import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headles
 import { AgentAwakeService } from './agent-awake-service'
 import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import { settleTeardownWithinDeadline } from './quit-teardown-deadline'
+import { disposeZApiCommunicationIntegration } from './messaging/z-api-communication-integration'
 import { quitTeardownStartGate } from './quit-teardown-start-gate'
 import { beginSshShutdown } from './ipc/ssh'
 import { PluginService } from './plugins/plugin-service'
@@ -3086,6 +3087,7 @@ app.on('will-quit', (e) => {
   const sshShutdown = beginSshShutdown()
   killAllPty()
   const watcherShutdown = shutdownWatchersOnce()
+  const zApiShutdown = disposeZApiCommunicationIntegration()
   const storeFlush = store?.flushAsync() ?? Promise.resolve()
   // Why: usage-cache writes are queued off the main thread, so a quit right after setEnabled or a
   // scan completion would drop the final snapshot. Captured before any await; joins the barrier below.
@@ -3125,6 +3127,7 @@ app.on('will-quit', (e) => {
     { name: 'daemon', promise: daemonTeardown },
     { name: 'runtime-rpc', promise: rpcStopAndClear },
     { name: 'watchers', promise: watcherShutdown },
+    { name: 'z-api', promise: zApiShutdown },
     { name: 'emulator', promise: emulatorShutdown },
     { name: 'ssh', promise: sshShutdown },
     { name: 'plugin-hosts', promise: pluginHostShutdown },

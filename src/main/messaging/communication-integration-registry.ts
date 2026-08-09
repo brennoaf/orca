@@ -5,13 +5,9 @@ import type {
   CommunicationProviderId,
   SaveCommunicationIntegrationParams,
   SaveDiscordCommunicationIntegrationParams,
-  SaveSlackCommunicationIntegrationParams,
-  SaveZApiCommunicationIntegrationParams
+  SaveSlackCommunicationIntegrationParams
 } from '../../shared/communication-integrations'
-import {
-  DEFAULT_SLACK_API_BASE_URL,
-  DEFAULT_Z_API_BASE_URL
-} from '../../shared/communication-integrations'
+import { DEFAULT_SLACK_API_BASE_URL } from '../../shared/communication-integrations'
 import * as DiscordStore from './discord-voice-credential-store'
 import * as DiscordService from './discord-voice-service'
 import {
@@ -26,7 +22,15 @@ import {
 import * as SlackStore from './slack-communication-credential-store'
 import { probeSlackCommunicationIntegration } from './slack-communication-probe'
 import * as ZApiStore from './z-api-communication-credential-store'
-import { probeZApiCommunicationIntegration } from './z-api-communication-probe'
+import {
+  getZApiCommunicationIntegrationStatus,
+  listZApiConversations,
+  listZApiMessages,
+  prepareZApiIngress,
+  removeZApiCommunicationIntegration,
+  saveAndConfigureZApi,
+  sendZApiReply
+} from './z-api-communication-integration'
 
 type ProviderStatus<P extends CommunicationProviderId> = Extract<
   CommunicationIntegrationStatus,
@@ -81,16 +85,14 @@ function storageFailureStatus(
       : DiscordStore.emptyDiscordCommunicationStatus(error)
 }
 
-function status(provider: CommunicationProviderId): CommunicationIntegrationStatus {
-  return provider === 'discord'
-    ? discordStatus()
-    : provider === 'slack'
-      ? SlackStore.getSlackCommunicationStatus()
-      : ZApiStore.getZApiCommunicationStatus()
+function status(
+  provider: Exclude<CommunicationProviderId, 'z-api'>
+): CommunicationIntegrationStatus {
+  return provider === 'discord' ? discordStatus() : SlackStore.getSlackCommunicationStatus()
 }
 
 async function operation(
-  provider: CommunicationProviderId,
+  provider: Exclude<CommunicationProviderId, 'z-api'>,
   run: () => Promise<void> | void
 ): Promise<CommunicationIntegrationOperationResult> {
   try {
@@ -204,55 +206,10 @@ async function testSlack(): Promise<CommunicationIntegrationOperationResult> {
   })
 }
 
-async function saveZApi(params: SaveZApiCommunicationIntegrationParams) {
-  return operation('z-api', () => {
-    const normalized = normalizeCommunicationApiEndpoint(params.baseUrl)
-    assertCommunicationEndpointTrust(normalized, params.endpointTrust, DEFAULT_Z_API_BASE_URL)
-    ZApiStore.saveZApiCommunicationCredentials({
-      ...params,
-      baseUrl: normalized.baseUrl,
-      trustedCustomAuthority: params.endpointTrust.kind === 'custom' ? normalized.authority : null
-    })
-  })
-}
-
-async function testZApi(): Promise<CommunicationIntegrationOperationResult> {
-  let stored
-  try {
-    stored = ZApiStore.readZApiCommunicationCredentials()
-  } catch (error) {
-    return operation('z-api', () => {
-      throw error
-    })
-  }
-  if (!stored?.instanceId || !stored.instanceToken || !stored.clientToken) {
-    return { ok: false, status: ZApiStore.getZApiCommunicationStatus(), error: NOT_CONFIGURED }
-  }
-  const { instanceId, instanceToken, clientToken } = stored
-  return operation('z-api', async () => {
-    const endpointTrust = stored.trustedCustomAuthority
-      ? { kind: 'custom' as const, authority: stored.trustedCustomAuthority }
-      : { kind: 'default' as const }
-    try {
-      const result = await probeZApiCommunicationIntegration({
-        ...stored,
-        endpointTrust,
-        instanceId,
-        instanceToken,
-        clientToken
-      })
-      ZApiStore.saveZApiCommunicationVerification(
-        result.instanceConnected,
-        new Date().toISOString()
-      )
-    } catch (error) {
-      const safeError = redactCommunicationIntegrationError(error)
-      if (safeError && error instanceof CommunicationApiError) {
-        ZApiStore.saveZApiCommunicationError(safeError)
-      }
-      throw error
-    }
-  })
+const Z_API_TRANSACTION_REQUIRED: CommunicationIntegrationRedactedError = {
+  code: 'invalid_configuration',
+  message: 'Configure Z-API with its public webhook endpoint in one transaction.',
+  field: null
 }
 
 export const COMMUNICATION_INTEGRATION_REGISTRY = {
@@ -276,35 +233,49 @@ export const COMMUNICATION_INTEGRATION_REGISTRY = {
   },
   'z-api': {
     provider: 'z-api',
-    getStatus: ZApiStore.getZApiCommunicationStatus,
-    save: saveZApi,
-    clear: () => operation('z-api', ZApiStore.clearZApiCommunicationCredentials),
-    test: testZApi
+    getStatus: getZApiCommunicationIntegrationStatus,
+    save: saveAndConfigureZApi,
+    clear: removeZApiCommunicationIntegration,
+    test: async () => ({
+      ok: false as const,
+      status: await getZApiCommunicationIntegrationStatus(),
+      error: Z_API_TRANSACTION_REQUIRED
+    })
   }
 } satisfies Record<CommunicationProviderId, unknown>
 
 export async function getCommunicationIntegrationStatuses(): Promise<
   CommunicationIntegrationStatus[]
 > {
-  return (['discord', 'slack', 'z-api'] as const).map((provider) => {
-    try {
-      return status(provider)
-    } catch (error) {
-      const safeError = redactCommunicationIntegrationError(error)
-      if (safeError && error instanceof CommunicationIntegrationCredentialFileError) {
-        return storageFailureStatus(provider, safeError)
+  return Promise.all(
+    (['discord', 'slack', 'z-api'] as const).map(async (provider) => {
+      try {
+        return provider === 'z-api'
+          ? await getZApiCommunicationIntegrationStatus()
+          : status(provider)
+      } catch (error) {
+        const safeError = redactCommunicationIntegrationError(error)
+        if (safeError && error instanceof CommunicationIntegrationCredentialFileError) {
+          return storageFailureStatus(provider, safeError)
+        }
+        throw error
       }
-      throw error
-    }
-  })
+    })
+  )
 }
 
-export function saveCommunicationIntegration(params: SaveCommunicationIntegrationParams) {
-  return params.provider === 'discord'
-    ? saveDiscord(params)
-    : params.provider === 'slack'
-      ? saveSlack(params)
-      : saveZApi(params)
+export async function saveCommunicationIntegration(params: SaveCommunicationIntegrationParams) {
+  if (params.provider === 'discord') {
+    return saveDiscord(params)
+  }
+  if (params.provider === 'slack') {
+    return saveSlack(params)
+  }
+  return {
+    ok: false as const,
+    status: await getZApiCommunicationIntegrationStatus(),
+    error: Z_API_TRANSACTION_REQUIRED
+  }
 }
 
 export function clearCommunicationIntegration(provider: CommunicationProviderId) {
@@ -313,4 +284,14 @@ export function clearCommunicationIntegration(provider: CommunicationProviderId)
 
 export function testCommunicationIntegration(provider: CommunicationProviderId) {
   return COMMUNICATION_INTEGRATION_REGISTRY[provider].test()
+}
+
+export {
+  getZApiCommunicationIntegrationStatus,
+  listZApiConversations,
+  listZApiMessages,
+  prepareZApiIngress,
+  removeZApiCommunicationIntegration,
+  saveAndConfigureZApi,
+  sendZApiReply
 }

@@ -196,7 +196,13 @@ export function getZApiCommunicationStatus(): ZApiCommunicationIntegrationStatus
     instanceId: stored?.instanceId ?? null,
     instanceTokenStored: stored?.instanceToken !== null && stored !== null,
     clientTokenStored: stored?.clientToken !== null && stored !== null,
-    instanceConnected: verification?.connected ?? null
+    instanceConnected: verification?.connected ?? null,
+    smartphoneConnected: null,
+    ingressPrepared: false,
+    listenPort: null,
+    localTunnelTarget: null,
+    webhooksConfigured: false,
+    lastErrorCode: stored?.lastError?.code ?? null
   }
 }
 
@@ -222,6 +228,12 @@ export function emptyZApiCommunicationStatus(
     instanceId: null,
     instanceTokenStored: false,
     clientTokenStored: false,
-    instanceConnected: null
+    instanceConnected: null,
+    smartphoneConnected: null,
+    ingressPrepared: false,
+    listenPort: null,
+    localTunnelTarget: null,
+    webhooksConfigured: false,
+    lastErrorCode: lastError?.code ?? null
   }
 }

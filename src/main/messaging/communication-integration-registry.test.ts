@@ -252,6 +252,41 @@ vi.mock('./z-api-communication-probe', () => ({
   probeZApiCommunicationIntegration: mocks.probeZApi
 }))
 
+vi.mock('./z-api-communication-integration', () => ({
+  getZApiCommunicationIntegrationStatus: vi.fn(async () => ({
+    provider: 'z-api',
+    endpoint: {
+      baseUrl: 'https://api.z-api.io',
+      authority: 'api.z-api.io',
+      trust: { kind: 'default' }
+    },
+    readiness: {
+      configured: false,
+      verified: false,
+      sendReady: false,
+      receiveReady: false,
+      verifiedAt: null,
+      lastError: null
+    },
+    instanceId: null,
+    instanceTokenStored: false,
+    clientTokenStored: false,
+    instanceConnected: null,
+    smartphoneConnected: null,
+    ingressPrepared: false,
+    listenPort: null,
+    localTunnelTarget: null,
+    webhooksConfigured: false,
+    lastErrorCode: null
+  })),
+  listZApiConversations: vi.fn(),
+  listZApiMessages: vi.fn(),
+  prepareZApiIngress: vi.fn(),
+  removeZApiCommunicationIntegration: vi.fn(async () => ({ ok: true })),
+  saveAndConfigureZApi: vi.fn(),
+  sendZApiReply: vi.fn()
+}))
+
 import { CommunicationApiError } from './communication-api-endpoint'
 import {
   clearCommunicationIntegration,
@@ -390,7 +425,7 @@ describe('communication integration registry', () => {
     expect(mocks.probeSlack).not.toHaveBeenCalled()
   })
 
-  it('rejects an unconfirmed custom endpoint without persisting credentials', async () => {
+  it('rejects legacy Z-API save without persisting credentials', async () => {
     const result = await saveCommunicationIntegration({
       provider: 'z-api',
       baseUrl: 'https://gateway.example.com/z-api',
@@ -401,7 +436,7 @@ describe('communication integration registry', () => {
     })
     expect(result).toMatchObject({
       ok: false,
-      error: { code: 'endpoint_confirmation_required', field: 'baseUrl' }
+      error: { code: 'invalid_configuration', field: null }
     })
     expect(mocks.saveZApiCredentials).not.toHaveBeenCalled()
   })
@@ -433,7 +468,7 @@ describe('communication integration registry', () => {
     expect(JSON.stringify(result)).not.toContain('xoxp-secret')
   })
 
-  it('treats a disconnected Z-API instance as a successful verification', async () => {
+  it('rejects the legacy standalone Z-API test route', async () => {
     mocks.zApiCredentials = {
       version: 1,
       provider: 'z-api',
@@ -445,15 +480,12 @@ describe('communication integration registry', () => {
       verification: null,
       lastError: null
     }
-    mocks.probeZApi.mockResolvedValue({ instanceConnected: false })
     const result = await testCommunicationIntegration('z-api')
     expect(result).toMatchObject({
-      ok: true,
-      status: {
-        readiness: { verified: true, sendReady: false, receiveReady: false },
-        instanceConnected: false
-      }
+      ok: false,
+      error: { code: 'invalid_configuration' }
     })
+    expect(mocks.probeZApi).not.toHaveBeenCalled()
   })
 
   it('persists only a redacted provider error after a failed test', async () => {

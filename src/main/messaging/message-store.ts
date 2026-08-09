@@ -6,17 +6,16 @@ import {
   recoverPendingOutbound
 } from './message-store-outbound-reconciliation'
 import { collectMessageStoreGarbage } from './message-store-retention'
+import { listMessagingConversations } from './message-store-conversation-read'
 import {
   DEFAULT_MAX_CONVERSATIONS,
   DEFAULT_MAX_MESSAGES_PER_CONVERSATION,
   DEFAULT_TTL_MS,
   initializeMessageStoreDatabase,
   numberField,
-  parseConversation,
   parseMessage,
   positiveInteger,
   stringField,
-  type ConversationRow,
   type MessageRow,
   type MessageStoreOptions,
   type MessagingConversation,
@@ -229,18 +228,22 @@ export class MessageStore {
     return recovered
   }
 
-  listConversations(limit = this.maxConversations): MessagingConversation[] {
+  listConversations(
+    limit = this.maxConversations,
+    offset = 0,
+    instanceId?: string
+  ): MessagingConversation[] {
     this.ensureOpen()
-    const rows = this.db
-      .prepare(
-        `SELECT id, provider, instance_id, address, display_name, last_message_at
-         FROM conversations ORDER BY last_message_at DESC, id DESC LIMIT ?`
-      )
-      .all(positiveInteger(limit, this.maxConversations)) as ConversationRow[]
-    return rows.map(parseConversation)
+    return listMessagingConversations({
+      db: this.db,
+      defaultLimit: this.maxConversations,
+      limit,
+      offset,
+      ...(instanceId === undefined ? {} : { instanceId })
+    })
   }
 
-  listRecentMessages(conversationId: number, limit = 20): MessagingMessage[] {
+  listRecentMessages(conversationId: number, limit = 20, offset = 0): MessagingMessage[] {
     this.ensureOpen()
     const rows = this.db
       .prepare(
@@ -249,10 +252,14 @@ export class MessageStore {
              sender_address, sender_name, content_kind, body, provider_content_type,
              occurred_at, delivery_status
            FROM messages WHERE conversation_id = ?
-           ORDER BY occurred_at DESC, id DESC LIMIT ?
+           ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?
          ) ORDER BY occurred_at ASC, id ASC`
       )
-      .all(conversationId, positiveInteger(limit, 20)) as MessageRow[]
+      .all(
+        conversationId,
+        positiveInteger(limit, 20),
+        positiveInteger(offset + 1, 1) - 1
+      ) as MessageRow[]
     return rows.map(parseMessage)
   }
 

@@ -6,7 +6,14 @@ const mocks = vi.hoisted(() => ({
   getStatuses: vi.fn(async () => []),
   save: vi.fn<(params: unknown) => Promise<unknown>>(async () => ({ ok: true })),
   clear: vi.fn<(provider: unknown) => Promise<unknown>>(async () => ({ ok: true })),
-  test: vi.fn<(provider: unknown) => Promise<unknown>>(async () => ({ ok: true }))
+  test: vi.fn<(provider: unknown) => Promise<unknown>>(async () => ({ ok: true })),
+  zApiStatus: vi.fn(async () => ({})),
+  zApiPrepare: vi.fn(async () => ({})),
+  zApiSave: vi.fn(async () => ({})),
+  zApiConversations: vi.fn(async () => ({})),
+  zApiMessages: vi.fn(async () => ({})),
+  zApiSend: vi.fn(async () => ({})),
+  zApiRemove: vi.fn(async () => ({}))
 }))
 
 vi.mock('../../../messaging/communication-integration-registry', () => ({
@@ -21,7 +28,14 @@ vi.mock('../../../messaging/communication-integration-registry', () => ({
   getCommunicationIntegrationStatuses: mocks.getStatuses,
   saveCommunicationIntegration: mocks.save,
   clearCommunicationIntegration: mocks.clear,
-  testCommunicationIntegration: mocks.test
+  testCommunicationIntegration: mocks.test,
+  getZApiCommunicationIntegrationStatus: mocks.zApiStatus,
+  prepareZApiIngress: mocks.zApiPrepare,
+  saveAndConfigureZApi: mocks.zApiSave,
+  listZApiConversations: mocks.zApiConversations,
+  listZApiMessages: mocks.zApiMessages,
+  sendZApiReply: mocks.zApiSend,
+  removeZApiCommunicationIntegration: mocks.zApiRemove
 }))
 
 import { COMMUNICATION_INTEGRATION_METHODS } from './communication-integrations'
@@ -40,16 +54,25 @@ describe('communication integration RPC methods', () => {
     mocks.save.mockClear()
     mocks.clear.mockClear()
     mocks.test.mockClear()
+    mocks.zApiPrepare.mockClear()
+    mocks.zApiSave.mockClear()
   })
 
-  it('registers the four expected methods exactly once in its manifest', () => {
+  it('registers the communication integration methods exactly once in its manifest', () => {
     expect(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).toEqual([
       'communicationIntegrations.getStatuses',
       'communicationIntegrations.save',
       'communicationIntegrations.clear',
-      'communicationIntegrations.test'
+      'communicationIntegrations.test',
+      'communicationIntegrations.zApi.prepareIngress',
+      'communicationIntegrations.zApi.saveAndConfigure',
+      'communicationIntegrations.zApi.getStatus',
+      'communicationIntegrations.zApi.listConversations',
+      'communicationIntegrations.zApi.listMessages',
+      'communicationIntegrations.zApi.sendReply',
+      'communicationIntegrations.zApi.remove'
     ])
-    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(4)
+    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(11)
     const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
     expect(indexSource.match(/\.\.\.COMMUNICATION_INTEGRATION_METHODS/g)).toHaveLength(1)
   })
@@ -71,7 +94,7 @@ describe('communication integration RPC methods', () => {
     }
   )
 
-  it('strictly validates all save variants and nested discriminated unions', () => {
+  it('strictly validates legacy save variants and excludes Z-API', () => {
     const schema = method('communicationIntegrations.save').params
     const discord = {
       provider: 'discord',
@@ -95,7 +118,7 @@ describe('communication integration RPC methods', () => {
     }
     expect(schema?.safeParse(discord).success).toBe(true)
     expect(schema?.safeParse(slack).success).toBe(true)
-    expect(schema?.safeParse(zApi).success).toBe(true)
+    expect(schema?.safeParse(zApi).success).toBe(false)
     expect(schema?.safeParse({ ...discord, extra: true }).success).toBe(false)
     expect(
       schema?.safeParse({ ...discord, clientSecret: { action: 'keep', value: 'unexpected' } })
@@ -113,8 +136,65 @@ describe('communication integration RPC methods', () => {
         clientSecret: { action: 'replace', value: 'x'.repeat(4_097) }
       }).success
     ).toBe(false)
-    expect(schema?.safeParse({ ...zApi, instanceId: 'x'.repeat(257) }).success).toBe(false)
     expect(schema?.safeParse({ ...slack, baseUrl: 'x'.repeat(2_049) }).success).toBe(false)
+  })
+
+  it('strictly validates the transactional Z-API save contract', () => {
+    const schema = method('communicationIntegrations.zApi.saveAndConfigure').params
+    const input = {
+      instanceId: 'instance-1',
+      instanceToken: { action: 'keep' },
+      clientToken: { action: 'replace', value: 'client-token' },
+      apiBaseUrl: 'https://api.z-api.io',
+      endpointTrust: { kind: 'default' },
+      publicWebhookBaseUrl: 'https://webhook.example.com',
+      listenPort: 4321
+    }
+    expect(schema?.safeParse(input).success).toBe(true)
+    expect(schema?.safeParse({ ...input, extra: true }).success).toBe(false)
+    expect(schema?.safeParse({ ...input, instanceToken: { action: 'clear' } }).success).toBe(false)
+    expect(schema?.safeParse({ ...input, listenPort: 0 }).success).toBe(false)
+    expect(schema?.safeParse({ ...input, instanceId: 'x'.repeat(257) }).success).toBe(false)
+  })
+
+  it('keeps phone numbers out of Z-API send params and bounds pagination', () => {
+    const send = method('communicationIntegrations.zApi.sendReply').params
+    const conversations = method('communicationIntegrations.zApi.listConversations').params
+    expect(send?.safeParse({ conversationId: 1, text: 'hello' }).success).toBe(true)
+    expect(
+      send?.safeParse({ conversationId: 1, text: 'hello', phone: '5511999999999' }).success
+    ).toBe(false)
+    expect(send?.safeParse({ conversationId: 1, text: 'x'.repeat(4_097) }).success).toBe(false)
+    expect(conversations?.safeParse({}).success).toBe(true)
+    expect(conversations?.safeParse({ limit: 101, offset: 0 }).success).toBe(false)
+    expect(conversations?.safeParse({ limit: 20, offset: -1 }).success).toBe(false)
+  })
+
+  it('flows an ephemeral prepared port into transactional Z-API save', async () => {
+    mocks.zApiPrepare.mockResolvedValueOnce({
+      ok: true,
+      value: { listenPort: 4321, localTunnelTarget: 'http://127.0.0.1:4321' }
+    })
+    const prepare = method('communicationIntegrations.zApi.prepareIngress')
+    const prepared = await prepare.handler(
+      prepare.params?.parse({ listenPort: 0 }),
+      {} as RpcContext
+    )
+    const listenPort = (prepared as { value: { listenPort: number } }).value.listenPort
+    const save = method('communicationIntegrations.zApi.saveAndConfigure')
+    const input = save.params?.parse({
+      instanceId: 'instance-1',
+      instanceToken: { action: 'replace', value: 'instance-token' },
+      clientToken: { action: 'replace', value: 'client-token' },
+      apiBaseUrl: 'https://api.z-api.io',
+      endpointTrust: { kind: 'default' },
+      publicWebhookBaseUrl: 'https://webhook.example.com',
+      listenPort
+    })
+    await save.handler(input, {} as RpcContext)
+
+    expect(mocks.zApiPrepare).toHaveBeenCalledWith(0)
+    expect(mocks.zApiSave).toHaveBeenCalledWith(expect.objectContaining({ listenPort: 4321 }))
   })
 
   it('rejects every method for paired and runtime clients before delegation', async () => {

@@ -195,15 +195,17 @@ describe('ZApiTransactionService', () => {
     vi.restoreAllMocks()
   })
 
-  it('prepares a redacted idempotent ingress and rejects a conflicting port', async () => {
+  it('reuses an ephemeral ingress by effective port and rejects a conflicting port', async () => {
     const value = fixture()
     const first = await value.service.prepareIngress(0)
     const second = await value.service.prepareIngress(0)
+    const effective = await value.service.prepareIngress(32123)
     expect(first).toEqual({ listenPort: 32123, localTunnelTarget: 'http://127.0.0.1:32123' })
     expect(second).toEqual(first)
+    expect(effective).toEqual(first)
     expect(JSON.stringify(first)).not.toContain('secret-path')
     expect(value.receiver.start).toHaveBeenCalledTimes(1)
-    await expect(value.service.prepareIngress(32123)).rejects.toMatchObject({
+    await expect(value.service.prepareIngress(32124)).rejects.toMatchObject({
       code: 'receiver_unavailable'
     })
   })
@@ -444,6 +446,65 @@ describe('ZApiTransactionService', () => {
     await expect(failed.service.remove()).rejects.toMatchObject({ code: 'webhook_restore_failed' })
     expect(failed.state().active).not.toBeNull()
     expect(failed.state().pending?.phase).toBe('repair_required')
+  })
+
+  it('preserves initial-setup repair state on remove failure, then cleans after recovery succeeds', async () => {
+    const initial: ZApiTransactionJournalState = {
+      version: 1,
+      provider: 'z-api',
+      active: null,
+      pending: {
+        phase: 'repair_required',
+        configuration: configuration(),
+        rollbackWebhookState: previous
+      }
+    }
+    const value = fixture(initial)
+    vi.mocked(value.client.getInstanceWebhookState).mockResolvedValue(webhookState())
+    vi.mocked(value.client.restoreEveryWebhooks).mockRejectedValueOnce(
+      new CommunicationApiError('provider_unavailable', 'restore failed')
+    )
+    await expect(value.service.remove()).rejects.toMatchObject({
+      code: 'webhook_restore_failed'
+    })
+    expect(value.state()).toEqual(initial)
+    expect(value.receiver.stop).not.toHaveBeenCalled()
+
+    vi.mocked(value.client.getInstanceWebhookState)
+      .mockResolvedValueOnce(webhookState())
+      .mockResolvedValueOnce(webhookState(previous.webhookUrl, false))
+    await expect(value.service.remove()).resolves.toBeUndefined()
+    expect(value.state()).toEqual({ version: 1, provider: 'z-api', active: null, pending: null })
+  })
+
+  it('does not overwrite active reconfiguration repair state when remove recovery fails', async () => {
+    const initial = activeJournal()
+    const activeWebhookUrl = 'https://hooks.example.com/orca/z-api/secret-path'
+    const replacementConfiguration = {
+      ...configuration(),
+      publicWebhookBaseUrl: 'https://new-hooks.example.com'
+    }
+    initial.pending = {
+      phase: 'repair_required',
+      configuration: replacementConfiguration,
+      rollbackWebhookState: {
+        webhookUrl: activeWebhookUrl,
+        receiveCallbackSentByMe: true
+      }
+    }
+    const value = fixture(initial)
+    vi.mocked(value.client.getInstanceWebhookState).mockResolvedValue(
+      webhookState('https://new-hooks.example.com/orca/z-api/secret-path', true)
+    )
+    vi.mocked(value.client.restoreEveryWebhooks).mockRejectedValue(
+      new CommunicationApiError('provider_unavailable', 'restore failed')
+    )
+    await expect(value.service.remove()).rejects.toMatchObject({
+      code: 'webhook_restore_failed'
+    })
+    expect(value.state()).toEqual(initial)
+    expect(value.writes).toEqual([initial])
+    expect(value.receiver.stop).not.toHaveBeenCalled()
   })
 
   it('blocks a different active instance before persistence or provider effects', async () => {
