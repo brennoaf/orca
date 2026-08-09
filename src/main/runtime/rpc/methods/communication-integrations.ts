@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  cancelZApiListeningValidation,
   clearCommunicationIntegration,
   discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
@@ -11,6 +12,7 @@ import {
   saveAndConfigureZApi,
   saveCommunicationIntegration,
   sendZApiReply,
+  startZApiListeningValidation,
   testCommunicationIntegration
 } from '../../../messaging/communication-integration-registry'
 import { defineMethod, type RpcContext, type RpcMethod } from '../core'
@@ -107,6 +109,8 @@ const ZApiSendReplyParams = z
   })
   .strict()
 
+const ZApiListeningValidationParams = z.object({ attemptId: z.string().uuid() }).strict()
+
 function assertLocalWindow(ctx: RpcContext): void {
   if (ctx.clientKind !== undefined) {
     throw new Error('Communication integration credentials are only available to local windows.')
@@ -176,6 +180,22 @@ export const COMMUNICATION_INTEGRATION_METHODS: RpcMethod[] = [
     handler: (_params, ctx) => {
       assertLocalWindow(ctx)
       return getZApiCommunicationIntegrationStatus()
+    }
+  }),
+  defineMethod({
+    name: 'communicationIntegrations.zApi.startListeningValidation',
+    params: null,
+    handler: (_params, ctx) => {
+      assertLocalWindow(ctx)
+      return startZApiListeningValidation()
+    }
+  }),
+  defineMethod({
+    name: 'communicationIntegrations.zApi.cancelListeningValidation',
+    params: ZApiListeningValidationParams,
+    handler: (params, ctx) => {
+      assertLocalWindow(ctx)
+      return cancelZApiListeningValidation(params.attemptId)
     }
   }),
   defineMethod({

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { normalizeCommunicationApiEndpoint } from './communication-api-endpoint'
 import type {
   ZApiTransactionActive,
@@ -18,7 +19,8 @@ import { recoverZApiPendingTransaction } from './z-api-transaction-recovery'
 
 function configuration(
   params: ZApiSaveAndConfigureParams,
-  ingressController: ZApiTransactionIngress
+  ingressController: ZApiTransactionIngress,
+  randomConfigurationId: () => string
 ): ZApiTransactionConfiguration {
   const ingress = ingressController.require(params.listenPort)
   if (
@@ -31,6 +33,7 @@ function configuration(
     throw new ZApiTransactionError('invalid_configuration', 'Z-API configuration is invalid.')
   }
   return {
+    configurationId: randomConfigurationId(),
     instanceId: params.instanceId,
     instanceToken: params.instanceToken,
     clientToken: params.clientToken,
@@ -74,7 +77,14 @@ export async function saveAndConfigureZApiTransaction(args: {
   status: ZApiTransactionStatus
 }): Promise<ZApiTransactionStatus> {
   const { dependencies, ingress, status } = args
-  const nextConfiguration = configuration(args.params, ingress)
+  const nextConfiguration = configuration(
+    args.params,
+    ingress,
+    dependencies.randomConfigurationId ?? (() => randomBytes(16).toString('hex'))
+  )
+  if (!/^[a-f0-9]{32}$/u.test(nextConfiguration.configurationId)) {
+    throw new ZApiTransactionError('invalid_configuration', 'Z-API configuration is invalid.')
+  }
   const current = dependencies.journal.read()
   if (current.active && current.active.configuration.instanceId !== nextConfiguration.instanceId) {
     throw new ZApiTransactionError(
@@ -105,7 +115,10 @@ export async function saveAndConfigureZApiTransaction(args: {
       )
     }
     const receiver = ingress.require(nextConfiguration.listenPort).receiver
-    receiver.setExpectedInstanceId(nextConfiguration.instanceId)
+    receiver.setExpectedConfiguration({
+      instanceId: nextConfiguration.instanceId,
+      configurationId: nextConfiguration.configurationId
+    })
     await ingress.challenge(nextConfiguration, status)
     const providerWebhookState = await client.getRestorableWebhookState()
     if (
@@ -165,9 +178,14 @@ export async function saveAndConfigureZApiTransaction(args: {
       failure = recoveryFailure(error, recoveryError)
     } finally {
       try {
-        ingress
-          .require(nextConfiguration.listenPort)
-          .receiver.setExpectedInstanceId(current.active?.configuration.instanceId ?? null)
+        ingress.require(nextConfiguration.listenPort).receiver.setExpectedConfiguration(
+          current.active
+            ? {
+                instanceId: current.active.configuration.instanceId,
+                configurationId: current.active.configuration.configurationId
+              }
+            : null
+        )
       } catch (receiverError) {
         failure = recoveryFailure(
           failure,

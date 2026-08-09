@@ -204,6 +204,15 @@ export function getZApiCommunicationStatus(): ZApiCommunicationIntegrationStatus
     publicWebhookBaseUrl: null,
     publicIngressVerified: false,
     webhooksConfigured: false,
+    listeningValidation: {
+      state: 'not_started',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: null
+    },
     lastErrorCode: stored?.lastError?.code ?? null
   }
 }
@@ -238,6 +247,15 @@ export function emptyZApiCommunicationStatus(
     publicWebhookBaseUrl: null,
     publicIngressVerified: false,
     webhooksConfigured: false,
+    listeningValidation: {
+      state: 'not_started',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: null
+    },
     lastErrorCode: lastError?.code ?? null
   }
 }

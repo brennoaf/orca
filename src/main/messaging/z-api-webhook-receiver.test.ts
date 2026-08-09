@@ -37,7 +37,10 @@ function receiver(
   const value = new ZApiWebhookReceiver({
     port: 0,
     path: '/webhook/secret-path',
-    expectedInstanceId: 'instance-1',
+    expectedConfiguration: {
+      instanceId: 'instance-1',
+      configurationId: '11111111111111111111111111111111'
+    },
     store: {
       ingest: options.ingest ?? (() => ({ inserted: true, messageId: 1 }))
     },
@@ -172,7 +175,7 @@ describe('ZApiWebhookReceiver', () => {
     const value = new ZApiWebhookReceiver({
       port: 0,
       path: '/webhook/secret-path',
-      expectedInstanceId: null,
+      expectedConfiguration: null,
       store: { ingest },
       onError
     })
@@ -180,7 +183,10 @@ describe('ZApiWebhookReceiver', () => {
     const endpoint = await value.start()
     expect(await post(endpoint.port, endpoint.path, JSON.stringify(payload()))).toBe(503)
     expect(ingest).not.toHaveBeenCalled()
-    value.setExpectedInstanceId('instance-1')
+    value.setExpectedConfiguration({
+      instanceId: 'instance-1',
+      configurationId: '11111111111111111111111111111111'
+    })
     expect(await post(endpoint.port, endpoint.path, JSON.stringify(payload()))).toBe(204)
     expect(ingest).toHaveBeenCalledTimes(1)
   })

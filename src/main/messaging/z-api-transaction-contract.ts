@@ -89,7 +89,9 @@ export type ZApiReceiverController = {
   start: () => Promise<ZApiReceiverEndpoint>
   stop: () => Promise<void>
   armChallenge: (nonce: string) => void
-  setExpectedInstanceId: (instanceId: string | null) => void
+  setExpectedConfiguration: (
+    configuration: { instanceId: string; configurationId: string } | null
+  ) => void
 }
 
 export type ZApiTransactionClient = {
@@ -126,6 +128,7 @@ export type ZApiTransactionServiceDependencies = {
   now?: () => number
   randomPath?: () => string
   randomNonce?: () => string
+  randomConfigurationId?: () => string
   randomClientMessageId?: () => string
 }
 

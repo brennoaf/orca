@@ -1,6 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { COMMUNICATION_WEBHOOK_CHALLENGE_MARKER } from './communication-webhook-challenge'
 import { routeZApiCallback, ZApiCallbackError } from './z-api-message-normalizer'
+import {
+  validateZApiExpectedWebhookConfiguration,
+  type ZApiExpectedWebhookConfiguration
+} from './z-api-webhook-receiver-configuration'
 import type { MessageStore } from './message-store'
 
 const MAX_BODY_BYTES = 64 * 1_024
@@ -17,10 +21,11 @@ export type ZApiWebhookReceiverEndpoint = {
 type ReceiverOptions = {
   port: number
   path: string
-  expectedInstanceId: string | null
+  expectedConfiguration: ZApiExpectedWebhookConfiguration | null
   store: Pick<MessageStore, 'ingest'>
   onError: (error: Error) => void
   now?: () => number
+  monotonicNow?: () => number
 }
 
 type PendingChallenge = {
@@ -112,29 +117,21 @@ export class ZApiWebhookReceiver {
   private startPromise: Promise<ZApiWebhookReceiverEndpoint> | null = null
   private stopPromise: Promise<void> | null = null
   private pendingChallenge: PendingChallenge | null = null
-  private expectedInstanceId: string | null
+  private expectedConfiguration: ZApiExpectedWebhookConfiguration | null
 
   constructor(options: ReceiverOptions) {
     if (!Number.isSafeInteger(options.port) || options.port < 0 || options.port > 65_535) {
       throw new Error('Z-API webhook port is invalid.')
     }
     validatePath(options.path)
-    if (
-      options.expectedInstanceId !== null &&
-      (!options.expectedInstanceId ||
-        options.expectedInstanceId.trim() !== options.expectedInstanceId)
-    ) {
-      throw new Error('Z-API expected instance ID is invalid.')
-    }
+    validateZApiExpectedWebhookConfiguration(options.expectedConfiguration)
     this.options = options
-    this.expectedInstanceId = options.expectedInstanceId
+    this.expectedConfiguration = options.expectedConfiguration
   }
 
-  setExpectedInstanceId(instanceId: string | null): void {
-    if (instanceId !== null && (!instanceId || instanceId.trim() !== instanceId)) {
-      throw new Error('Z-API expected instance ID is invalid.')
-    }
-    this.expectedInstanceId = instanceId
+  setExpectedConfiguration(configuration: ZApiExpectedWebhookConfiguration | null): void {
+    validateZApiExpectedWebhookConfiguration(configuration)
+    this.expectedConfiguration = configuration
   }
 
   armChallenge(nonce: string, ttlMs = DEFAULT_CHALLENGE_TTL_MS): void {
@@ -249,7 +246,8 @@ export class ZApiWebhookReceiver {
       response(res, 415)
       return
     }
-    if (this.expectedInstanceId === null) {
+    const expectedConfiguration = this.expectedConfiguration
+    if (expectedConfiguration === null) {
       req.resume()
       response(res, 503)
       return
@@ -257,12 +255,16 @@ export class ZApiWebhookReceiver {
     try {
       const payload = await readJson(req)
       const routed = routeZApiCallback(payload)
-      if (routed.instanceId !== this.expectedInstanceId) {
+      if (routed.instanceId !== expectedConfiguration.instanceId) {
         response(res, 403)
         return
       }
       if (routed.kind === 'message') {
-        this.options.store.ingest(routed.message)
+        this.options.store.ingest(routed.message, {
+          configurationId: expectedConfiguration.configurationId,
+          persistedAt: (this.options.now ?? Date.now)(),
+          monotonicNow: (this.options.monotonicNow ?? (() => performance.now()))()
+        })
       }
       response(res, 204)
     } catch (error) {

@@ -39,6 +39,7 @@ function state(): ZApiTransactionJournalState {
     pending: {
       phase: 'callback_mutation_intent',
       configuration: {
+        configurationId: '11111111111111111111111111111111',
         instanceId: 'instance-sensitive',
         instanceToken: 'instance-token-sensitive',
         clientToken: 'client-token-sensitive',
@@ -92,6 +93,34 @@ describe('ZApiTransactionJournal', () => {
       active: null,
       pending: null
     })
+  })
+
+  it('migrates a legacy configuration id once and persists it securely', () => {
+    const legacy = state()
+    const configuration = legacy.pending?.configuration
+    if (!configuration) {
+      throw new Error('Missing test configuration.')
+    }
+    const { configurationId: _configurationId, ...legacyConfiguration } = configuration
+    const payload = JSON.stringify({
+      ...legacy,
+      pending: { ...legacy.pending, configuration: legacyConfiguration }
+    })
+    const ciphertext = Buffer.from(
+      Buffer.from(payload, 'utf8').map((byte) => byte ^ 0x5a)
+    ).toString('base64')
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, format: 'electron-safe-storage-v1', ciphertext })
+    )
+
+    const journal = new ZApiTransactionJournal()
+    const migrated = journal.read()
+    const generatedId = migrated.pending?.configuration.configurationId
+    expect(generatedId).toMatch(/^[a-f0-9]{32}$/u)
+    expect(mocks.writeSecureFile).toHaveBeenCalledOnce()
+    expect(journal.read().pending?.configuration.configurationId).toBe(generatedId)
+    expect(readFileSync(path, 'utf8')).not.toContain(generatedId ?? '')
   })
 
   it('fails closed on malformed and future journal payloads', () => {

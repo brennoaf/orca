@@ -23,6 +23,7 @@ import * as SlackStore from './slack-communication-credential-store'
 import { probeSlackCommunicationIntegration } from './slack-communication-probe'
 import * as ZApiStore from './z-api-communication-credential-store'
 import {
+  cancelZApiListeningValidation,
   discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
@@ -30,7 +31,8 @@ import {
   prepareZApiIngress,
   removeZApiCommunicationIntegration,
   saveAndConfigureZApi,
-  sendZApiReply
+  sendZApiReply,
+  startZApiListeningValidation
 } from './z-api-communication-integration'
 
 type ProviderStatus<P extends CommunicationProviderId> = Extract<
@@ -288,6 +290,7 @@ export function testCommunicationIntegration(provider: CommunicationProviderId) 
 }
 
 export {
+  cancelZApiListeningValidation,
   discardPreparedZApiIngress,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
@@ -295,5 +298,6 @@ export {
   prepareZApiIngress,
   removeZApiCommunicationIntegration,
   saveAndConfigureZApi,
-  sendZApiReply
+  sendZApiReply,
+  startZApiListeningValidation
 }

@@ -7,7 +7,8 @@ import {
   type ZApiMessagePage,
   type ZApiPreparedIngressSnapshot,
   type ZApiSecretMutation,
-  type ZApiSendReplyResult
+  type ZApiSendReplyResult,
+  type ZApiListeningValidationSnapshot
 } from '../../shared/communication-integrations'
 import {
   assertCommunicationEndpointTrust,
@@ -70,6 +71,7 @@ export async function saveAndConfigureZApi(
         'Resolve the pending Z-API webhook repair before saving.'
       )
     }
+    runtime.listeningValidation.cancelPending()
     const active = journal.active?.configuration ?? null
     const legacy = active ? null : readZApiCommunicationCredentials()
     const apiEndpoint = normalizeCommunicationApiEndpoint(input.apiBaseUrl)
@@ -93,6 +95,10 @@ export async function saveAndConfigureZApi(
       listenPort: preparedIngress.listenPort,
       preparedIngress
     })
+    const configuration = currentZApiConfiguration(runtime)
+    if (active && configuration && active.configurationId !== configuration.configurationId) {
+      runtime.listeningValidation.clear(active.configurationId)
+    }
     clearZApiCommunicationCredentials()
     return undefined
   })
@@ -102,10 +108,49 @@ export async function removeZApiCommunicationIntegration(): Promise<
   ZApiCommunicationOperationResult<undefined>
 > {
   return runZApiCommunicationOperation(async (runtime) => {
+    const configuration = currentZApiConfiguration(runtime)
+    runtime.listeningValidation.cancelPending()
     await runtime.service.remove()
+    if (configuration) {
+      runtime.listeningValidation.clearInstance(configuration.instanceId)
+    }
     clearZApiCommunicationCredentials()
     return undefined
   })
+}
+
+export async function startZApiListeningValidation(): Promise<
+  ZApiCommunicationOperationResult<ZApiListeningValidationSnapshot>
+> {
+  return runZApiCommunicationOperation((runtime) => {
+    const journal = runtime.journal.read()
+    const active = journal.active
+    const status = runtime.service.getStatus()
+    if (
+      !active ||
+      journal.pending ||
+      !status.configured ||
+      !status.verified ||
+      !status.ingress.prepared ||
+      !status.ingress.challengeVerified ||
+      !status.ingress.webhooksVerified
+    ) {
+      throw new ZApiTransactionError(
+        'not_configured',
+        'Z-API receiving must be configured before validation.'
+      )
+    }
+    return runtime.listeningValidation.start({
+      configurationId: active.configuration.configurationId,
+      instanceId: active.configuration.instanceId
+    })
+  })
+}
+
+export async function cancelZApiListeningValidation(
+  attemptId: string
+): Promise<ZApiCommunicationOperationResult<ZApiListeningValidationSnapshot>> {
+  return runZApiCommunicationOperation((runtime) => runtime.listeningValidation.cancel(attemptId))
 }
 
 export async function getZApiCommunicationIntegrationStatus(): Promise<ZApiCommunicationIntegrationStatus> {

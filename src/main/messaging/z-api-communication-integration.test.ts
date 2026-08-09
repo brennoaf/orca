@@ -22,6 +22,14 @@ const mocks = vi.hoisted(() => ({
   },
   listConversations: vi.fn(),
   listRecentMessages: vi.fn(),
+  listeningCancel: vi.fn(),
+  listeningCancelPending: vi.fn(),
+  listeningClear: vi.fn(),
+  listeningClearInstance: vi.fn(),
+  listeningConfirmedAt: vi.fn<() => number | null>(),
+  listeningRetain: vi.fn(),
+  listeningStart: vi.fn(),
+  listeningStatus: vi.fn(),
   prepareIngress: vi.fn(),
   recover: vi.fn(),
   remove: vi.fn(),
@@ -94,6 +102,19 @@ vi.mock('./z-api-communication-credential-store', () => ({
   readZApiCommunicationCredentials: vi.fn(() => mocks.legacy)
 }))
 
+vi.mock('./z-api-listening-validation', () => ({
+  ZApiListeningValidation: class {
+    cancel = mocks.listeningCancel
+    cancelPending = mocks.listeningCancelPending
+    clear = mocks.listeningClear
+    clearInstance = mocks.listeningClearInstance
+    confirmedAt = mocks.listeningConfirmedAt
+    retain = mocks.listeningRetain
+    start = mocks.listeningStart
+    status = mocks.listeningStatus
+  }
+}))
+
 vi.mock('./z-api-transaction-journal', () => ({
   ZApiTransactionJournal: class {
     clear = mocks.journalClear
@@ -116,6 +137,7 @@ function activeJournal(): ZApiTransactionJournalState {
     provider: 'z-api',
     active: {
       configuration: {
+        configurationId: '11111111111111111111111111111111',
         instanceId: 'active-instance',
         instanceToken: 'active-instance-token',
         clientToken: 'active-client-token',
@@ -169,6 +191,16 @@ describe('Z-API communication integration', () => {
       lastErrorCode: null
     }
     mocks.journalRead.mockImplementation(emptyJournal)
+    mocks.listeningConfirmedAt.mockReturnValue(null)
+    mocks.listeningStatus.mockReturnValue({
+      state: 'not_started',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: null
+    })
     mocks.collectGarbage.mockResolvedValue({ messagesDeleted: 0, conversationsDeleted: 0 })
     mocks.recover.mockResolvedValue(mocks.serviceStatus)
     mocks.prepareIngress.mockResolvedValue({
@@ -209,6 +241,7 @@ describe('Z-API communication integration', () => {
     expect(mocks.collectGarbage.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.getStatus.mock.invocationCallOrder[0] ?? 0
     )
+    expect(mocks.listeningRetain).toHaveBeenCalledExactlyOnceWith(null)
   })
 
   it('exposes public ingress verification independently from webhook verification', async () => {
@@ -222,6 +255,146 @@ describe('Z-API communication integration', () => {
     expect(status.webhooksConfigured).toBe(false)
     expect(JSON.stringify(status)).not.toContain('challengeVerified')
     expect(JSON.stringify(status)).not.toContain('secretPath')
+  })
+
+  it('keeps sending technical readiness independent from listening confirmation', async () => {
+    mocks.journalRead.mockImplementation(activeJournal)
+    mocks.serviceStatus = {
+      configured: true,
+      verified: true,
+      sendReady: true,
+      receiveReady: true,
+      connected: true,
+      smartphoneConnected: true,
+      ingress: {
+        prepared: true,
+        listenPort: 4321,
+        challengeVerified: true,
+        webhooksVerified: true
+      },
+      lastErrorCode: null
+    }
+    const api = await integration()
+
+    expect((await api.getZApiCommunicationIntegrationStatus()).readiness).toMatchObject({
+      verified: false,
+      sendReady: true,
+      receiveReady: false
+    })
+
+    mocks.listeningConfirmedAt.mockReturnValue(1_786_300_000_000)
+    mocks.listeningStatus.mockReturnValue({
+      state: 'confirmed',
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      code: null,
+      deadline: '2026-08-09T00:03:00.000Z',
+      remainingMs: 0,
+      confirmedAt: '2026-08-09T00:00:00.000Z',
+      error: null
+    })
+    expect((await api.getZApiCommunicationIntegrationStatus()).readiness).toMatchObject({
+      verified: true,
+      sendReady: true,
+      receiveReady: true,
+      verifiedAt: new Date(1_786_300_000_000).toISOString()
+    })
+  })
+
+  it('starts listening validation from technical readiness without receive readiness', async () => {
+    mocks.journalRead.mockImplementation(activeJournal)
+    mocks.serviceStatus = {
+      configured: true,
+      verified: true,
+      sendReady: true,
+      receiveReady: true,
+      connected: true,
+      smartphoneConnected: true,
+      ingress: {
+        prepared: true,
+        listenPort: 4321,
+        challengeVerified: true,
+        webhooksVerified: true
+      },
+      lastErrorCode: null
+    }
+    const snapshot = {
+      state: 'awaiting' as const,
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      code: 'orca-0123456789abcdef01234567',
+      deadline: '2026-08-09T00:03:00.000Z',
+      remainingMs: 180_000,
+      confirmedAt: null,
+      error: null
+    }
+    mocks.listeningStart.mockReturnValue(snapshot)
+    const api = await integration()
+
+    await expect(api.startZApiListeningValidation()).resolves.toMatchObject({
+      ok: true,
+      value: snapshot
+    })
+    expect(mocks.listeningStart).toHaveBeenCalledWith({
+      configurationId: '11111111111111111111111111111111',
+      instanceId: 'active-instance'
+    })
+  })
+
+  it('cleans replaced validation only after successful reconfiguration', async () => {
+    const replacement = activeJournal()
+    if (!replacement.active) {
+      throw new Error('Missing replacement configuration.')
+    }
+    replacement.active.configuration.configurationId = '22222222222222222222222222222222'
+    mocks.journalRead
+      .mockReturnValueOnce(activeJournal())
+      .mockReturnValueOnce(activeJournal())
+      .mockReturnValue(replacement)
+    const api = await integration()
+
+    await expect(
+      api.saveAndConfigureZApi({
+        instanceId: 'active-instance',
+        instanceToken: { action: 'keep' },
+        clientToken: { action: 'keep' },
+        apiBaseUrl: 'https://active.example.com',
+        endpointTrust: { kind: 'custom', authority: 'active.example.com' },
+        publicWebhookBaseUrl: 'https://hook.example.com',
+        listenPort: 4321
+      })
+    ).resolves.toMatchObject({ ok: true })
+    expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
+    expect(mocks.listeningClear).toHaveBeenCalledExactlyOnceWith('11111111111111111111111111111111')
+  })
+
+  it('preserves existing validation when reconfiguration rolls back', async () => {
+    mocks.journalRead.mockImplementation(activeJournal)
+    const { ZApiTransactionError } = await import('./z-api-transaction-service')
+    mocks.saveAndConfigure.mockRejectedValueOnce(
+      new ZApiTransactionError('webhook_restore_failed', 'provider detail')
+    )
+    const api = await integration()
+
+    await expect(
+      api.saveAndConfigureZApi({
+        instanceId: 'active-instance',
+        instanceToken: { action: 'keep' },
+        clientToken: { action: 'keep' },
+        apiBaseUrl: 'https://active.example.com',
+        endpointTrust: { kind: 'custom', authority: 'active.example.com' },
+        publicWebhookBaseUrl: 'https://hook.example.com',
+        listenPort: 4321
+      })
+    ).resolves.toMatchObject({ ok: false })
+    expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
+    expect(mocks.listeningClear).not.toHaveBeenCalled()
+  })
+
+  it('clears every validation for the removed instance', async () => {
+    mocks.journalRead.mockImplementation(activeJournal)
+    const api = await integration()
+    await api.removeZApiCommunicationIntegration()
+    expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
+    expect(mocks.listeningClearInstance).toHaveBeenCalledExactlyOnceWith('active-instance')
   })
 
   it('uses active journal credentials instead of divergent legacy credentials', async () => {
@@ -362,6 +535,18 @@ describe('Z-API communication integration', () => {
     expect(mocks.closeStore).toHaveBeenCalledOnce()
   })
 
+  it('still stops ingress when pending validation cancellation fails during shutdown', async () => {
+    mocks.listeningCancelPending.mockImplementationOnce(() => {
+      throw new Error('database unavailable')
+    })
+    const api = await integration()
+    await api.getZApiCommunicationIntegrationStatus()
+
+    await expect(api.disposeZApiCommunicationIntegration()).rejects.toThrow('Z-API shutdown failed')
+    expect(mocks.stopIngress).toHaveBeenCalledOnce()
+    expect(mocks.closeStore).toHaveBeenCalledOnce()
+  })
+
   it('joins Z-API disposal to the central quit teardown barrier', () => {
     const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8')
     const capture = source.indexOf('const zApiShutdown = disposeZApiCommunicationIntegration()')
@@ -391,6 +576,7 @@ describe('Z-API communication integration', () => {
     expect(mocks.clearLegacy).toHaveBeenCalledOnce()
 
     await api.disposeZApiCommunicationIntegration()
+    expect(mocks.listeningCancelPending).toHaveBeenCalled()
     expect(mocks.stopIngress).toHaveBeenCalledOnce()
     expect(mocks.closeStore).toHaveBeenCalledOnce()
     expect(mocks.stopIngress.mock.invocationCallOrder[0]).toBeLessThan(

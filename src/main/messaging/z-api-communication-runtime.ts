@@ -14,6 +14,7 @@ import {
   readZApiCommunicationCredentials
 } from './z-api-communication-credential-store'
 import { ZApiAmbiguousSendError } from './z-api-communication-client'
+import { ZApiListeningValidation } from './z-api-listening-validation'
 import type { ZApiTransactionConfiguration } from './z-api-transaction-journal'
 import { ZApiTransactionJournal } from './z-api-transaction-journal'
 import { createZApiTransactionService } from './z-api-transaction-service-factory'
@@ -28,6 +29,7 @@ export type ZApiCommunicationRuntime = {
   service: ZApiTransactionService
   store: MessageStore
   journal: ZApiTransactionJournal
+  listeningValidation: ZApiListeningValidation
   gcTimer: ReturnType<typeof setInterval> | null
   gcPromise: Promise<void> | null
 }
@@ -85,10 +87,12 @@ async function createRuntime(): Promise<ZApiCommunicationRuntime> {
       console.error('[z-api] Webhook receiver failed.')
     }
   })
+  const listeningValidation = new ZApiListeningValidation(store.listeningValidation)
   const runtime: ZApiCommunicationRuntime = {
     service,
     store,
     journal,
+    listeningValidation,
     gcTimer: null,
     gcPromise: null
   }
@@ -101,6 +105,7 @@ async function createRuntime(): Promise<ZApiCommunicationRuntime> {
     }
   }
   try {
+    listeningValidation.retain(journal.read().active?.configuration.configurationId ?? null)
     await collectRuntimeGarbage(runtime)
   } catch (error) {
     try {
@@ -145,6 +150,30 @@ export function zApiStatusFromRuntime(
   const serviceStatus = zApiRuntime.service.getStatus()
   const active = zApiRuntime.journal.read().active
   const configuration = active?.configuration ?? null
+  let listeningValidation = zApiRuntime.listeningValidation.status(
+    configuration?.configurationId ?? null
+  )
+  let listeningConfirmedAt: number | null = null
+  try {
+    listeningConfirmedAt =
+      listeningValidation.state === 'failed'
+        ? null
+        : zApiRuntime.listeningValidation.confirmedAt(configuration?.configurationId ?? null)
+  } catch (error) {
+    if (!(error instanceof ZApiTransactionError)) {
+      throw error
+    }
+    listeningValidation = {
+      state: 'failed',
+      attemptId: null,
+      code: null,
+      deadline: null,
+      remainingMs: null,
+      confirmedAt: null,
+      error: transactionError(error.code)
+    }
+  }
+  const listeningConfirmed = listeningConfirmedAt !== null
   const legacy = configuration ? null : readZApiCommunicationCredentials()
   const normalized = normalizeCommunicationApiEndpoint(
     configuration?.baseUrl ?? legacy?.baseUrl ?? DEFAULT_Z_API_BASE_URL
@@ -166,10 +195,13 @@ export function zApiStatusFromRuntime(
     },
     readiness: {
       configured: serviceStatus.configured,
-      verified: serviceStatus.verified,
+      verified: serviceStatus.verified && listeningConfirmed,
       sendReady: serviceStatus.sendReady,
-      receiveReady: serviceStatus.receiveReady,
-      verifiedAt: serviceStatus.verified ? (active?.verifiedAt ?? null) : null,
+      receiveReady: serviceStatus.receiveReady && listeningConfirmed,
+      verifiedAt:
+        serviceStatus.verified && listeningConfirmedAt !== null
+          ? new Date(listeningConfirmedAt).toISOString()
+          : null,
       lastError
     },
     instanceId: configuration?.instanceId ?? legacy?.instanceId ?? null,
@@ -183,6 +215,7 @@ export function zApiStatusFromRuntime(
     publicWebhookBaseUrl: configuration?.publicWebhookBaseUrl ?? null,
     publicIngressVerified: serviceStatus.ingress.challengeVerified,
     webhooksConfigured: serviceStatus.ingress.webhooksVerified,
+    listeningValidation,
     lastErrorCode: serviceStatus.lastErrorCode
   }
 }
@@ -224,6 +257,7 @@ export async function disposeZApiCommunicationRuntime(): Promise<void> {
     }
     try {
       const results = await Promise.allSettled([
+        Promise.resolve().then(() => runtime.listeningValidation.cancelPending()),
         runtime.gcPromise ?? Promise.resolve(),
         runtime.service.stopIngress()
       ])

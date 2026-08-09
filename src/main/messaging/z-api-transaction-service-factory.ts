@@ -22,7 +22,7 @@ export function createZApiTransactionService(args: {
       new ZApiWebhookReceiver({
         port,
         path,
-        expectedInstanceId: null,
+        expectedConfiguration: null,
         store: args.messageStore,
         onError: args.onReceiverError
       }),

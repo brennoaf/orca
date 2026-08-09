@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   zApiConversations: vi.fn(async () => ({})),
   zApiMessages: vi.fn(async () => ({})),
   zApiSend: vi.fn(async () => ({})),
-  zApiRemove: vi.fn(async () => ({}))
+  zApiRemove: vi.fn(async () => ({})),
+  zApiStartValidation: vi.fn(async () => ({})),
+  zApiCancelValidation: vi.fn(async () => ({}))
 }))
 
 vi.mock('../../../messaging/communication-integration-registry', () => ({
@@ -37,7 +39,9 @@ vi.mock('../../../messaging/communication-integration-registry', () => ({
   listZApiConversations: mocks.zApiConversations,
   listZApiMessages: mocks.zApiMessages,
   sendZApiReply: mocks.zApiSend,
-  removeZApiCommunicationIntegration: mocks.zApiRemove
+  removeZApiCommunicationIntegration: mocks.zApiRemove,
+  startZApiListeningValidation: mocks.zApiStartValidation,
+  cancelZApiListeningValidation: mocks.zApiCancelValidation
 }))
 
 import { COMMUNICATION_INTEGRATION_METHODS } from './communication-integrations'
@@ -59,6 +63,8 @@ describe('communication integration RPC methods', () => {
     mocks.zApiDiscard.mockClear()
     mocks.zApiPrepare.mockClear()
     mocks.zApiSave.mockClear()
+    mocks.zApiStartValidation.mockClear()
+    mocks.zApiCancelValidation.mockClear()
   })
 
   it('registers the communication integration methods exactly once in its manifest', () => {
@@ -71,12 +77,14 @@ describe('communication integration RPC methods', () => {
       'communicationIntegrations.zApi.discardPreparedIngress',
       'communicationIntegrations.zApi.saveAndConfigure',
       'communicationIntegrations.zApi.getStatus',
+      'communicationIntegrations.zApi.startListeningValidation',
+      'communicationIntegrations.zApi.cancelListeningValidation',
       'communicationIntegrations.zApi.listConversations',
       'communicationIntegrations.zApi.listMessages',
       'communicationIntegrations.zApi.sendReply',
       'communicationIntegrations.zApi.remove'
     ])
-    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(12)
+    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(14)
     const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
     expect(indexSource.match(/\.\.\.COMMUNICATION_INTEGRATION_METHODS/g)).toHaveLength(1)
   })
@@ -206,6 +214,35 @@ describe('communication integration RPC methods', () => {
     expect(candidate.params).toBeNull()
     await candidate.handler(undefined, {} as RpcContext)
     expect(mocks.zApiDiscard).toHaveBeenCalledOnce()
+  })
+
+  it('starts validation without user-declared evidence and cancels only by attempt id', async () => {
+    const snapshot = {
+      state: 'awaiting',
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      code: 'orca-0123456789abcdef01234567',
+      deadline: '2026-08-09T00:03:00.000Z',
+      remainingMs: 180_000,
+      confirmedAt: null,
+      error: null
+    }
+    mocks.zApiStartValidation.mockResolvedValueOnce({ ok: true, value: snapshot })
+    const start = method('communicationIntegrations.zApi.startListeningValidation')
+    expect(start.params).toBeNull()
+    const result = await start.handler(undefined, {} as RpcContext)
+    expect(mocks.zApiStartValidation).toHaveBeenCalledOnce()
+    expect(JSON.stringify(result)).not.toMatch(
+      /phone|conversation|direction|receivedText|messageId|providerMessageId/iu
+    )
+
+    const cancel = method('communicationIntegrations.zApi.cancelListeningValidation')
+    const attempt = { attemptId: '11111111-1111-4111-8111-111111111111' }
+    expect(cancel.params?.safeParse(attempt).success).toBe(true)
+    expect(cancel.params?.safeParse({ ...attempt, success: true }).success).toBe(false)
+    expect(cancel.params?.safeParse({ ...attempt, messages: [] }).success).toBe(false)
+    expect(cancel.params?.safeParse({ attemptId: 'not-a-uuid' }).success).toBe(false)
+    await cancel.handler(cancel.params?.parse(attempt), {} as RpcContext)
+    expect(mocks.zApiCancelValidation).toHaveBeenCalledExactlyOnceWith(attempt.attemptId)
   })
 
   it('rejects every method for paired and runtime clients before delegation', async () => {

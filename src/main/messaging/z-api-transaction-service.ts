@@ -179,7 +179,10 @@ export class ZApiTransactionService {
       if (!providerStatus.connected || !providerStatus.smartphoneConnected) {
         throw new ZApiTransactionError('provider_unavailable', 'Z-API is disconnected.')
       }
-      receiver.setExpectedInstanceId(active.configuration.instanceId)
+      receiver.setExpectedConfiguration({
+        instanceId: active.configuration.instanceId,
+        configurationId: active.configuration.configurationId
+      })
       await this.ingress.challenge(active.configuration, this.status)
       const webhooks = await client.getInstanceWebhookState()
       if (!matchesZApiWebhookState(webhooks, zApiFullWebhookUrl(active.configuration), true)) {

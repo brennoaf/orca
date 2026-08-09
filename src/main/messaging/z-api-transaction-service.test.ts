@@ -42,6 +42,7 @@ function webhookState(
 
 function configuration(): ZApiTransactionConfiguration {
   return {
+    configurationId: '11111111111111111111111111111111',
     instanceId: 'instance-1',
     instanceToken: 'instance-token',
     clientToken: 'client-token',
@@ -95,7 +96,7 @@ function fixture(
     })),
     stop: vi.fn(async () => undefined),
     armChallenge: vi.fn(() => calls.push('armChallenge')),
-    setExpectedInstanceId: vi.fn(() => calls.push('setExpectedInstanceId'))
+    setExpectedConfiguration: vi.fn(() => calls.push('setExpectedConfiguration'))
   }
   const client: ZApiTransactionClient = {
     getStatus: vi.fn(async () => {
@@ -163,6 +164,7 @@ function fixture(
     now: () => 1_786_300_000_000,
     randomPath: () => '/orca/z-api/secret-path',
     randomNonce: () => 'nonce_1234567890123456',
+    randomConfigurationId: () => '22222222222222222222222222222222',
     randomClientMessageId: () => 'client-message-1'
   })
   return {
@@ -311,7 +313,7 @@ describe('ZApiTransactionService', () => {
     ])
     expect(value.calls).toEqual([
       'getStatus',
-      'setExpectedInstanceId',
+      'setExpectedConfiguration',
       'armChallenge',
       'verifyChallenge',
       'getRestorableWebhookState',
@@ -320,6 +322,9 @@ describe('ZApiTransactionService', () => {
       'getInstanceWebhookState'
     ])
     expect(value.state().active?.configuration.secretPath).toBe('/orca/z-api/secret-path')
+    expect(value.state().active?.configuration.configurationId).toBe(
+      '22222222222222222222222222222222'
+    )
     expect(value.state().pending).toBeNull()
     expect(JSON.stringify(value.service.getStatus())).not.toContain('secret')
     expect(JSON.stringify(value.service.getStatus())).not.toContain('hooks.example.com')
@@ -396,7 +401,7 @@ describe('ZApiTransactionService', () => {
     ).rejects.toMatchObject({ code: 'provider_unavailable' })
     expect(persistentFilters.client.clearWebhookFilters).toHaveBeenCalledTimes(2)
     expect(persistentFilters.state().pending?.phase).toBe('filters_clear_intent')
-    expect(persistentFilters.receiver.setExpectedInstanceId).toHaveBeenLastCalledWith(null)
+    expect(persistentFilters.receiver.setExpectedConfiguration).toHaveBeenLastCalledWith(null)
     expect(persistentFilters.service.getStatus()).toMatchObject({
       sendReady: false,
       receiveReady: false
@@ -437,7 +442,7 @@ describe('ZApiTransactionService', () => {
       receiveReady: false,
       lastErrorCode: 'webhook_restore_failed'
     })
-    expect(value.receiver.setExpectedInstanceId).toHaveBeenLastCalledWith(null)
+    expect(value.receiver.setExpectedConfiguration).toHaveBeenLastCalledWith(null)
   })
 
   it('resets the receiver to the previous active instance when repair becomes required', async () => {
@@ -463,7 +468,10 @@ describe('ZApiTransactionService', () => {
       code: 'webhook_restore_failed'
     })
     expect(value.state().pending?.phase).toBe('repair_required')
-    expect(value.receiver.setExpectedInstanceId).toHaveBeenLastCalledWith('instance-1')
+    expect(value.receiver.setExpectedConfiguration).toHaveBeenLastCalledWith({
+      instanceId: 'instance-1',
+      configurationId: '11111111111111111111111111111111'
+    })
     expect(value.service.getStatus()).toMatchObject({
       sendReady: false,
       receiveReady: false,
@@ -487,7 +495,7 @@ describe('ZApiTransactionService', () => {
     expect(value.state().pending).toBeNull()
     expect(value.calls).toEqual([
       'getStatus',
-      'setExpectedInstanceId',
+      'setExpectedConfiguration',
       'armChallenge',
       'verifyChallenge',
       'getInstanceWebhookState'

@@ -123,8 +123,65 @@ export type ZApiCommunicationIntegrationStatus = {
   publicWebhookBaseUrl: string | null
   publicIngressVerified: boolean
   webhooksConfigured: boolean
+  listeningValidation?: ZApiListeningValidationSnapshot
   lastErrorCode: CommunicationIntegrationErrorCode | null
 }
+
+type ZApiListeningValidationBase = {
+  attemptId: string | null
+  code: string | null
+  deadline: string | null
+  remainingMs: number | null
+  confirmedAt: string | null
+  error: CommunicationIntegrationRedactedError | null
+}
+
+export type ZApiListeningValidationSnapshot =
+  | (ZApiListeningValidationBase & {
+      state: 'not_started'
+      attemptId: null
+      code: null
+      deadline: null
+      remainingMs: null
+      confirmedAt: null
+      error: null
+    })
+  | (ZApiListeningValidationBase & {
+      state: 'awaiting'
+      attemptId: string
+      code: string
+      deadline: string
+      remainingMs: number
+      confirmedAt: null
+      error: null
+    })
+  | (ZApiListeningValidationBase & {
+      state: 'confirmed'
+      attemptId: string
+      code: null
+      deadline: string
+      remainingMs: 0
+      confirmedAt: string
+      error: null
+    })
+  | (ZApiListeningValidationBase & {
+      state: 'expired' | 'cancelled'
+      attemptId: string
+      code: null
+      deadline: string
+      remainingMs: 0
+      confirmedAt: null
+      error: null
+    })
+  | (ZApiListeningValidationBase & {
+      state: 'failed'
+      attemptId: null
+      code: null
+      deadline: null
+      remainingMs: null
+      confirmedAt: null
+      error: CommunicationIntegrationRedactedError
+    })
 
 export type CommunicationIntegrationStatus =
   | DiscordCommunicationIntegrationStatus

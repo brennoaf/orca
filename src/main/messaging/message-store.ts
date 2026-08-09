@@ -7,6 +7,10 @@ import {
 } from './message-store-outbound-reconciliation'
 import { collectMessageStoreGarbage } from './message-store-retention'
 import { listMessagingConversations } from './message-store-conversation-read'
+import { upsertMessagingConversation } from './message-store-conversation-write'
+import { ingestZApiMessage } from './message-store-ingest'
+import { ZApiListeningValidationDatabase } from './z-api-listening-validation-database'
+import type { ZApiWebhookIngestContext } from './z-api-listening-validation-store'
 import {
   DEFAULT_MAX_CONVERSATIONS,
   DEFAULT_MAX_MESSAGES_PER_CONVERSATION,
@@ -31,8 +35,8 @@ export type {
   MessagingMessage,
   MessagingReplyDestination
 } from './message-store-schema'
-
 export class MessageStore {
+  readonly listeningValidation: ZApiListeningValidationDatabase
   private readonly db: SyncDatabase
   private readonly ttlMs: number
   private readonly maxMessagesPerConversation: number
@@ -50,6 +54,8 @@ export class MessageStore {
     this.maxConversations = positiveInteger(options.maxConversations, DEFAULT_MAX_CONVERSATIONS)
     this.db = new SyncDatabase(dbPath)
     initializeMessageStoreDatabase(this.db, dbPath)
+    this.listeningValidation = new ZApiListeningValidationDatabase(this.db)
+    this.listeningValidation.cancelPending()
   }
 
   private ensureOpen(): void {
@@ -58,96 +64,12 @@ export class MessageStore {
     }
   }
 
-  private conversationId(
-    provider: 'z-api',
-    instanceId: string,
-    address: string,
-    displayName: string | null,
-    occurredAt: number
-  ): number {
-    this.db
-      .prepare(
-        `INSERT INTO conversations(provider, instance_id, address, display_name, last_message_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(provider, instance_id, address) DO UPDATE SET
-           display_name = COALESCE(excluded.display_name, conversations.display_name),
-           last_message_at = MAX(conversations.last_message_at, excluded.last_message_at)`
-      )
-      .run(provider, instanceId, address, displayName, occurredAt)
-    const row = this.db
-      .prepare(
-        'SELECT id FROM conversations WHERE provider = ? AND instance_id = ? AND address = ?'
-      )
-      .get(provider, instanceId, address) as { id?: unknown } | undefined
-    if (!row) {
-      throw new Error('Messaging conversation was not persisted.')
-    }
-    return numberField(row.id, 'conversation id')
-  }
-
-  ingest(message: NormalizedZApiMessage): { inserted: boolean; messageId: number } {
+  ingest(
+    message: NormalizedZApiMessage,
+    context?: ZApiWebhookIngestContext
+  ): { inserted: boolean; messageId: number } {
     this.ensureOpen()
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const existing = this.db
-        .prepare(
-          'SELECT id FROM messages WHERE provider = ? AND instance_id = ? AND provider_message_id = ?'
-        )
-        .get(message.provider, message.instanceId, message.messageId) as
-        | { id?: unknown }
-        | undefined
-      if (existing) {
-        this.db.exec('COMMIT')
-        return { inserted: false, messageId: numberField(existing.id, 'message id') }
-      }
-      const conversationId = this.conversationId(
-        message.provider,
-        message.instanceId,
-        message.conversationAddress,
-        message.conversationName,
-        message.occurredAt
-      )
-      const result = this.db
-        .prepare(
-          `INSERT OR IGNORE INTO messages(
-             conversation_id, provider, instance_id, provider_message_id, sender_address,
-             sender_name, direction, content_kind, body, provider_content_type, occurred_at,
-             delivery_status
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          conversationId,
-          message.provider,
-          message.instanceId,
-          message.messageId,
-          message.senderAddress,
-          message.senderName,
-          message.direction,
-          message.content.kind,
-          message.content.kind === 'text' ? message.content.text : null,
-          message.content.kind === 'unsupported' ? message.content.providerType : null,
-          message.occurredAt,
-          message.direction === 'outbound' ? 'sent' : 'received'
-        )
-      const row = this.db
-        .prepare(
-          'SELECT id FROM messages WHERE provider = ? AND instance_id = ? AND provider_message_id = ?'
-        )
-        .get(message.provider, message.instanceId, message.messageId) as
-        | { id?: unknown }
-        | undefined
-      if (!row) {
-        throw new Error('Messaging callback was not persisted.')
-      }
-      this.db.exec('COMMIT')
-      return {
-        inserted: result.changes > 0,
-        messageId: numberField(row.id, 'message id')
-      }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    return ingestZApiMessage(this.db, message, context)
   }
 
   registerOutboundPending(args: {
@@ -171,13 +93,13 @@ export class MessageStore {
         this.db.exec('COMMIT')
         return numberField(existing.id, 'message id')
       }
-      const conversationId = this.conversationId(
-        'z-api',
-        args.instanceId,
-        args.conversationAddress,
-        args.conversationName ?? null,
-        args.occurredAt
-      )
+      const conversationId = upsertMessagingConversation(this.db, {
+        provider: 'z-api',
+        instanceId: args.instanceId,
+        address: args.conversationAddress,
+        displayName: args.conversationName ?? null,
+        occurredAt: args.occurredAt
+      })
       this.db
         .prepare(
           `INSERT OR IGNORE INTO messages(

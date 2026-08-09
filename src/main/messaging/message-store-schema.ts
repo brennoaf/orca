@@ -1,7 +1,7 @@
 import { chmodSync, existsSync } from 'node:fs'
 import type SyncDatabase from '../sqlite/sync-database'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 export const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 export const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 200
@@ -192,6 +192,26 @@ export function initializeMessageStoreDatabase(
     CREATE INDEX IF NOT EXISTS idx_messaging_messages_recent
       ON messages(conversation_id, occurred_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_messaging_messages_ttl ON messages(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_messaging_messages_instance_commit
+      ON messages(provider, instance_id, id DESC);
+    CREATE TABLE IF NOT EXISTS z_api_listening_validation_attempts (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      attempt_id TEXT NOT NULL UNIQUE,
+      configuration_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      code_hash TEXT,
+      baseline_message_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      deadline_at INTEGER NOT NULL,
+      monotonic_created_at REAL NOT NULL,
+      monotonic_deadline_at REAL NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('awaiting', 'confirmed', 'expired', 'cancelled')),
+      confirmed_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_z_api_listening_validation_active
+      ON z_api_listening_validation_attempts(configuration_id) WHERE state = 'awaiting';
+    CREATE INDEX IF NOT EXISTS idx_z_api_listening_validation_recent
+      ON z_api_listening_validation_attempts(configuration_id, sequence DESC);
   `)
   if (version === 1) {
     db.exec(`
@@ -230,6 +250,8 @@ export function initializeMessageStoreDatabase(
       CREATE INDEX idx_messaging_messages_recent
         ON messages(conversation_id, occurred_at DESC, id DESC);
       CREATE INDEX idx_messaging_messages_ttl ON messages(occurred_at);
+      CREATE INDEX idx_messaging_messages_instance_commit
+        ON messages(provider, instance_id, id DESC);
       COMMIT;
     `)
   }
