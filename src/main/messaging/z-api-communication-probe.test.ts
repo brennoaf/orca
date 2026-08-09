@@ -22,6 +22,7 @@ class FakeRequest extends EventEmitter {
 class FakeResponse extends EventEmitter {
   readonly destroy = vi.fn()
   readonly resume = vi.fn()
+  readonly headers = { 'content-type': 'application/json' }
 
   constructor(readonly statusCode: number) {
     super()
