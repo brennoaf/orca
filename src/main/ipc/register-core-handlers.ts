@@ -32,6 +32,7 @@ import { registerNotebookHandlers } from './notebook'
 import { registerOnboardingHandlers } from './onboarding'
 import { registerDashboardPopoutHandlers } from './dashboard-popout'
 import { registerFloatingCommsSurfaceHandlers } from './floating-comms-surface'
+import { registerCommunicationsDockHandlers } from './communications-dock'
 import { registerTerminalPreviewHandlers } from './terminal-preview'
 import { registerDeveloperPermissionHandlers } from './developer-permissions'
 import { registerComputerUsePermissionHandlers } from './computer-use-permissions'
@@ -170,6 +171,7 @@ export function registerCoreHandlers(
   registerOnboardingHandlers(store)
   registerDashboardPopoutHandlers(store, keybindings)
   registerFloatingCommsSurfaceHandlers()
+  registerCommunicationsDockHandlers()
   registerTerminalPreviewHandlers(runtime)
   registerDeveloperPermissionHandlers()
   // Why: diagnostics handlers are wired alongside telemetry but the two

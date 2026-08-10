@@ -21,6 +21,7 @@ import type {
 import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
 import type { GlobalSettings } from '../../shared/types'
 import { TooltipProvider } from './components/ui/tooltip'
+import { FloatingCommsEntry } from './components/communications-dock/FloatingCommsEntry'
 import { CommunicationManagerSurfaceContent } from './components/floating-terminal/comms-rail/CommunicationManagerSurfaceContent'
 import {
   COMMUNICATION_MANAGER_REGISTRY,
@@ -30,6 +31,7 @@ import {
 } from './components/floating-terminal/comms-rail/communication-managers'
 import { applyDocumentTheme } from './lib/document-theme'
 import { buildAppFontFamily } from './lib/app-font-family'
+import { isReopenedAttachedSurface } from './lib/floating-comms-surface-identity'
 import { I18nProvider } from './i18n/I18nProvider'
 
 let startupSettings: GlobalSettings | null = null
@@ -200,13 +202,22 @@ function FloatingCommsRoot(): React.JSX.Element {
     })
     const offStateChanged = window.api.floatingComms.onStateChanged((identity) => {
       const current = latestIdentityRef.current
-      if (!disposed && current && sameSurfaceIdentity(current, identity)) {
+      if (
+        !disposed &&
+        (!current ||
+          sameSurfaceIdentity(current, identity) ||
+          isReopenedAttachedSurface(current, identity))
+      ) {
         run(identity)
       }
     })
     const offVisibilityChanged = window.api.floatingComms.onVisibilityChanged((visibility) => {
       if (disposed || !sameSurfaceIdentity(latestIdentityRef.current, visibility)) {
         return
+      }
+      if (!visibility.visible && latestIdentityRef.current?.mode === 'attached-native') {
+        refreshSequenceRef.current += 1
+        latestIdentityRef.current = null
       }
       setState((current) =>
         current && sameSurfaceIdentity(current, visibility)
@@ -220,7 +231,6 @@ function FloatingCommsRoot(): React.JSX.Element {
       mountedRef.current = false
       refreshSequenceRef.current += 1
       latestIdentityRef.current = null
-      latestSessionRef.current = null
       off()
       offStateChanged()
       offVisibilityChanged()
@@ -370,7 +380,7 @@ createRoot(root).render(
   <StrictMode>
     <I18nProvider>
       <FloatingCommsAppearanceSync />
-      <FloatingCommsRoot />
+      <FloatingCommsEntry reportError={reportSurfaceError} surface={<FloatingCommsRoot />} />
     </I18nProvider>
   </StrictMode>
 )

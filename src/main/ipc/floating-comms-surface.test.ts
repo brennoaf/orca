@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     closeAttached: vi.fn(),
     resize: vi.fn(),
     detachSurface: vi.fn(),
+    takeAttachedForDock: vi.fn(),
     minimizeDetached: vi.fn(),
     focusDetached: vi.fn(),
     closeDetached: vi.fn(),
@@ -22,6 +23,9 @@ const mocks = vi.hoisted(() => ({
     isDetachedSender: vi.fn(),
     assertDiscordCommandSender: vi.fn(),
     handleAction: vi.fn()
+  },
+  communicationsDockController: {
+    openOrFocus: vi.fn()
   },
   getStatuses: vi.fn(async () => []),
   getSnapshot: vi.fn(() => ({
@@ -52,6 +56,9 @@ vi.mock('electron', () => ({
 vi.mock('./ui', () => ({ isTrustedUIRenderer: mocks.isTrusted }))
 vi.mock('../window/floating-comms-surface-controller', () => ({
   floatingCommsSurfaceController: mocks.controller
+}))
+vi.mock('../window/communications-dock-controller', () => ({
+  communicationsDockController: mocks.communicationsDockController
 }))
 vi.mock('../messaging/communication-integration-registry', () => ({
   getCommunicationIntegrationStatuses: mocks.getStatuses
@@ -106,6 +113,7 @@ describe('floating communications IPC', () => {
     }
     mocks.controller.open.mockReturnValue({ identity })
     mocks.controller.update.mockReturnValue({ identity })
+    mocks.controller.takeAttachedForDock.mockReturnValue({ appId: 'discord' })
     mocks.controller.isAttachedSender.mockReturnValue(false)
     mocks.controller.isDetachedSender.mockReturnValue(false)
     mocks.controller.getStateForSender.mockReturnValue(null)
@@ -149,7 +157,10 @@ describe('floating communications IPC', () => {
   it('validates handoff shape and app pairing before detach', () => {
     const detach = { ...identity, sessionState: { appId: 'discord' as const } }
     handler('floatingComms:detach')({ sender }, detach)
-    expect(mocks.controller.detachSurface).toHaveBeenCalledWith(detach)
+    expect(mocks.controller.takeAttachedForDock).toHaveBeenCalledWith(detach)
+    expect(mocks.communicationsDockController.openOrFocus).toHaveBeenCalledWith('discord', {
+      appId: 'discord'
+    })
     expect(() =>
       handler('floatingComms:detach')(
         { sender },

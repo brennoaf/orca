@@ -15498,5 +15498,14 @@
       "settingsInstruction": "Change the model, dictation mode, or shortcut anytime in",
       "settingsLink": "Settings → Voice"
     }
+  },
+  "communicationsDock": {
+    "dragApp": "Drag {{app}}",
+    "tabs": "Communication layouts",
+    "show": "Show dock content",
+    "collapse": "Collapse dock",
+    "reattach": "Back to panel",
+    "collapsedStatus": "Communication dock collapsed",
+    "expandedStatus": "Communication dock expanded"
   }
 }

@@ -4,6 +4,10 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  CommunicationsDockPresence,
+  CommunicationsDockSnapshot
+} from '../../../../../shared/communications-dock'
+import type {
   FloatingCommsSurfaceChanged,
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfacePresentation
@@ -88,6 +92,25 @@ function presentation(value: FloatingCommsSurfaceIdentity): FloatingCommsSurface
   }
 }
 
+function dockSnapshot(appId: FloatingWorkspaceAppId): CommunicationsDockSnapshot {
+  return {
+    generation: 1,
+    revision: 1,
+    visible: true,
+    sessions: {
+      [appId]:
+        appId === 'whatsapp-web' ? { appId, selectedConversationId: null, draft: '' } : { appId }
+    },
+    layout: {
+      version: 1,
+      bounds: { x: 0, y: 0, width: 420, height: 420 },
+      collapsed: false,
+      activeTabId: 'tab',
+      tabs: [{ id: 'tab', activeLeafAppId: appId, layout: { type: 'leaf', appId } }]
+    }
+  }
+}
+
 function Harness({
   panel,
   panelVisible = true
@@ -114,11 +137,18 @@ function Harness({
 describe('FloatingCommsRail', () => {
   let root: Root | null = null
   let panel: HTMLDivElement | null = null
+  let presenceChanged: ((presence: CommunicationsDockPresence) => void) | null = null
   let surfaceChanged: ((event: FloatingCommsSurfaceChanged) => void) | null = null
+  let initialPresence: CommunicationsDockPresence
   let initialPresentations: FloatingCommsSurfacePresentation[]
+  let offPresence: ReturnType<typeof vi.fn>
+  let offReattached: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    initialPresence = { exists: false, visible: false }
     initialPresentations = []
+    offPresence = vi.fn()
+    offReattached = vi.fn()
     Object.assign(window, {
       api: {
         floatingComms: {
@@ -146,7 +176,21 @@ describe('FloatingCommsRail', () => {
           }),
           onGeometryRequested: vi.fn(() => vi.fn()),
           onAction: vi.fn(() => vi.fn())
-        }
+        },
+        floatingCommsDock: {
+          detach: vi.fn((request: { appId: FloatingWorkspaceAppId }) =>
+            Promise.resolve(dockSnapshot(request.appId))
+          ),
+          openOrFocus: vi.fn((request: { appId: FloatingWorkspaceAppId }) =>
+            Promise.resolve(dockSnapshot(request.appId))
+          ),
+          getPresence: vi.fn(() => Promise.resolve(initialPresence)),
+          onPresenceChanged: vi.fn((callback: typeof presenceChanged) => {
+            presenceChanged = callback
+            return offPresence
+          }),
+          onReattached: vi.fn(() => offReattached)
+        },
       }
     })
     vi.stubGlobal(
@@ -163,6 +207,7 @@ describe('FloatingCommsRail', () => {
     panel?.remove()
     root = null
     panel = null
+    presenceChanged = null
     surfaceChanged = null
     storeBox.floatingWorkspaceApps = {}
   })
@@ -186,6 +231,7 @@ describe('FloatingCommsRail', () => {
 
   it('renders the shared detach action for an attached DOM manager', async () => {
     const container = mount()
+    await act(async () => await Promise.resolve())
     await act(async () => button(container, 'Slack').click())
     expect(container.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
       'true'
@@ -195,10 +241,83 @@ describe('FloatingCommsRail', () => {
       throw new Error('Detach action was not rendered')
     }
     await act(async () => detachButton.click())
-    expect(window.api.floatingComms.detach).toHaveBeenCalledWith({
-      ...identity('slack', 1, 'attached-dom'),
+    expect(window.api.floatingCommsDock.detach).toHaveBeenCalledWith({
+      appId: 'slack',
       sessionState: { appId: 'slack' }
     })
+  })
+
+  it('hydrates a visible dock and activates a different app without opening attached', async () => {
+    initialPresence = { exists: true, visible: true, activeAppId: 'slack' }
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    const discord = button(container, 'Discord')
+    expect(discord.getAttribute('data-surface-mode')).toBe('detached')
+    await act(async () => discord.click())
+    expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'discord' })
+    expect(window.api.floatingComms.open).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('false')
+  })
+
+  it('hydrates a hidden dock as focusable without opening attached', async () => {
+    initialPresence = { exists: true, visible: false, activeAppId: 'slack' }
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    const slack = button(container, 'Slack')
+    expect(slack.getAttribute('data-surface-mode')).toBe('detached')
+    await act(async () => slack.click())
+    expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'slack' })
+    expect(window.api.floatingComms.open).not.toHaveBeenCalled()
+  })
+
+  it('opens attached when no dock window exists', async () => {
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    await act(async () => button(container, 'Slack').click())
+    expect(window.api.floatingComms.open).toHaveBeenCalled()
+    expect(window.api.floatingCommsDock.openOrFocus).not.toHaveBeenCalled()
+  })
+
+  it('does not open attached while initial presence is unresolved', async () => {
+    vi.mocked(window.api.floatingCommsDock.getPresence).mockReturnValueOnce(new Promise(() => {}))
+    const container = mount()
+    await act(async () => button(container, 'Slack').click())
+    expect(window.api.floatingComms.open).not.toHaveBeenCalled()
+    expect(window.api.floatingCommsDock.openOrFocus).not.toHaveBeenCalled()
+  })
+
+  it('does not let initial presence overwrite a newer presence event', async () => {
+    let resolvePresence: (presence: CommunicationsDockPresence) => void = () => undefined
+    vi.mocked(window.api.floatingCommsDock.getPresence).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePresence = resolve
+      })
+    )
+    const container = mount()
+    act(() => presenceChanged?.({ exists: true, visible: false, activeAppId: 'discord' }))
+    await act(async () => resolvePresence({ exists: false, visible: false }))
+    await act(async () => button(container, 'Discord').click())
+    expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'discord' })
+    expect(window.api.floatingComms.open).not.toHaveBeenCalled()
+  })
+
+  it('ignores presence work after unmount and unsubscribes listeners', async () => {
+    let resolvePresence: (presence: CommunicationsDockPresence) => void = () => undefined
+    vi.mocked(window.api.floatingCommsDock.getPresence).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePresence = resolve
+      })
+    )
+    const container = mount()
+    act(() => root?.unmount())
+    root = null
+    act(() => presenceChanged?.({ exists: true, visible: true, activeAppId: 'slack' }))
+    await act(async () => resolvePresence({ exists: true, visible: true, activeAppId: 'slack' }))
+    expect(offPresence).toHaveBeenCalledOnce()
+    expect(offReattached).toHaveBeenCalledOnce()
+    expect(container.childElementCount).toBe(0)
   })
 
   it('focuses an existing detached manager without opening or locking input', async () => {
@@ -233,6 +352,7 @@ describe('FloatingCommsRail', () => {
       identity: identity('discord', 1, 'attached-native', 10)
     })
     const container = mount()
+    await act(async () => await Promise.resolve())
     await act(async () => button(container, 'Discord').click())
     expect(
       container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
@@ -269,6 +389,7 @@ describe('FloatingCommsRail', () => {
 
   it('closes an attached manager when the panel becomes hidden', async () => {
     const container = mount()
+    await act(async () => await Promise.resolve())
     await act(async () => button(container, 'Slack').click())
     act(() => root?.render(<Harness panel={container} panelVisible={false} />))
     expect(window.api.floatingComms.closeAttached).toHaveBeenCalledWith(

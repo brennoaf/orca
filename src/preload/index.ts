@@ -5,6 +5,28 @@ import { preloadE2EConfig } from './e2e-config'
 import { glApi } from './gitlab'
 import type { AppIdentity } from '../shared/app-identity'
 import type {
+  CommunicationsDockAckRequest,
+  CommunicationsDockAction,
+  CommunicationsDockActivateLeafRequest,
+  CommunicationsDockActivateTabRequest,
+  CommunicationsDockDiscordCommand,
+  CommunicationsDockDiscordStateRequest,
+  CommunicationsDockDetachRequest,
+  CommunicationsDockIdentity,
+  CommunicationsDockMoveAppRequest,
+  CommunicationsDockNavbarHeightRequest,
+  CommunicationsDockOpenRequest,
+  CommunicationsDockPresence,
+  CommunicationsDockReadyRequest,
+  CommunicationsDockReorderTabRequest,
+  CommunicationsDockSetCollapsedRequest,
+  CommunicationsDockSnapshot,
+  CommunicationsDockSplitAppRequest,
+  CommunicationsDockUpdateRatioRequest,
+  CommunicationsDockUpdateSessionRequest
+} from '../shared/communications-dock'
+import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
+import type {
   DashboardRevealAgentArgs,
   DashboardSleepWorkspaceArgs,
   DashboardSnapshot,
@@ -2397,7 +2419,98 @@ const api = {
       return () => ipcRenderer.removeListener('floatingComms:action', listener)
     }
   },
-
+  floatingCommsDock: {
+    openOrFocus: (request: CommunicationsDockOpenRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:openOrFocus', request),
+    detach: (request: CommunicationsDockDetachRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:detach', request),
+    ready: (request: CommunicationsDockReadyRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:ready', request),
+    ack: (request: CommunicationsDockAckRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingCommsDock:ack', request),
+    getSnapshot: (): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:getSnapshot'),
+    getPresence: (): Promise<CommunicationsDockPresence> =>
+      ipcRenderer.invoke('floatingCommsDock:getPresence'),
+    activateTab: (
+      request: CommunicationsDockActivateTabRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:activateTab', request),
+    activateLeaf: (
+      request: CommunicationsDockActivateLeafRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:activateLeaf', request),
+    moveApp: (request: CommunicationsDockMoveAppRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:moveApp', request),
+    splitApp: (request: CommunicationsDockSplitAppRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:splitApp', request),
+    reorderTab: (
+      request: CommunicationsDockReorderTabRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:reorderTab', request),
+    updateRatio: (
+      request: CommunicationsDockUpdateRatioRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:updateRatio', request),
+    setCollapsed: (
+      request: CommunicationsDockSetCollapsedRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:setCollapsed', request),
+    setNavbarHeight: (
+      request: CommunicationsDockNavbarHeightRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:setNavbarHeight', request),
+    updateSession: (
+      request: CommunicationsDockUpdateSessionRequest
+    ): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:updateSession', request),
+    reattachDock: (request: CommunicationsDockIdentity): Promise<void> =>
+      ipcRenderer.invoke('floatingCommsDock:reattachDock', request),
+    getIntegrationStatuses: () => ipcRenderer.invoke('floatingCommsDock:getIntegrationStatuses'),
+    discordCommand: (command: CommunicationsDockDiscordCommand) =>
+      ipcRenderer.invoke('floatingCommsDock:discordCommand', command),
+    getDiscordState: (request: CommunicationsDockDiscordStateRequest) =>
+      ipcRenderer.invoke('floatingCommsDock:getDiscordState', request),
+    action: (action: CommunicationsDockAction): Promise<void> =>
+      ipcRenderer.invoke('floatingCommsDock:action', action),
+    onSnapshotChanged: (callback: (snapshot: CommunicationsDockSnapshot) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        snapshot: CommunicationsDockSnapshot
+      ): void => callback(snapshot)
+      ipcRenderer.on('floatingCommsDock:snapshotChanged', listener)
+      return () => ipcRenderer.removeListener('floatingCommsDock:snapshotChanged', listener)
+    },
+    onPresenceChanged: (callback: (presence: CommunicationsDockPresence) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        presence: CommunicationsDockPresence
+      ): void => callback(presence)
+      ipcRenderer.on('floatingCommsDock:presenceChanged', listener)
+      return () => ipcRenderer.removeListener('floatingCommsDock:presenceChanged', listener)
+    },
+    onAction: (callback: (action: CommunicationsDockAction) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        action: CommunicationsDockAction
+      ): void => callback(action)
+      ipcRenderer.on('floatingCommsDock:action', listener)
+      return () => ipcRenderer.removeListener('floatingCommsDock:action', listener)
+    },
+    onReattached: (
+      callback: (event: {
+        appId: FloatingWorkspaceAppId
+        sessions: CommunicationsDockSnapshot['sessions']
+      }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { appId: FloatingWorkspaceAppId; sessions: CommunicationsDockSnapshot['sessions'] }
+      ): void => callback(payload)
+      ipcRenderer.on('floatingCommsDock:reattached', listener)
+      return () => ipcRenderer.removeListener('floatingCommsDock:reattached', listener)
+    }
+  },
   dashboard: {
     // Open the pop-out dashboard window, or focus it if already open.
     openPopout: (view?: 'board' | 'map'): Promise<void> =>

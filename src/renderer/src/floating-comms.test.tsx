@@ -228,6 +228,49 @@ describe('floating communications renderer root', () => {
     })
   })
 
+  it('refreshes and measures a reopened attached WhatsApp surface after it is hidden', async () => {
+    const first = identity('whatsapp-web', 'attached-native', 1, 10)
+    const second = identity('whatsapp-web', 'attached-native', 2, 20)
+    const session = { appId: 'whatsapp-web' as const, selectedConversationId: 4, draft: 'latest' }
+    mocks.getState.mockResolvedValue(presentation(first, session))
+    await act(async () => {
+      await import('./floating-comms')
+    })
+    await vi.waitFor(() => expect(mocks.visibilityChanged).not.toBeNull())
+    await vi.waitFor(() => expect(mocks.measure).toHaveBeenCalledWith({ ...first, height: 420 }))
+    const refreshesBeforeReopen = mocks.getState.mock.calls.length
+    mocks.getState.mockResolvedValue(presentation(second, session))
+
+    act(() => mocks.visibilityChanged?.({ ...first, visible: false }))
+    await act(async () => mocks.stateChanged?.(second))
+
+    await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(refreshesBeforeReopen + 1))
+    await vi.waitFor(() =>
+      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 420 })
+    )
+  })
+
+  it('refreshes a reopened attached surface when its state arrives before the prior hide', async () => {
+    const first = identity('whatsapp-web', 'attached-native', 1, 10)
+    const second = identity('whatsapp-web', 'attached-native', 2, 20)
+    const session = { appId: 'whatsapp-web' as const, selectedConversationId: 4, draft: 'latest' }
+    mocks.getState.mockResolvedValue(presentation(first, session))
+    await act(async () => {
+      await import('./floating-comms')
+    })
+    await vi.waitFor(() => expect(mocks.stateChanged).not.toBeNull())
+    const refreshesBeforeReopen = mocks.getState.mock.calls.length
+    mocks.getState.mockResolvedValue(presentation(second, session))
+
+    await act(async () => mocks.stateChanged?.(second))
+    act(() => mocks.visibilityChanged?.({ ...first, visible: false }))
+
+    await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(refreshesBeforeReopen + 1))
+    await vi.waitFor(() =>
+      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 420 })
+    )
+  })
+
   it('keeps detached identity hidden on minimize and resumes after attached readoption', async () => {
     const detached = identity('discord', 'detached')
     await act(async () => {

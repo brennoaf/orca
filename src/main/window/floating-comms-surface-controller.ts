@@ -6,6 +6,7 @@ import type {
   FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
+  FloatingCommsSessionState,
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfacePresentation,
   FloatingCommsUpdateRequest
@@ -24,31 +25,28 @@ import {
   closeFloatingCommsSurface,
   destroyFloatingCommsSurface,
   isFloatingCommsSurfaceRenderer,
-  isFloatingCommsSurfaceVisible,
   openFloatingCommsSurface,
   resizeFloatingCommsSurface,
   shouldUseFloatingCommsDomFallback,
-  takeFloatingCommsSurfaceWindow,
   updateFloatingCommsSurface
 } from './floating-comms-surface-window'
+import { destroyAttachedFloatingCommsWindow } from './floating-comms-attached-window'
+import {
+  createFloatingCommsSurfaceIdentity,
+  sameFloatingCommsSurfaceIdentity
+} from './floating-comms-surface-identity'
+import { takeAttachedFloatingCommsForDock } from './floating-comms-dock-detach'
 import {
   createFloatingCommsSurfaceChange,
   createFloatingCommsPresentation,
   emitFloatingCommsSurfaceChange,
   restoreFloatingCommsMainWindow
 } from './floating-comms-surface-presentation'
-
-function sameIdentity(
-  left: FloatingCommsSurfaceIdentity,
-  right: FloatingCommsSurfaceIdentity
-): boolean {
-  return (
-    left.appId === right.appId &&
-    left.requestId === right.requestId &&
-    left.surfaceId === right.surfaceId &&
-    left.mode === right.mode
-  )
-}
+import {
+  getFloatingCommsSurfacePresentation,
+  getFloatingCommsSurfaceStateForSender,
+  listFloatingCommsSurfacePresentations
+} from './floating-comms-surface-presentations'
 
 export class FloatingCommsSurfaceController {
   private attached: FloatingCommsAttachedRecord | null = null
@@ -164,6 +162,12 @@ export class FloatingCommsSurfaceController {
     return this.detached.detachSurface(record, request)
   }
 
+  takeAttachedForDock(request: FloatingCommsDetachRequest): FloatingCommsSessionState {
+    const record = this.requireAttached(request)
+    this.attached = null
+    return takeAttachedFloatingCommsForDock(record, request)
+  }
+
   minimizeDetached(request: FloatingCommsMinimizeDetachedRequest): void {
     if (request.appId !== request.sessionState.appId) {
       throw new Error('floating_comms_session_app_mismatch')
@@ -186,51 +190,28 @@ export class FloatingCommsSurfaceController {
       return
     }
     if (attached.identity.mode === 'attached-native') {
-      const window = takeFloatingCommsSurfaceWindow(attached.identity)
-      if (window && !window.isDestroyed()) {
-        window.destroy()
-      }
+      destroyAttachedFloatingCommsWindow(attached.identity)
     }
     this.attached = null
     emitFloatingCommsSurfaceChange(attached.identity, null, 'disabled', null)
   }
 
   listPresentations(): FloatingCommsSurfacePresentation[] {
-    const presentations = this.detached.listPresentations()
-    if (this.attached) {
-      presentations.unshift(
-        createFloatingCommsPresentation(
-          this.attached.identity,
-          this.attached.sessionState,
-          this.attached.identity.mode === 'attached-dom' || isFloatingCommsSurfaceVisible()
-        )
-      )
-    }
-    return presentations
+    return listFloatingCommsSurfacePresentations(this.detached, this.attached)
   }
 
   getPresentation(appId: FloatingWorkspaceAppId): FloatingCommsSurfacePresentation | null {
-    return this.listPresentations().find((presentation) => presentation.appId === appId) ?? null
+    return getFloatingCommsSurfacePresentation(this.detached, this.attached, appId)
   }
 
   getStateForSender(sender: WebContents): FloatingCommsSurfacePresentation | null {
-    if (
-      this.attached?.identity.mode === 'attached-native' &&
-      isFloatingCommsSurfaceRenderer(sender)
-    ) {
-      return createFloatingCommsPresentation(
-        this.attached.identity,
-        this.attached.sessionState,
-        isFloatingCommsSurfaceVisible()
-      )
-    }
-    return this.detached.getStateForSender(sender)
+    return getFloatingCommsSurfaceStateForSender(this.detached, this.attached, sender)
   }
 
   isAttachedSender(sender: WebContents, identity: FloatingCommsSurfaceIdentity): boolean {
     return Boolean(
       this.attached &&
-      sameIdentity(this.attached.identity, identity) &&
+      sameFloatingCommsSurfaceIdentity(this.attached.identity, identity) &&
       isFloatingCommsSurfaceRenderer(sender)
     )
   }
@@ -262,10 +243,7 @@ export class FloatingCommsSurfaceController {
 
   shutdown(): Promise<void> {
     if (this.attached?.identity.mode === 'attached-native') {
-      const window = takeFloatingCommsSurfaceWindow(this.attached.identity)
-      if (window && !window.isDestroyed()) {
-        window.destroy()
-      }
+      destroyAttachedFloatingCommsWindow(this.attached.identity)
     }
     this.attached = null
     destroyFloatingCommsSurface()
@@ -274,7 +252,7 @@ export class FloatingCommsSurfaceController {
 
   private handleAttachedClosed(identity: FloatingCommsSurfaceIdentity): void {
     const record = this.attached
-    if (record && sameIdentity(record.identity, identity)) {
+    if (record && sameFloatingCommsSurfaceIdentity(record.identity, identity)) {
       this.attached = null
       emitFloatingCommsSurfaceChange(identity, null, 'closed', record.sessionState)
     }
@@ -296,7 +274,7 @@ export class FloatingCommsSurfaceController {
   }
 
   private requireAttached(identity: FloatingCommsSurfaceIdentity): FloatingCommsAttachedRecord {
-    if (!this.attached || !sameIdentity(this.attached.identity, identity)) {
+    if (!this.attached || !sameFloatingCommsSurfaceIdentity(this.attached.identity, identity)) {
       throw new Error('floating_comms_attached_stale')
     }
     return this.attached
@@ -306,16 +284,9 @@ export class FloatingCommsSurfaceController {
     request: { appId: FloatingWorkspaceAppId; requestId: number },
     mode: FloatingCommsSurfaceIdentity['mode']
   ): FloatingCommsSurfaceIdentity {
-    if (this.nextSurfaceId >= Number.MAX_SAFE_INTEGER) {
-      throw new Error('floating_comms_surface_id_exhausted')
-    }
-    this.nextSurfaceId += 1
-    return {
-      appId: request.appId,
-      requestId: request.requestId,
-      surfaceId: this.nextSurfaceId,
-      mode
-    }
+    const identity = createFloatingCommsSurfaceIdentity(request, mode, this.nextSurfaceId)
+    this.nextSurfaceId = identity.surfaceId
+    return identity
   }
 }
 

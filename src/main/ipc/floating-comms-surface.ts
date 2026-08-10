@@ -31,6 +31,7 @@ import {
   createOrFocusDiscordVoiceWindow
 } from '../window/discord-voice-window'
 import { floatingCommsSurfaceController } from '../window/floating-comms-surface-controller'
+import { communicationsDockController } from '../window/communications-dock-controller'
 import { isTrustedUIRenderer } from './ui'
 
 function isAppId(value: unknown): value is FloatingWorkspaceAppId {
@@ -228,7 +229,8 @@ export function registerFloatingCommsSurfaceHandlers(): void {
     ) {
       throw new Error('floating_comms_detach_denied')
     }
-    return floatingCommsSurfaceController.detachSurface(request.data)
+    const sessionState = floatingCommsSurfaceController.takeAttachedForDock(request.data)
+    return communicationsDockController.openOrFocus(request.data.appId, sessionState)
   })
   ipcMain.handle('floatingComms:minimizeDetached', (event, value: unknown) => {
     const request = FloatingCommsMinimizeDetachedRequestSchema.safeParse(value)

@@ -7,6 +7,7 @@ import {
   useState,
   type RefObject
 } from 'react'
+import type { CommunicationsDockPresence } from '../../../../../shared/communications-dock'
 import type { FloatingCommsSurfaceIdentity } from '../../../../../shared/floating-comms-surface'
 import type {
   FloatingWorkspaceApp,
@@ -51,10 +52,13 @@ export function FloatingCommsRail({
   const [attachedIdentity, setAttachedIdentity] = useState<FloatingCommsSurfaceIdentity | null>(
     null
   )
+  const [dockPresence, setDockPresence] = useState<CommunicationsDockPresence | null>(null)
+  const [reattachAppId, setReattachAppId] = useState<FloatingWorkspaceAppId | null>(null)
   const buttonRefs = useRef(new Map<FloatingWorkspaceAppId, HTMLButtonElement>())
   const attachedIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
   const openAppIdRef = useRef(openAppId)
   const pendingAppIdRef = useRef<FloatingWorkspaceAppId | null>(null)
+  const presenceSequenceRef = useRef(0)
   const requestSequenceRef = useRef(0)
   attachedIdentityRef.current = attachedIdentity
   openAppIdRef.current = openAppId
@@ -85,18 +89,112 @@ export function FloatingCommsRail({
     releaseAttached
   })
 
-  const closeAttached = useCallback(() => {
-    const identity = attachedIdentityRef.current
-    if (identity) {
-      pendingSessions.delete(identity.appId)
-    }
-    releaseAttached(identity ?? undefined)
-    if (identity) {
+  const closeAttached = useCallback(
+    (preserveSession = false) => {
+      const identity = attachedIdentityRef.current
+      if (identity && !preserveSession) {
+        pendingSessions.delete(identity.appId)
+      }
+      releaseAttached(identity ?? undefined)
+      if (identity) {
+        void window.api.floatingComms
+          .closeAttached(identity)
+          .catch((error: unknown) => reportFloatingCommsError('close attached', error))
+      }
+    },
+    [pendingSessions, releaseAttached]
+  )
+
+  const openAttachedApp = useCallback(
+    (appId: FloatingWorkspaceAppId): void => {
+      if (attachedIdentityRef.current?.appId === appId) {
+        closeAttached()
+        return
+      }
+      if (attachedIdentityRef.current) {
+        closeAttached()
+      }
+      const button = buttonRefs.current.get(appId)
+      const workspaceElement = panelRef.current
+      if (!button || !workspaceElement) {
+        return
+      }
+      const requestId = requestSequenceRef.current + 1
+      requestSequenceRef.current = requestId
+      pendingAppIdRef.current = appId
       void window.api.floatingComms
-        .closeAttached(identity)
-        .catch((error: unknown) => reportFloatingCommsError('close attached', error))
+        .open(createFloatingCommsOpenRequest(appId, button, workspaceElement, requestId))
+        .then((result) => {
+          if (
+            requestSequenceRef.current === requestId &&
+            (pendingAppIdRef.current === appId || openAppIdRef.current === appId)
+          ) {
+            pendingAppIdRef.current = null
+            openAppIdRef.current = appId
+            attachedIdentityRef.current = result.identity
+            setAttachedIdentity(result.identity)
+            recordPresentation(result.identity)
+            onOpenAppIdChange(appId)
+          }
+        })
+        .catch((error: unknown) => {
+          reportFloatingCommsError('open', error)
+          if (requestSequenceRef.current === requestId && pendingAppIdRef.current === appId) {
+            releaseAttached()
+          }
+        })
+    },
+    [closeAttached, onOpenAppIdChange, panelRef, recordPresentation, releaseAttached]
+  )
+
+  useEffect(() => {
+    let disposed = false
+    const initialSequence = presenceSequenceRef.current
+    const offPresence = window.api.floatingCommsDock.onPresenceChanged((presence) => {
+      if (disposed) {
+        return
+      }
+      presenceSequenceRef.current += 1
+      setDockPresence(presence)
+    })
+    const offReattached = window.api.floatingCommsDock.onReattached((event) => {
+      if (disposed) {
+        return
+      }
+      presenceSequenceRef.current += 1
+      for (const [appId, sessionState] of Object.entries(event.sessions)) {
+        if (sessionState) {
+          pendingSessions.set(appId as FloatingWorkspaceAppId, sessionState)
+        }
+      }
+      setDockPresence({ exists: true, visible: false, activeAppId: event.appId })
+      setReattachAppId(event.appId)
+    })
+    void window.api.floatingCommsDock
+      .getPresence()
+      .then((presence) => {
+        if (!disposed && presenceSequenceRef.current === initialSequence) {
+          setDockPresence(presence)
+        }
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          reportFloatingCommsError('hydrate communication dock presence', error)
+        }
+      })
+    return () => {
+      disposed = true
+      offPresence()
+      offReattached()
     }
-  }, [pendingSessions, releaseAttached])
+  }, [pendingSessions])
+
+  useEffect(() => {
+    if (reattachAppId) {
+      setReattachAppId(null)
+      openAttachedApp(reattachAppId)
+    }
+  }, [openAttachedApp, reattachAppId])
 
   useLayoutEffect(() => {
     if (openAppId !== null && !entries.some(({ app }) => app.id === openAppId)) {
@@ -214,7 +312,9 @@ export function FloatingCommsRail({
       <div className="flex w-10 shrink-0 flex-col border-r bg-background/95">
         {entries.map(({ app, manager }) => {
           const presentation = presentations.get(app.id)
-          const detached = presentation?.mode === 'detached'
+          const legacyDetached = presentation?.mode === 'detached'
+          const docked = dockPresence?.exists === true
+          const detached = docked || legacyDetached
           const attached = attachedIdentity?.appId === app.id
           const domAttached = attached && attachedIdentity.mode === 'attached-dom'
           return (
@@ -240,59 +340,55 @@ export function FloatingCommsRail({
                 pendingSessions.set(app.id, sessionState)
               }}
               onSelect={() => {
-                if (detached) {
+                if (docked) {
+                  const presenceSequence = presenceSequenceRef.current
+                  void window.api.floatingCommsDock
+                    .openOrFocus({ appId: app.id })
+                    .then((snapshot) => {
+                      if (presenceSequenceRef.current === presenceSequence) {
+                        presenceSequenceRef.current += 1
+                        setDockPresence({
+                          exists: true,
+                          visible: snapshot.visible,
+                          activeAppId: app.id
+                        })
+                      }
+                    })
+                    .catch((error: unknown) =>
+                      reportFloatingCommsError('focus communication dock', error)
+                    )
+                  return
+                }
+                if (legacyDetached) {
                   void window.api.floatingComms
                     .focusDetached({ appId: app.id })
                     .catch((error: unknown) => reportFloatingCommsError('focus detached', error))
                   return
                 }
-                if (attachedIdentity?.appId === app.id) {
-                  closeAttached()
+                if (!dockPresence) {
                   return
                 }
-                if (attachedIdentityRef.current) {
-                  closeAttached()
-                }
-                const button = buttonRefs.current.get(app.id)
-                const workspaceElement = panelRef.current
-                if (!button || !workspaceElement) {
-                  return
-                }
-                const requestId = requestSequenceRef.current + 1
-                requestSequenceRef.current = requestId
-                pendingAppIdRef.current = app.id
-                void window.api.floatingComms
-                  .open(createFloatingCommsOpenRequest(app.id, button, workspaceElement, requestId))
-                  .then((result) => {
-                    if (
-                      requestSequenceRef.current === requestId &&
-                      (pendingAppIdRef.current === app.id || openAppIdRef.current === app.id)
-                    ) {
-                      pendingAppIdRef.current = null
-                      openAppIdRef.current = app.id
-                      attachedIdentityRef.current = result.identity
-                      setAttachedIdentity(result.identity)
-                      recordPresentation(result.identity)
-                      onOpenAppIdChange(app.id)
-                    }
-                  })
-                  .catch((error: unknown) => {
-                    reportFloatingCommsError('open', error)
-                    if (
-                      requestSequenceRef.current === requestId &&
-                      pendingAppIdRef.current === app.id
-                    ) {
-                      releaseAttached()
-                    }
-                  })
+                openAttachedApp(app.id)
               }}
               onDetach={(sessionState) => {
                 if (!attachedIdentity || attachedIdentity.mode !== 'attached-dom') {
                   return
                 }
                 pendingSessions.set(app.id, sessionState)
-                void window.api.floatingComms
-                  .detach({ ...attachedIdentity, sessionState })
+                const presenceSequence = presenceSequenceRef.current
+                void window.api.floatingCommsDock
+                  .detach({ appId: app.id, sessionState })
+                  .then((snapshot) => {
+                    if (presenceSequenceRef.current === presenceSequence) {
+                      presenceSequenceRef.current += 1
+                      setDockPresence({
+                        exists: true,
+                        visible: snapshot.visible,
+                        activeAppId: app.id
+                      })
+                    }
+                    closeAttached(true)
+                  })
                   .catch((error: unknown) => reportFloatingCommsError('detach', error))
               }}
               onOpenApp={() => {

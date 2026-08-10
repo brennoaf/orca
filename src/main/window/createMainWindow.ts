@@ -57,6 +57,7 @@ import { resolveWindowCloseAction } from './window-close-decision'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { closeDashboardPopout } from './dashboard-popout-window'
 import { floatingCommsSurfaceController } from './floating-comms-surface-controller'
+import { communicationsDockController } from './communications-dock-controller'
 import { closeDiscordVoiceWindow, registerDiscordVoiceOverlayHost } from './discord-voice-window'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
 import { isMacosTahoeOrNewer } from './macos-tahoe-release'
@@ -1135,6 +1136,7 @@ export function createMainWindow(
     // gone (e.g. on macOS where the app stays alive after the window closes).
     closeDashboardPopout()
     void floatingCommsSurfaceController.shutdown()
+    void communicationsDockController.shutdown()
     closeDiscordVoiceWindow()
     clearInitialRevealFallbackTimer()
     clearQuitRendererAckTimer()

@@ -241,6 +241,20 @@ describe('FloatingCommsSurfaceController', () => {
     )
   })
 
+  it('admits a reopened native sender only for its current identity', () => {
+    const controller = new FloatingCommsSurfaceController()
+    const sender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
+    const first = controller.open(owner, request('whatsapp-web', 1)).identity
+    mocks.attachedSender = sender
+    controller.closeAttached(first)
+    const second = controller.open(owner, request('whatsapp-web', 2)).identity
+
+    expect(controller.isAttachedSender(sender, first)).toBe(false)
+    expect(controller.isAttachedSender(sender, second)).toBe(true)
+    controller.resize(second, 320)
+    expect(mocks.resizeAttached).toHaveBeenCalledWith(second, 320)
+  })
+
   it('cleans a DOM detached window when loading rejects before registration', () => {
     const controller = new FloatingCommsSurfaceController()
     mocks.useDom.mockReturnValue(true)

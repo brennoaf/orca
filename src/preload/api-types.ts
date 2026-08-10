@@ -9,6 +9,28 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
+import type {
+  CommunicationsDockAckRequest,
+  CommunicationsDockAction,
+  CommunicationsDockActivateLeafRequest,
+  CommunicationsDockActivateTabRequest,
+  CommunicationsDockDiscordCommand,
+  CommunicationsDockDiscordStateRequest,
+  CommunicationsDockDetachRequest,
+  CommunicationsDockIdentity,
+  CommunicationsDockMoveAppRequest,
+  CommunicationsDockNavbarHeightRequest,
+  CommunicationsDockOpenRequest,
+  CommunicationsDockPresence,
+  CommunicationsDockReadyRequest,
+  CommunicationsDockReorderTabRequest,
+  CommunicationsDockSetCollapsedRequest,
+  CommunicationsDockSnapshot,
+  CommunicationsDockSplitAppRequest,
+  CommunicationsDockUpdateRatioRequest,
+  CommunicationsDockUpdateSessionRequest
+} from '../shared/communications-dock'
 import type { DiscordVoiceSnapshot } from '../shared/discord-voice'
 import type { BrowserFindSource } from '../shared/browser-find-source'
 import type {
@@ -1231,6 +1253,53 @@ export type PreloadApi = {
     onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
     onGeometryRequested: (callback: (request: FloatingCommsGeometryRequest) => void) => () => void
     onAction: (callback: (action: FloatingCommsAction) => void) => () => void
+  }
+  floatingCommsDock: {
+    openOrFocus: (request: CommunicationsDockOpenRequest) => Promise<CommunicationsDockSnapshot>
+    detach: (request: CommunicationsDockDetachRequest) => Promise<CommunicationsDockSnapshot>
+    ready: (request: CommunicationsDockReadyRequest) => Promise<CommunicationsDockSnapshot>
+    ack: (request: CommunicationsDockAckRequest) => Promise<void>
+    getSnapshot: () => Promise<CommunicationsDockSnapshot>
+    getPresence: () => Promise<CommunicationsDockPresence>
+    activateTab: (
+      request: CommunicationsDockActivateTabRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    activateLeaf: (
+      request: CommunicationsDockActivateLeafRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    moveApp: (request: CommunicationsDockMoveAppRequest) => Promise<CommunicationsDockSnapshot>
+    splitApp: (request: CommunicationsDockSplitAppRequest) => Promise<CommunicationsDockSnapshot>
+    reorderTab: (
+      request: CommunicationsDockReorderTabRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    updateRatio: (
+      request: CommunicationsDockUpdateRatioRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    setCollapsed: (
+      request: CommunicationsDockSetCollapsedRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    setNavbarHeight: (
+      request: CommunicationsDockNavbarHeightRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    updateSession: (
+      request: CommunicationsDockUpdateSessionRequest
+    ) => Promise<CommunicationsDockSnapshot>
+    reattachDock: (request: CommunicationsDockIdentity) => Promise<void>
+    getIntegrationStatuses: () => Promise<readonly CommunicationIntegrationStatus[]>
+    discordCommand: (command: CommunicationsDockDiscordCommand) => Promise<DiscordVoiceSnapshot>
+    getDiscordState: (
+      request: CommunicationsDockDiscordStateRequest
+    ) => Promise<DiscordVoiceSnapshot>
+    action: (action: CommunicationsDockAction) => Promise<void>
+    onSnapshotChanged: (callback: (snapshot: CommunicationsDockSnapshot) => void) => () => void
+    onPresenceChanged: (callback: (presence: CommunicationsDockPresence) => void) => () => void
+    onAction: (callback: (action: CommunicationsDockAction) => void) => () => void
+    onReattached: (
+      callback: (event: {
+        appId: FloatingWorkspaceAppId
+        sessions: CommunicationsDockSnapshot['sessions']
+      }) => void
+    ) => () => void
   }
   orcaProfiles: {
     list: () => Promise<OrcaProfileListResult>
