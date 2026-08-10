@@ -20,7 +20,7 @@ import {
   listEnabledCommunicationManagers
 } from './communication-managers'
 import { FloatingCommsRailItem } from './FloatingCommsRailItem'
-import { useZApiAttention } from './use-z-api-attention'
+import { closeFloatingCommsAttachedSurface } from './close-floating-comms-attached-surface'
 import {
   createFloatingCommsOpenRequest,
   useFloatingCommsGeometry
@@ -55,7 +55,6 @@ export function FloatingCommsRail({
   )
   const [dockPresence, setDockPresence] = useState<CommunicationsDockPresence | null>(null)
   const [reattachAppId, setReattachAppId] = useState<FloatingWorkspaceAppId | null>(null)
-  const { snapshot: attention } = useZApiAttention()
   const buttonRefs = useRef(new Map<FloatingWorkspaceAppId, HTMLButtonElement>())
   const attachedIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
   const openAppIdRef = useRef(openAppId)
@@ -99,9 +98,9 @@ export function FloatingCommsRail({
       }
       releaseAttached(identity ?? undefined)
       if (identity) {
-        void window.api.floatingComms
-          .closeAttached(identity)
-          .catch((error: unknown) => reportFloatingCommsError('close attached', error))
+        void closeFloatingCommsAttachedSurface(identity).catch((error: unknown) =>
+          reportFloatingCommsError('close attached', error)
+        )
       }
     },
     [pendingSessions, releaseAttached]
@@ -331,7 +330,6 @@ export function FloatingCommsRail({
                 pendingSessions.get(app.id) ?? createCommunicationManagerSessionState(app.id)
               }
               portalContainer={panelRef.current}
-              unreadCount={app.id === 'whatsapp-web' ? attention.totalUnread : 0}
               buttonRef={(element) => {
                 if (element) {
                   buttonRefs.current.set(app.id, element)

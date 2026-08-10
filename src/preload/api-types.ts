@@ -11,6 +11,12 @@ import type {
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
 import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type {
+  WhatsAppFastResponseAttach,
+  WhatsAppFastResponseSnapshot,
+  WhatsAppFastResponseStateChanged,
+  WhatsAppFastResponseVisibility
+} from '../shared/whatsapp-fast-response'
+import type {
   CommunicationsDockAckRequest,
   CommunicationsDockAction,
   CommunicationsDockActivateLeafRequest,
@@ -61,7 +67,6 @@ import type {
 } from '../shared/floating-comms-surface'
 import type {
   CommunicationIntegrationStatus,
-  ZApiAttentionSnapshot
 } from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
@@ -1228,6 +1233,14 @@ export type PluginMarketplaceHostInstallPreview = {
 
 export type PreloadApi = {
   app: AppApi
+  whatsappFastResponse: {
+    attach: (request: WhatsAppFastResponseAttach) => Promise<WhatsAppFastResponseSnapshot>
+    updateBounds: (request: WhatsAppFastResponseAttach) => Promise<WhatsAppFastResponseSnapshot>
+    show: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
+    hide: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
+    collapse: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
+    onStateChanged: (callback: (state: WhatsAppFastResponseStateChanged) => void) => () => void
+  }
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
     update: (request: FloatingCommsUpdateRequest) => Promise<FloatingCommsOpenResult>
@@ -1303,11 +1316,6 @@ export type PreloadApi = {
         sessions: CommunicationsDockSnapshot['sessions']
       }) => void
     ) => () => void
-  }
-  zApiAttention: {
-    getSnapshot: () => Promise<ZApiAttentionSnapshot>
-    markSeen: (request: { conversationId: number }) => Promise<ZApiAttentionSnapshot>
-    onChanged: (callback: (snapshot: ZApiAttentionSnapshot) => void) => () => void
   }
   orcaProfiles: {
     list: () => Promise<OrcaProfileListResult>

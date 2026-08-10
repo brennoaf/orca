@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CommunicationProviderId } from '../../../../shared/communication-integrations'
 import type { FloatingCommsSessionState } from '../../../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../../../shared/floating-workspace-apps'
+import type { WhatsAppFastResponseHostBinding } from '@/components/floating-terminal/comms-rail/use-whatsapp-fast-response-host'
 import { FLOATING_WORKSPACE_APPS } from '../../../../shared/floating-workspace-apps'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
@@ -17,7 +18,8 @@ function ManagerHost({
   visible,
   initialSessionState,
   onSessionStateChange,
-  onOpenApp
+  onOpenApp,
+  whatsappHost
 }: {
   appId: FloatingWorkspaceAppId
   target: HTMLDivElement | null
@@ -25,6 +27,7 @@ function ManagerHost({
   initialSessionState: FloatingCommsSessionState
   onSessionStateChange: (sessionState: FloatingCommsSessionState) => void
   onOpenApp: (appId: FloatingWorkspaceAppId) => void
+  whatsappHost?: WhatsAppFastResponseHostBinding
 }): React.JSX.Element {
   const app = FLOATING_WORKSPACE_APPS.find((candidate) => candidate.id === appId)
   if (!app) {
@@ -36,10 +39,11 @@ function ManagerHost({
       isPopoverOpen={visible}
       initialSessionState={initialSessionState}
       onSessionStateChange={onSessionStateChange}
+      whatsappHost={appId === 'whatsapp-web' ? whatsappHost : undefined}
     >
       {(presentation) => {
         const content = (
-          <div className="flex min-h-full flex-col" inert={!visible} aria-hidden={!visible}>
+          <div className="flex h-full min-h-0 flex-col" inert={!visible} aria-hidden={!visible}>
             <div className="min-h-0 flex-1">{presentation.content}</div>
             <div className="border-t border-border/60 p-1">
               <Button
@@ -66,13 +70,15 @@ export function CommunicationsDockManagerHosts({
   visibleApps,
   sessions,
   onSessionStateChange,
-  onOpenApp
+  onOpenApp,
+  whatsappHost
 }: {
   targets: ReadonlyMap<FloatingWorkspaceAppId, HTMLDivElement>
   visibleApps: ReadonlySet<FloatingWorkspaceAppId>
   sessions: Partial<Record<FloatingWorkspaceAppId, FloatingCommsSessionState>>
   onSessionStateChange: (sessionState: FloatingCommsSessionState) => void
   onOpenApp: (appId: FloatingWorkspaceAppId) => void
+  whatsappHost?: WhatsAppFastResponseHostBinding
 }): React.JSX.Element {
   return (
     <>
@@ -85,6 +91,7 @@ export function CommunicationsDockManagerHosts({
           initialSessionState={sessions[app.id] ?? createCommunicationManagerSessionState(app.id)}
           onSessionStateChange={onSessionStateChange}
           onOpenApp={onOpenApp}
+          whatsappHost={whatsappHost}
         />
       ))}
     </>
@@ -94,8 +101,5 @@ export function CommunicationsDockManagerHosts({
 export function appIdForCommunicationProvider(
   provider: CommunicationProviderId
 ): FloatingWorkspaceAppId {
-  if (provider === 'z-api') {
-    return 'whatsapp-web'
-  }
   return provider
 }

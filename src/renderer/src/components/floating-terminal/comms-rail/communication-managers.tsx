@@ -26,7 +26,8 @@ import {
   useCommunicationManagerRuntime,
   useCommunicationManagerStatuses
 } from './communication-manager-runtime'
-import { ZApiCommunicationManagerPresentation } from './ZApiCommunicationManager'
+import { WhatsAppWebFastResponsePresentation } from './WhatsAppWebFastResponsePresentation'
+import type { WhatsAppFastResponseHostBinding } from './use-whatsapp-fast-response-host'
 import {
   CommunicationOverlayControl,
   useOpenCommunicationSettings
@@ -40,7 +41,6 @@ export { getCommunicationSettingsTarget } from './communication-manager-actions'
 
 export {
   CommunicationManagerRuntimeProvider,
-  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT,
   type CommunicationManagerRuntime
 } from './communication-manager-runtime'
 
@@ -62,6 +62,7 @@ type CommunicationManagerPresentationProps = {
   isPopoverOpen: boolean
   initialSessionState?: FloatingCommsSessionState
   onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
+  whatsappHost?: WhatsAppFastResponseHostBinding
   children: (presentation: CommunicationManagerPresentation) => ReactNode
 }
 
@@ -388,7 +389,7 @@ function SlackPresentation({
 
 export const COMMUNICATION_MANAGER_REGISTRY: Record<FloatingWorkspaceAppId, CommunicationManager> =
   {
-    'whatsapp-web': { Presentation: ZApiCommunicationManagerPresentation },
+    'whatsapp-web': { Presentation: WhatsAppWebFastResponsePresentation },
     slack: { Presentation: SlackPresentation },
     discord: { Presentation: DiscordPresentation }
   }

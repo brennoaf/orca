@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   CommunicationManagerRuntimeProvider,
-  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT,
   type CommunicationManagerRuntime
 } from '@/components/floating-terminal/comms-rail/communication-managers'
 import { translate } from '@/i18n/i18n'
@@ -25,7 +24,6 @@ import {
 import { CommunicationsDockNavbar } from './CommunicationsDockNavbar'
 import { CommunicationsDockSplitLayout } from './CommunicationsDockSplitLayout'
 import { useCommunicationsDockBridge } from './useCommunicationsDockBridge'
-import { useZApiAttention } from '@/components/floating-terminal/comms-rail/use-z-api-attention'
 
 const DRAG = { WebkitAppRegion: 'drag' } as CSSProperties
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
@@ -97,7 +95,6 @@ export function CommunicationsDockRoot({
   )
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
-  const { snapshot: attention } = useZApiAttention()
   const headerRef = useRef<HTMLDivElement | null>(null)
   const identity = useMemo(
     () => ({ generation: snapshot.generation, revision: snapshot.revision }),
@@ -112,6 +109,53 @@ export function CommunicationsDockRoot({
         snapshot.layout.collapsed ? [] : listCommunicationsDockApps(activeTab.layout)
       ),
     [activeTab.layout, snapshot.layout.collapsed]
+  )
+  const whatsappHost = useMemo(
+    () => ({
+      identity: {
+        target: 'dock' as const,
+        appId: 'whatsapp-web' as const,
+        generation: snapshot.generation,
+        revision: snapshot.revision,
+        tabId: activeTab.id,
+        activeLeafAppId: 'whatsapp-web' as const
+      },
+      visible:
+        snapshot.visible &&
+        !snapshot.layout.collapsed &&
+        activeTab.activeLeafAppId === 'whatsapp-web',
+      collapsed: snapshot.layout.collapsed
+    }),
+    [activeTab.activeLeafAppId, activeTab.id, snapshot]
+  )
+  const hideWhatsAppBeforeRun = useCallback(
+    (
+      operation: string,
+      request: (identity: CommunicationsDockIdentity) => Promise<CommunicationsDockSnapshot>
+    ): void => {
+      if (!whatsappHost.visible) {
+        run(operation, request)
+        return
+      }
+      void window.api.whatsappFastResponse
+        .hide(whatsappHost.identity)
+        .then(() => run(operation, request))
+        .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+    },
+    [reportError, run, whatsappHost]
+  )
+  const hideWhatsAppBeforeRunVoid = useCallback(
+    (operation: string, request: (identity: CommunicationsDockIdentity) => Promise<void>): void => {
+      if (!whatsappHost.visible) {
+        runVoid(operation, request)
+        return
+      }
+      void window.api.whatsappFastResponse
+        .hide(whatsappHost.identity)
+        .then(() => runVoid(operation, request))
+        .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+    },
+    [reportError, runVoid, whatsappHost]
   )
 
   const setContentTarget = useCallback(
@@ -176,7 +220,6 @@ export function CommunicationsDockRoot({
           .then(() => setOverlayOpen(open))
           .catch((error: unknown) => reportError('set Discord overlay', error))
       },
-      zApi: LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT
     }),
     [identity, overlayOpen, reportError]
   )
@@ -191,12 +234,12 @@ export function CommunicationsDockRoot({
       <CommunicationsDockDragLayer
         tabs={snapshot.layout.tabs}
         onMoveApp={(request) =>
-          run('move communication app', (current) =>
+          hideWhatsAppBeforeRun('move communication app', (current) =>
             window.api.floatingCommsDock.moveApp({ ...current, ...request })
           )
         }
         onReorderTab={(tabId, index) =>
-          run('reorder communication tabs', (current) =>
+          hideWhatsAppBeforeRun('reorder communication tabs', (current) =>
             window.api.floatingCommsDock.reorderTab({ ...current, tabId, index })
           )
         }
@@ -213,16 +256,15 @@ export function CommunicationsDockRoot({
                 tabs={snapshot.layout.tabs}
                 activeTabId={snapshot.layout.activeTabId}
                 onActivateTab={(tabId) =>
-                  run('activate communication tab', (current) =>
+                  hideWhatsAppBeforeRun('activate communication tab', (current) =>
                     window.api.floatingCommsDock.activateTab({ ...current, tabId })
                   )
                 }
                 onActivateLeaf={(tabId, appId) =>
-                  run('activate communication app', (current) =>
+                  hideWhatsAppBeforeRun('activate communication app', (current) =>
                     window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
                   )
                 }
-                zApiUnreadCount={attention.totalUnread}
               />
             </div>
             <div className="flex shrink-0 items-center" data-no-drag style={NO_DRAG}>
@@ -241,7 +283,7 @@ export function CommunicationsDockRoot({
                           'Communication dock expanded'
                         )
                   )
-                  run('toggle communication dock', (current) =>
+                  hideWhatsAppBeforeRun('toggle communication dock', (current) =>
                     window.api.floatingCommsDock.setCollapsed({ ...current, collapsed })
                   )
                 }}
@@ -251,7 +293,7 @@ export function CommunicationsDockRoot({
               <IconAction
                 label={reattachLabel}
                 onClick={() =>
-                  runVoid('reattach communication dock', (current) =>
+                  hideWhatsAppBeforeRunVoid('reattach communication dock', (current) =>
                     window.api.floatingCommsDock.reattachDock(current)
                   )
                 }
@@ -280,7 +322,7 @@ export function CommunicationsDockRoot({
                     activeLeafAppId={tab.activeLeafAppId}
                     setContentTarget={setContentTarget}
                     onActivateLeaf={(tabId, appId) =>
-                      run('activate communication app', (current) =>
+                      hideWhatsAppBeforeRun('activate communication app', (current) =>
                         window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
                       )
                     }
@@ -298,16 +340,28 @@ export function CommunicationsDockRoot({
             targets={targets}
             visibleApps={visibleApps}
             sessions={snapshot.sessions}
+            whatsappHost={whatsappHost}
             onSessionStateChange={(sessionState) =>
               run('update communication session', (current) =>
                 window.api.floatingCommsDock.updateSession({ ...current, sessionState })
               )
             }
-            onOpenApp={(appId) =>
+            onOpenApp={(appId) => {
+              if (appId === 'whatsapp-web' && whatsappHost.visible) {
+                void window.api.whatsappFastResponse
+                  .hide(whatsappHost.identity)
+                  .then(() =>
+                    runVoid('open communication app', (current) =>
+                      window.api.floatingCommsDock.action({ ...current, type: 'open-app', appId })
+                    )
+                  )
+                  .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+                return
+              }
               runVoid('open communication app', (current) =>
                 window.api.floatingCommsDock.action({ ...current, type: 'open-app', appId })
               )
-            }
+            }}
           />
           <div role="status" aria-live="polite" className="sr-only">
             {liveMessage}

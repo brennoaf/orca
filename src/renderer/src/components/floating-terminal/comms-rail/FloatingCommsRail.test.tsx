@@ -151,6 +151,16 @@ describe('FloatingCommsRail', () => {
     offReattached = vi.fn()
     Object.assign(window, {
       api: {
+        whatsappFastResponse: {
+          attach: vi.fn(),
+          updateBounds: vi.fn(),
+          show: vi.fn(),
+          hide: vi.fn(() =>
+            Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
+          ),
+          collapse: vi.fn(),
+          onStateChanged: vi.fn(() => vi.fn())
+        },
         floatingComms: {
           open: vi.fn((request: { appId: FloatingWorkspaceAppId; requestId: number }) =>
             Promise.resolve({
@@ -190,15 +200,6 @@ describe('FloatingCommsRail', () => {
             return offPresence
           }),
           onReattached: vi.fn(() => offReattached)
-        },
-        zApiAttention: {
-          getSnapshot: vi.fn(() =>
-            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
-          ),
-          markSeen: vi.fn(() =>
-            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
-          ),
-          onChanged: vi.fn(() => vi.fn())
         }
       }
     })

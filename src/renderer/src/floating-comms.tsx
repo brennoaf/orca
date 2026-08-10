@@ -26,7 +26,6 @@ import { CommunicationManagerSurfaceContent } from './components/floating-termin
 import {
   COMMUNICATION_MANAGER_REGISTRY,
   CommunicationManagerRuntimeProvider,
-  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT,
   type CommunicationManagerRuntime
 } from './components/floating-terminal/comms-rail/communication-managers'
 import { applyDocumentTheme } from './lib/document-theme'
@@ -305,7 +304,6 @@ function FloatingCommsRoot(): React.JSX.Element {
           })
           .catch((error: unknown) => reportSurfaceError('set overlay state', error))
       },
-      zApi: LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT
     }),
     [discordIdentity, refresh, state]
   )
@@ -317,12 +315,26 @@ function FloatingCommsRoot(): React.JSX.Element {
     throw new Error('Floating communications app is invalid')
   }
   const Manager = COMMUNICATION_MANAGER_REGISTRY[state.appId].Presentation
+  const whatsappHost =
+    state.appId === 'whatsapp-web' && state.mode === 'attached-native'
+      ? {
+          identity: {
+            target: 'attached' as const,
+            appId: 'whatsapp-web' as const,
+            requestId: state.requestId,
+            surfaceId: state.surfaceId,
+            mode: state.mode
+          },
+          visible: state.visible
+        }
+      : undefined
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
       <TooltipProvider>
         <Manager
           isPopoverOpen={state.visible}
           initialSessionState={state.sessionState}
+          whatsappHost={whatsappHost}
           onSessionStateChange={(sessionState) => {
             latestSessionRef.current = sessionState
           }}
@@ -337,8 +349,12 @@ function FloatingCommsRoot(): React.JSX.Element {
                 content={presentation.content}
                 detached={state.mode === 'detached'}
                 onOpenApp={() => {
-                  void window.api.floatingComms
-                    .action({ type: 'open-app', ...surfaceIdentityOf(state) })
+                  const identity = surfaceIdentityOf(state)
+                  const hide = whatsappHost
+                    ? window.api.whatsappFastResponse.hide(whatsappHost.identity)
+                    : Promise.resolve()
+                  void hide
+                    .then(() => window.api.floatingComms.action({ type: 'open-app', ...identity }))
                     .catch((error: unknown) => reportSurfaceError('open app', error))
                 }}
                 onToggleDetached={() => {
@@ -347,12 +363,16 @@ function FloatingCommsRoot(): React.JSX.Element {
                     state.mode === 'detached'
                       ? window.api.floatingComms.minimizeDetached
                       : window.api.floatingComms.detach
-                  void operation({ ...surfaceIdentityOf(state), sessionState }).catch(
-                    (error: unknown) =>
-                      reportSurfaceError(
-                        state.mode === 'detached' ? 'return to panel' : 'detach',
-                        error
-                      )
+                  void (async () => {
+                    if (whatsappHost) {
+                      await window.api.whatsappFastResponse.hide(whatsappHost.identity)
+                    }
+                    await operation({ ...surfaceIdentityOf(state), sessionState })
+                  })().catch((error: unknown) =>
+                    reportSurfaceError(
+                      state.mode === 'detached' ? 'return to panel' : 'detach',
+                      error
+                    )
                   )
                 }}
               />

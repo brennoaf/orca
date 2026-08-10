@@ -57,7 +57,6 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('./components/floating-terminal/comms-rail/communication-managers', () => ({
-  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT: {},
   COMMUNICATION_MANAGER_REGISTRY: {
     discord: { Presentation: MockPresentation },
     'whatsapp-web': { Presentation: MockPresentation }
@@ -127,6 +126,11 @@ describe('floating communications renderer root', () => {
     Object.assign(window, {
       matchMedia: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
       api: {
+        whatsappFastResponse: {
+          hide: vi.fn(() =>
+            Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
+          )
+        },
         settings: {
           getSync: vi.fn(() => null),
           get: vi.fn(() => Promise.resolve({ theme: 'system' })),

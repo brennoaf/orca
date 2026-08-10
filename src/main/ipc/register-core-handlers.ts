@@ -28,12 +28,12 @@ import { registerEphemeralVmHandlers } from './ephemeral-vm'
 import { registerAiVaultHandlers } from './ai-vault'
 import { registerNativeChatHandlers } from './native-chat'
 import { registerNotificationHandlers } from './notifications'
-import { registerZApiAttentionHandlers } from './z-api-attention'
 import { registerNotebookHandlers } from './notebook'
 import { registerOnboardingHandlers } from './onboarding'
 import { registerDashboardPopoutHandlers } from './dashboard-popout'
 import { registerFloatingCommsSurfaceHandlers } from './floating-comms-surface'
 import { registerCommunicationsDockHandlers } from './communications-dock'
+import { registerWhatsAppFastResponseHandlers } from './whatsapp-fast-response'
 import { registerTerminalPreviewHandlers } from './terminal-preview'
 import { registerDeveloperPermissionHandlers } from './developer-permissions'
 import { registerComputerUsePermissionHandlers } from './computer-use-permissions'
@@ -168,12 +168,12 @@ export function registerCoreHandlers(
   registerStatsHandlers(stats)
   registerMemoryHandlers(store)
   registerNotificationHandlers(store, runtime)
-  registerZApiAttentionHandlers()
   registerNotebookHandlers(store)
   registerOnboardingHandlers(store)
   registerDashboardPopoutHandlers(store, keybindings)
   registerFloatingCommsSurfaceHandlers()
   registerCommunicationsDockHandlers()
+  registerWhatsAppFastResponseHandlers(store)
   registerTerminalPreviewHandlers(runtime)
   registerDeveloperPermissionHandlers()
   // Why: diagnostics handlers are wired alongside telemetry but the two

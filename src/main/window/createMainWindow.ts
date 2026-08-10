@@ -12,6 +12,7 @@ import {
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import type { Store } from '../persistence'
+import type * as WhatsAppFastResponseIpc from '../ipc/whatsapp-fast-response'
 import { getAppIconPath } from '../app-icon'
 import { browserManager } from '../browser/browser-manager'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
@@ -1137,6 +1138,9 @@ export function createMainWindow(
     closeDashboardPopout()
     void floatingCommsSurfaceController.shutdown()
     void communicationsDockController.shutdown()
+    const { shutdownWhatsAppFastResponseHost } =
+      require('../ipc/whatsapp-fast-response') as typeof WhatsAppFastResponseIpc
+    shutdownWhatsAppFastResponseHost()
     closeDiscordVoiceWindow()
     clearInitialRevealFallbackTimer()
     clearQuitRendererAckTimer()

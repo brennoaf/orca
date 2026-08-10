@@ -52,7 +52,6 @@ function MockPresentation({
 }
 
 vi.mock('@/components/floating-terminal/comms-rail/communication-managers', () => ({
-  LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT: {},
   createCommunicationManagerSessionState: (appId: string) => ({ appId }),
   COMMUNICATION_MANAGER_REGISTRY: {
     'whatsapp-web': { Presentation: MockPresentation },
@@ -164,14 +163,12 @@ describe('CommunicationsDockRoot', () => {
     })
     Object.assign(window, {
       api: {
-        floatingCommsDock: api,
-        zApiAttention: {
-          getSnapshot: vi.fn(() =>
-            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
-          ),
-          markSeen: vi.fn(),
-          onChanged: vi.fn(() => vi.fn())
-        }
+        whatsappFastResponse: {
+          hide: vi.fn(() =>
+            Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
+          )
+        },
+        floatingCommsDock: api
       }
     })
   })

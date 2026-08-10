@@ -27,6 +27,12 @@ import type {
 } from '../shared/communications-dock'
 import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type {
+  WhatsAppFastResponseAttach,
+  WhatsAppFastResponseSnapshot,
+  WhatsAppFastResponseStateChanged,
+  WhatsAppFastResponseVisibility
+} from '../shared/whatsapp-fast-response'
+import type {
   DashboardRevealAgentArgs,
   DashboardSleepWorkspaceArgs,
   DashboardSnapshot,
@@ -54,7 +60,6 @@ import type {
 } from '../shared/floating-comms-surface'
 import type {
   CommunicationIntegrationStatus,
-  ZApiAttentionSnapshot
 } from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
@@ -534,6 +539,26 @@ ipcRenderer.on('ui:findInBrowserPage', (_event, source: unknown) => {
 
 // Custom APIs for renderer
 const api = {
+  whatsappFastResponse: {
+    attach: (request: WhatsAppFastResponseAttach): Promise<WhatsAppFastResponseSnapshot> =>
+      ipcRenderer.invoke('whatsappFastResponse:attach', request),
+    updateBounds: (request: WhatsAppFastResponseAttach): Promise<WhatsAppFastResponseSnapshot> =>
+      ipcRenderer.invoke('whatsappFastResponse:updateBounds', request),
+    show: (request: WhatsAppFastResponseVisibility): Promise<WhatsAppFastResponseSnapshot> =>
+      ipcRenderer.invoke('whatsappFastResponse:show', request),
+    hide: (request: WhatsAppFastResponseVisibility): Promise<WhatsAppFastResponseSnapshot> =>
+      ipcRenderer.invoke('whatsappFastResponse:hide', request),
+    collapse: (request: WhatsAppFastResponseVisibility): Promise<WhatsAppFastResponseSnapshot> =>
+      ipcRenderer.invoke('whatsappFastResponse:collapse', request),
+    onStateChanged: (callback: (state: WhatsAppFastResponseStateChanged) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: WhatsAppFastResponseStateChanged
+      ): void => callback(state)
+      ipcRenderer.on('whatsappFastResponse:stateChanged', listener)
+      return () => ipcRenderer.removeListener('whatsappFastResponse:stateChanged', listener)
+    }
+  },
   app: {
     getIdentity: (): Promise<AppIdentity> => ipcRenderer.invoke('app:getIdentity'),
     getFeatureWallAssetBaseUrl: (): Promise<string> =>
@@ -2514,19 +2539,6 @@ const api = {
       return () => ipcRenderer.removeListener('floatingCommsDock:reattached', listener)
     }
   },
-  zApiAttention: {
-    getSnapshot: (): Promise<ZApiAttentionSnapshot> =>
-      ipcRenderer.invoke('zApiAttention:getSnapshot'),
-    markSeen: (request: { conversationId: number }): Promise<ZApiAttentionSnapshot> =>
-      ipcRenderer.invoke('zApiAttention:markSeen', request),
-    onChanged: (callback: (snapshot: ZApiAttentionSnapshot) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, snapshot: ZApiAttentionSnapshot): void =>
-        callback(snapshot)
-      ipcRenderer.on('zApiAttention:changed', listener)
-      return () => ipcRenderer.removeListener('zApiAttention:changed', listener)
-    }
-  },
-
   dashboard: {
     // Open the pop-out dashboard window, or focus it if already open.
     openPopout: (view?: 'board' | 'map'): Promise<void> =>
