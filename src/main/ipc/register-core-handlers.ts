@@ -28,6 +28,7 @@ import { registerEphemeralVmHandlers } from './ephemeral-vm'
 import { registerAiVaultHandlers } from './ai-vault'
 import { registerNativeChatHandlers } from './native-chat'
 import { registerNotificationHandlers } from './notifications'
+import { registerZApiAttentionHandlers } from './z-api-attention'
 import { registerNotebookHandlers } from './notebook'
 import { registerOnboardingHandlers } from './onboarding'
 import { registerDashboardPopoutHandlers } from './dashboard-popout'
@@ -167,6 +168,7 @@ export function registerCoreHandlers(
   registerStatsHandlers(stats)
   registerMemoryHandlers(store)
   registerNotificationHandlers(store, runtime)
+  registerZApiAttentionHandlers()
   registerNotebookHandlers(store)
   registerOnboardingHandlers(store)
   registerDashboardPopoutHandlers(store, keybindings)

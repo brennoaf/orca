@@ -52,7 +52,10 @@ import type {
   FloatingCommsSurfaceVisibility,
   FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
-import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
+import type {
+  CommunicationIntegrationStatus,
+  ZApiAttentionSnapshot
+} from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
@@ -2511,6 +2514,19 @@ const api = {
       return () => ipcRenderer.removeListener('floatingCommsDock:reattached', listener)
     }
   },
+  zApiAttention: {
+    getSnapshot: (): Promise<ZApiAttentionSnapshot> =>
+      ipcRenderer.invoke('zApiAttention:getSnapshot'),
+    markSeen: (request: { conversationId: number }): Promise<ZApiAttentionSnapshot> =>
+      ipcRenderer.invoke('zApiAttention:markSeen', request),
+    onChanged: (callback: (snapshot: ZApiAttentionSnapshot) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: ZApiAttentionSnapshot): void =>
+        callback(snapshot)
+      ipcRenderer.on('zApiAttention:changed', listener)
+      return () => ipcRenderer.removeListener('zApiAttention:changed', listener)
+    }
+  },
+
   dashboard: {
     // Open the pop-out dashboard window, or focus it if already open.
     openPopout: (view?: 'board' | 'map'): Promise<void> =>

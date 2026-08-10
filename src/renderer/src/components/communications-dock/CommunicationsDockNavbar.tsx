@@ -16,6 +16,7 @@ import type {
   CommunicationsDockTabDragData,
   CommunicationsDockTabDropData
 } from './communications-dock-drag-data'
+import { ZApiUnreadBadge } from '@/components/floating-terminal/comms-rail/ZApiUnreadBadge'
 
 function appLabel(appId: FloatingWorkspaceAppId): string {
   return FLOATING_WORKSPACE_APPS.find((app) => app.id === appId)?.label ?? appId
@@ -27,7 +28,8 @@ function DockTab({
   roving,
   onSelect,
   onActivateLeaf,
-  onRovingMove
+  onRovingMove,
+  zApiUnreadCount
 }: {
   tab: CommunicationsDockTab
   selected: boolean
@@ -35,6 +37,7 @@ function DockTab({
   onSelect: (tabId: string) => void
   onActivateLeaf: (tabId: string, appId: FloatingWorkspaceAppId) => void
   onRovingMove: (tabId: string, direction: 'previous' | 'next' | 'first' | 'last') => void
+  zApiUnreadCount: number
 }): React.JSX.Element {
   const apps = listCommunicationsDockApps(tab.layout)
   const label = apps.map(appLabel).join(', ')
@@ -129,6 +132,12 @@ function DockTab({
               </DockTabAppSegment>
             )
           })}
+          {apps.includes('whatsapp-web') ? (
+            <ZApiUnreadBadge
+              count={zApiUnreadCount}
+              className="pointer-events-none absolute -right-1.5 -top-1.5"
+            />
+          ) : null}
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={4}>
@@ -181,12 +190,14 @@ export function CommunicationsDockNavbar({
   tabs,
   activeTabId,
   onActivateTab,
-  onActivateLeaf
+  onActivateLeaf,
+  zApiUnreadCount = 0
 }: {
   tabs: readonly CommunicationsDockTab[]
   activeTabId: string
   onActivateTab: (tabId: string) => void
   onActivateLeaf: (tabId: string, appId: FloatingWorkspaceAppId) => void
+  zApiUnreadCount?: number
 }): React.JSX.Element {
   const [rovingTabId, setRovingTabId] = useState(activeTabId)
   useEffect(() => {
@@ -225,6 +236,7 @@ export function CommunicationsDockNavbar({
             onActivateLeaf(tabId, appId)
           }}
           onRovingMove={moveRoving}
+          zApiUnreadCount={zApiUnreadCount}
         />
       ))}
     </div>

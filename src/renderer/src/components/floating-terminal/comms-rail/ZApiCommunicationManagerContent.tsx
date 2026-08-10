@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type {
   ZApiCommunicationIntegrationStatus,
@@ -16,6 +16,8 @@ import { useOpenCommunicationSettings } from './communication-manager-actions'
 import type { ZApiCommunicationManagerClient } from './communication-manager-runtime'
 import { ZApiConversationAvatar } from './ZApiConversationAvatar'
 import { ZApiConversationContent } from './ZApiConversationContent'
+import { useZApiAttention } from './use-z-api-attention'
+import { ZApiUnreadBadge } from './ZApiUnreadBadge'
 
 const CONVERSATION_PAGE_SIZE = 20
 const CONVERSATION_POLL_INTERVAL_MS = 5_000
@@ -124,7 +126,8 @@ function ConversationList({
   loading,
   error,
   onSelect,
-  onRetry
+  onRetry,
+  unreadByConversation
 }: {
   active: boolean
   client: ZApiCommunicationManagerClient
@@ -133,6 +136,7 @@ function ConversationList({
   error: string | null
   onSelect: (conversation: ZApiConversationSnapshot) => void
   onRetry: () => void
+  unreadByConversation: ReadonlyMap<number, number>
 }): React.JSX.Element {
   if (loading && conversations.length === 0) {
     return (
@@ -192,6 +196,7 @@ function ConversationList({
             {conversation.displayName ??
               translate('communicationRail.zApi.unnamedConversation', 'WhatsApp conversation')}
           </span>
+          <ZApiUnreadBadge count={unreadByConversation.get(conversation.id) ?? 0} />
           <span className="shrink-0 text-[11px] text-muted-foreground">
             {formatUiRelativeTime(conversation.lastMessageAt - Date.now())}
           </span>
@@ -224,6 +229,17 @@ export function ZApiCommunicationManagerContent({
   const [error, setError] = useState<string | null>(null)
   const [refreshSequence, setRefreshSequence] = useState(0)
   const openSettings = useOpenCommunicationSettings()
+  const { snapshot: attention, markSeen } = useZApiAttention()
+  const unreadByConversation = useMemo(
+    () =>
+      new Map(
+        attention.conversations.map((conversation) => [
+          conversation.conversationId,
+          conversation.unreadCount
+        ])
+      ),
+    [attention.conversations]
+  )
 
   useEffect(() => {
     setSelectedConversationId(initialSessionState.selectedConversationId)
@@ -293,6 +309,25 @@ export function ZApiCommunicationManagerContent({
     })
   }, [draft, onSessionStateChange, selectedConversationId])
 
+  useEffect(() => {
+    if (
+      !isPopoverOpen ||
+      selectedConversationId === null ||
+      !unreadByConversation.has(selectedConversationId)
+    ) {
+      return
+    }
+    const conversationId = selectedConversationId
+    const acknowledge = (): void => {
+      void markSeen(conversationId).catch((error: unknown) =>
+        console.error('[z-api-attention] mark seen failed:', error)
+      )
+    }
+    acknowledge()
+    window.addEventListener('focus', acknowledge)
+    return () => window.removeEventListener('focus', acknowledge)
+  }, [isPopoverOpen, markSeen, selectedConversationId, unreadByConversation])
+
   if (!isZApiFastResponseReady(status)) {
     return (
       <ZApiSetupContent
@@ -328,6 +363,7 @@ export function ZApiCommunicationManagerContent({
       error={error}
       onSelect={(conversation) => setSelectedConversationId(conversation.id)}
       onRetry={() => setRefreshSequence((current) => current + 1)}
+      unreadByConversation={unreadByConversation}
     />
   )
 }

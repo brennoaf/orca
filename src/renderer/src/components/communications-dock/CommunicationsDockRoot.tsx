@@ -25,6 +25,7 @@ import {
 import { CommunicationsDockNavbar } from './CommunicationsDockNavbar'
 import { CommunicationsDockSplitLayout } from './CommunicationsDockSplitLayout'
 import { useCommunicationsDockBridge } from './useCommunicationsDockBridge'
+import { useZApiAttention } from '@/components/floating-terminal/comms-rail/use-z-api-attention'
 
 const DRAG = { WebkitAppRegion: 'drag' } as CSSProperties
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
@@ -96,6 +97,7 @@ export function CommunicationsDockRoot({
   )
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
+  const { snapshot: attention } = useZApiAttention()
   const headerRef = useRef<HTMLDivElement | null>(null)
   const identity = useMemo(
     () => ({ generation: snapshot.generation, revision: snapshot.revision }),
@@ -220,6 +222,7 @@ export function CommunicationsDockRoot({
                     window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
                   )
                 }
+                zApiUnreadCount={attention.totalUnread}
               />
             </div>
             <div className="flex shrink-0 items-center" data-no-drag style={NO_DRAG}>

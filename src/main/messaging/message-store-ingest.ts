@@ -12,7 +12,7 @@ export function ingestZApiMessage(
   db: SyncDatabase,
   message: NormalizedZApiMessage,
   context?: ZApiWebhookIngestContext
-): { inserted: boolean; messageId: number } {
+): { inserted: boolean; messageId: number; conversationId: number } {
   validateZApiWebhookIngestContext(context)
   db.exec('BEGIN IMMEDIATE')
   try {
@@ -22,8 +22,19 @@ export function ingestZApiMessage(
       )
       .get(message.provider, message.instanceId, message.messageId) as { id?: unknown } | undefined
     if (existing) {
+      const existingId = numberField(existing.id, 'message id')
       db.exec('COMMIT')
-      return { inserted: false, messageId: numberField(existing.id, 'message id') }
+      const existingMessage = db
+        .prepare('SELECT conversation_id FROM messages WHERE id = ?')
+        .get(existingId) as { conversation_id?: unknown } | undefined
+      if (!existingMessage) {
+        throw new Error('Messaging callback conversation was not found.')
+      }
+      return {
+        inserted: false,
+        messageId: existingId,
+        conversationId: numberField(existingMessage.conversation_id, 'conversation id')
+      }
     }
     const persistedConversationId = upsertMessagingConversation(db, {
       provider: message.provider,
@@ -75,7 +86,7 @@ export function ingestZApiMessage(
       })
     }
     db.exec('COMMIT')
-    return { inserted: result.changes > 0, messageId }
+    return { inserted: result.changes > 0, messageId, conversationId: persistedConversationId }
   } catch (error) {
     db.exec('ROLLBACK')
     throw error

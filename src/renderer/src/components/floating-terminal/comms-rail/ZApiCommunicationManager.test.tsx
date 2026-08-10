@@ -148,7 +148,50 @@ function ManagerHarness({
 describe('ZApiCommunicationManager', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    Object.assign(window, {
+      api: {
+        zApiAttention: {
+          getSnapshot: vi.fn(() =>
+            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
+          ),
+          markSeen: vi.fn(() =>
+            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
+          ),
+          onChanged: vi.fn(() => vi.fn())
+        }
+      }
+    })
   })
+
+  it.each([true, false])(
+    'marks selected attention seen only when visible: %s',
+    async (isPopoverOpen) => {
+      const client = createClient()
+      vi.mocked(window.api.zApiAttention.getSnapshot).mockResolvedValueOnce({
+        provider: 'z-api',
+        totalUnread: 1,
+        conversations: [{ conversationId: 7, unreadCount: 1 }]
+      })
+      render(
+        <ManagerHarness
+          runtime={createRuntime(client)}
+          isPopoverOpen={isPopoverOpen}
+          initialSessionState={{
+            appId: 'whatsapp-web',
+            selectedConversationId: 7,
+            draft: ''
+          }}
+        />
+      )
+      if (isPopoverOpen) {
+        await screen.findByText('Brenno')
+        await waitFor(() => expect(window.api.zApiAttention.markSeen).toHaveBeenCalledTimes(1))
+      } else {
+        await act(async () => undefined)
+        expect(window.api.zApiAttention.markSeen).not.toHaveBeenCalled()
+      }
+    }
+  )
 
   afterEach(() => {
     cleanup()

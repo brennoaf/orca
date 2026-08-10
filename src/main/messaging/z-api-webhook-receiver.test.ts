@@ -29,7 +29,11 @@ function payload(overrides: Record<string, unknown> = {}): Record<string, unknow
 
 function receiver(
   options: {
-    ingest?: (message: NormalizedZApiMessage) => { inserted: boolean; messageId: number }
+    ingest?: (message: NormalizedZApiMessage) => {
+      inserted: boolean
+      messageId: number
+      conversationId: number
+    }
     now?: () => number
   } = {}
 ) {
@@ -42,7 +46,7 @@ function receiver(
       configurationId: '11111111111111111111111111111111'
     },
     store: {
-      ingest: options.ingest ?? (() => ({ inserted: true, messageId: 1 }))
+      ingest: options.ingest ?? (() => ({ inserted: true, messageId: 1, conversationId: 1 }))
     },
     onError,
     now: options.now
@@ -95,7 +99,7 @@ describe('ZApiWebhookReceiver', () => {
     const { value } = receiver({
       ingest: (message) => {
         persisted.push(message.messageId)
-        return { inserted: persisted.length === 1, messageId: 1 }
+        return { inserted: persisted.length === 1, messageId: 1, conversationId: 1 }
       }
     })
     const endpoint = await value.start()
@@ -124,7 +128,7 @@ describe('ZApiWebhookReceiver', () => {
   ] as const)(
     'persists a $expectedKind callback instead of discarding a non-replyable conversation',
     async ({ expectedKind, expectedAddress, fields }) => {
-      const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+      const ingest = vi.fn(() => ({ inserted: true, messageId: 1, conversationId: 1 }))
       const { value } = receiver({ ingest })
       const endpoint = await value.start()
 
@@ -187,7 +191,7 @@ describe('ZApiWebhookReceiver', () => {
       momment: 1
     }
   ])('acknowledges a known provider event without persisting it', async (event) => {
-    const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+    const ingest = vi.fn(() => ({ inserted: true, messageId: 1, conversationId: 1 }))
     const { value } = receiver({ ingest })
     const endpoint = await value.start()
     expect(await post(endpoint.port, endpoint.path, JSON.stringify(event))).toBe(204)
@@ -195,7 +199,7 @@ describe('ZApiWebhookReceiver', () => {
   })
 
   it('rejects a callback from another instance before persistence', async () => {
-    const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+    const ingest = vi.fn(() => ({ inserted: true, messageId: 1, conversationId: 1 }))
     const { value } = receiver({ ingest })
     const endpoint = await value.start()
     expect(
@@ -205,7 +209,7 @@ describe('ZApiWebhookReceiver', () => {
   })
 
   it('rejects callbacks until an expected instance is configured', async () => {
-    const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+    const ingest = vi.fn(() => ({ inserted: true, messageId: 1, conversationId: 1 }))
     const onError = vi.fn()
     const value = new ZApiWebhookReceiver({
       port: 0,

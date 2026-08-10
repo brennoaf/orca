@@ -164,7 +164,14 @@ describe('CommunicationsDockRoot', () => {
     })
     Object.assign(window, {
       api: {
-        floatingCommsDock: api
+        floatingCommsDock: api,
+        zApiAttention: {
+          getSnapshot: vi.fn(() =>
+            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
+          ),
+          markSeen: vi.fn(),
+          onChanged: vi.fn(() => vi.fn())
+        }
       }
     })
   })

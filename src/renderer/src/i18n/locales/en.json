@@ -15117,7 +15117,8 @@
       "tooltipLoading": "WhatsApp — loading",
       "tooltipReady": "WhatsApp — fast responses ready",
       "tooltipUnavailable": "WhatsApp — setup required",
-      "archiveStateLoadFailed": "Archived chat status could not be refreshed. Showing current conversations."
+      "archiveStateLoadFailed": "Archived chat status could not be refreshed. Showing current conversations.",
+      "unreadCount": "{{count}} unread WhatsApp messages"
     },
     "discord": {
       "notConnected": "Discord not connected",

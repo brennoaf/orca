@@ -284,6 +284,17 @@ export type ZApiMessagePage = {
   nextOffset: number | null
 }
 
+export type ZApiConversationAttentionSnapshot = {
+  conversationId: number
+  unreadCount: number
+}
+
+export type ZApiAttentionSnapshot = {
+  provider: 'z-api'
+  totalUnread: number
+  conversations: ZApiConversationAttentionSnapshot[]
+}
+
 export type ZApiSendReplyResult = {
   providerMessageId: string
   deliveryStatus: 'sent'

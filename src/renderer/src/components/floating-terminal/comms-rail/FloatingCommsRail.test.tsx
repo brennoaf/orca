@@ -191,6 +191,15 @@ describe('FloatingCommsRail', () => {
           }),
           onReattached: vi.fn(() => offReattached)
         },
+        zApiAttention: {
+          getSnapshot: vi.fn(() =>
+            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
+          ),
+          markSeen: vi.fn(() =>
+            Promise.resolve({ provider: 'z-api', totalUnread: 0, conversations: [] })
+          ),
+          onChanged: vi.fn(() => vi.fn())
+        }
       }
     })
     vi.stubGlobal(

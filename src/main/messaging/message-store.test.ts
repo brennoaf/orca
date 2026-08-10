@@ -320,6 +320,20 @@ describe('MessageStore', () => {
       legacy.close()
       const migrated = new MessageStore(path)
       stores.push(migrated)
+      if (version === 4) {
+        const inspection = new SyncDatabase(path)
+        const foreignKeys = inspection
+          .prepare("PRAGMA foreign_key_list('conversation_attention')")
+          .all() as { table: unknown; from: unknown; on_delete: unknown }[]
+        expect(foreignKeys).toEqual([
+          expect.objectContaining({
+            table: 'conversations',
+            from: 'conversation_id',
+            on_delete: 'CASCADE'
+          })
+        ])
+        inspection.close()
+      }
       expect(migrated.listConversations()[0]).toMatchObject({
         address: 'chat-1',
         conversationKind: 'unknown'

@@ -3,7 +3,7 @@ import type { ZApiConversationKind } from '../../shared/communication-integratio
 import type SyncDatabase from '../sqlite/sync-database'
 import { migrateMessageStoreV4 } from './message-store-migrate-v4'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 export const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 export const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 200
@@ -282,6 +282,13 @@ export function initializeMessageStoreDatabase(
   if (version === 4) {
     migrateMessageStoreV4(db)
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_attention (
+      conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+      seen_through_message_id INTEGER NOT NULL DEFAULT 0,
+      notified_through_message_id INTEGER NOT NULL DEFAULT 0
+    );
+  `)
   if (version < SCHEMA_VERSION) {
     db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }

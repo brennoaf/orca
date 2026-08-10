@@ -59,7 +59,10 @@ import type {
   FloatingCommsSurfaceVisibility,
   FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
-import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
+import type {
+  CommunicationIntegrationStatus,
+  ZApiAttentionSnapshot
+} from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
@@ -1300,6 +1303,11 @@ export type PreloadApi = {
         sessions: CommunicationsDockSnapshot['sessions']
       }) => void
     ) => () => void
+  }
+  zApiAttention: {
+    getSnapshot: () => Promise<ZApiAttentionSnapshot>
+    markSeen: (request: { conversationId: number }) => Promise<ZApiAttentionSnapshot>
+    onChanged: (callback: (snapshot: ZApiAttentionSnapshot) => void) => () => void
   }
   orcaProfiles: {
     list: () => Promise<OrcaProfileListResult>

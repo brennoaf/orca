@@ -40,6 +40,13 @@ export function buildNotificationOptions(args: NotificationDispatchRequest): {
     }
   }
 
+  if (args.source === 'communication-message') {
+    return {
+      title: 'New WhatsApp message',
+      body: 'Open fast responses to view it.'
+    }
+  }
+
   const richOptions = buildAgentTaskCompleteNotificationOptions(args)
   if (richOptions) {
     return richOptions

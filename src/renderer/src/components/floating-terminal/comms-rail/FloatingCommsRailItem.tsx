@@ -9,6 +9,7 @@ import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { CommunicationManagerSurfaceContent } from './CommunicationManagerSurfaceContent'
 import type { CommunicationManager } from './communication-managers'
+import { ZApiUnreadBadge } from './ZApiUnreadBadge'
 
 export function FloatingCommsRailItem({
   app,
@@ -22,7 +23,8 @@ export function FloatingCommsRailItem({
   onDetach,
   onOpenApp,
   buttonRef,
-  portalContainer
+  portalContainer,
+  unreadCount
 }: {
   app: FloatingWorkspaceApp
   manager: CommunicationManager
@@ -36,6 +38,7 @@ export function FloatingCommsRailItem({
   onOpenApp: () => void
   buttonRef: (element: HTMLButtonElement | null) => void
   portalContainer: HTMLDivElement | null
+  unreadCount: number
 }): React.JSX.Element {
   const Icon = FLOATING_WORKSPACE_APP_ICONS[app.id]
   const handleSessionStateChange = useCallback(
@@ -70,6 +73,7 @@ export function FloatingCommsRailItem({
             onClick={onSelect}
           >
             <Icon size={18} />
+            <ZApiUnreadBadge count={unreadCount} className="absolute right-0.5 top-0.5" />
             {presentation.status.kind === 'active' ? (
               <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-status-success" />
             ) : null}

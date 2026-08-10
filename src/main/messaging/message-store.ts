@@ -11,6 +11,13 @@ import { upsertMessagingConversation } from './message-store-conversation-write'
 import { ingestZApiMessage } from './message-store-ingest'
 import { ZApiListeningValidationDatabase } from './z-api-listening-validation-database'
 import type { ZApiWebhookIngestContext } from './z-api-listening-validation-store'
+import { emitZApiInboundAttention } from './z-api-attention-events'
+import {
+  claimZApiInboundNotification,
+  getZApiAttentionSnapshot,
+  markZApiConversationSeen
+} from './z-api-attention-store'
+import type { ZApiAttentionSnapshot } from '../../shared/communication-integrations'
 import {
   DEFAULT_MAX_CONVERSATIONS,
   DEFAULT_MAX_MESSAGES_PER_CONVERSATION,
@@ -68,9 +75,36 @@ export class MessageStore {
   ingest(
     message: NormalizedZApiMessage,
     context?: ZApiWebhookIngestContext
-  ): { inserted: boolean; messageId: number } {
+  ): { inserted: boolean; messageId: number; conversationId: number } {
     this.ensureOpen()
-    return ingestZApiMessage(this.db, message, context)
+    const result = ingestZApiMessage(this.db, message, context)
+    if (
+      result.inserted &&
+      message.direction === 'inbound' &&
+      claimZApiInboundNotification(this.db, result.conversationId, result.messageId)
+    ) {
+      emitZApiInboundAttention({
+        conversationId: result.conversationId,
+        messageId: result.messageId
+      })
+    }
+    return result
+  }
+
+  getAttentionSnapshot(): ZApiAttentionSnapshot {
+    this.ensureOpen()
+    return getZApiAttentionSnapshot(this.db)
+  }
+
+  markConversationSeen(conversationId: number): ZApiAttentionSnapshot {
+    this.ensureOpen()
+    markZApiConversationSeen(this.db, conversationId)
+    return getZApiAttentionSnapshot(this.db)
+  }
+
+  claimInboundNotification(conversationId: number, messageId: number): boolean {
+    this.ensureOpen()
+    return claimZApiInboundNotification(this.db, conversationId, messageId)
   }
 
   registerOutboundPending(args: {
