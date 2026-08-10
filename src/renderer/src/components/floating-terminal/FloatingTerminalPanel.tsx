@@ -1877,6 +1877,7 @@ export function FloatingTerminalPanel({
         <div className="flex min-h-0 flex-1">
           <FloatingCommsRail
             panelRef={panelRef}
+            workspaceBounds={bounds}
             openAppId={openAppId}
             onOpenAppIdChange={setOpenAppId}
             onOpenApp={createFloatingAppTab}

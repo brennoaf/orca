@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { z } from 'zod'
 import type {
   FloatingCommsAction,
@@ -6,7 +6,8 @@ import type {
   FloatingCommsDiscordCommand,
   FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
-  FloatingCommsSurfaceState
+  FloatingCommsSurfaceState,
+  FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
 import { FLOATING_COMMS_SURFACE_MAX_HEIGHT } from '../../shared/floating-comms-surface'
 import {
@@ -56,7 +57,18 @@ const FloatingCommsOpenRequestSchema: z.ZodType<FloatingCommsOpenRequest> = z
     appId: FloatingCommsAppId,
     requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     anchor: FloatingCommsAnchor,
+    workspace: FloatingCommsAnchor,
     height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
+  })
+  .strict()
+const FloatingCommsUpdateRequestSchema: z.ZodType<FloatingCommsUpdateRequest> = z
+  .object({
+    appId: FloatingCommsAppId,
+    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    anchor: FloatingCommsAnchor,
+    workspace: FloatingCommsAnchor,
+    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT),
+    geometryRequestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
   })
   .strict()
 const FloatingCommsCloseRequestSchema: z.ZodType<FloatingCommsCloseRequest> = z
@@ -132,23 +144,35 @@ async function runDiscordCommand(command: FloatingCommsDiscordCommand): Promise<
   }
 }
 
+function getFloatingCommsOwner(sender: WebContents): BrowserWindow | null {
+  if (!isTrustedUIRenderer(sender)) {
+    return null
+  }
+  const owner = BrowserWindow.fromWebContents(sender)
+  return owner && !owner.isDestroyed() ? owner : null
+}
+
 export function registerFloatingCommsSurfaceHandlers(): void {
   ipcMain.handle('floatingComms:open', (event, value: unknown) => {
     const request = FloatingCommsOpenRequestSchema.safeParse(value)
-    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+    const owner = getFloatingCommsOwner(event.sender)
+    if (!owner || !request.success) {
       throw new Error('floating_comms_open_denied')
     }
     if (shouldUseFloatingCommsDomFallback()) {
       return { mode: 'dom' as const }
     }
-    return { mode: openFloatingCommsSurface(request.data) ? ('window' as const) : ('dom' as const) }
+    return {
+      mode: openFloatingCommsSurface(owner, request.data) ? ('window' as const) : ('dom' as const)
+    }
   })
   ipcMain.handle('floatingComms:update', (event, value: unknown) => {
-    const request = FloatingCommsOpenRequestSchema.safeParse(value)
-    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+    const request = FloatingCommsUpdateRequestSchema.safeParse(value)
+    const owner = getFloatingCommsOwner(event.sender)
+    if (!owner || !request.success) {
       throw new Error('floating_comms_update_denied')
     }
-    const usesWindow = updateFloatingCommsSurface(request.data)
+    const usesWindow = updateFloatingCommsSurface(owner, request.data)
     return usesWindow === null
       ? null
       : { mode: usesWindow ? ('window' as const) : ('dom' as const) }

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (event: { sender: unknown }, value?: unknown) => unknown>(),
+  owner: { isDestroyed: vi.fn(() => false) },
+  fromWebContents: vi.fn(),
   isTrusted: vi.fn(),
   isSurface: vi.fn(),
   useDomFallback: vi.fn(),
@@ -32,6 +34,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
+  BrowserWindow: { fromWebContents: mocks.fromWebContents },
   ipcMain: {
     handle: (channel: string, handler: (event: { sender: unknown }, value?: unknown) => unknown) =>
       mocks.handlers.set(channel, handler)
@@ -81,6 +84,7 @@ const request = {
   appId: 'discord',
   requestId: 1,
   anchor: { x: 20, y: 30, width: 40, height: 40 },
+  workspace: { x: 20, y: 20, width: 800, height: 500 },
   height: 300
 }
 
@@ -88,6 +92,8 @@ describe('registerFloatingCommsSurfaceHandlers', () => {
   beforeEach(() => {
     mocks.handlers.clear()
     mocks.isTrusted.mockReset()
+    mocks.fromWebContents.mockReset().mockReturnValue(mocks.owner)
+    mocks.owner.isDestroyed.mockReset().mockReturnValue(false)
     mocks.isSurface.mockReset()
     mocks.useDomFallback.mockReset().mockReturnValue(false)
     mocks.open.mockReset().mockReturnValue(true)
@@ -112,6 +118,9 @@ describe('registerFloatingCommsSurfaceHandlers', () => {
     expect(() =>
       open({ sender: {} }, { ...request, anchor: { ...request.anchor, width: 0 } })
     ).toThrow('floating_comms_open_denied')
+    expect(() =>
+      open({ sender: {} }, { ...request, workspace: { ...request.workspace, height: 0 } })
+    ).toThrow('floating_comms_open_denied')
     expect(() => open({ sender: {} }, { ...request, unexpected: true })).toThrow(
       'floating_comms_open_denied'
     )
@@ -121,14 +130,24 @@ describe('registerFloatingCommsSurfaceHandlers', () => {
     expect(mocks.open).not.toHaveBeenCalled()
   })
 
+  it('rejects a trusted renderer without a current owner window', () => {
+    mocks.isTrusted.mockReturnValue(true)
+    mocks.fromWebContents.mockReturnValue(null)
+    expect(() => handler('floatingComms:open')({ sender: {} }, request)).toThrow(
+      'floating_comms_open_denied'
+    )
+    expect(mocks.open).not.toHaveBeenCalled()
+  })
+
   it('opens and updates the native surface only for admitted trusted requests', () => {
     mocks.isTrusted.mockReturnValue(true)
     const open = handler('floatingComms:open')
     const update = handler('floatingComms:update')
+    const updateRequest = { ...request, geometryRequestId: null }
     expect(open({ sender: {} }, request)).toEqual({ mode: 'window' })
-    expect(update({ sender: {} }, request)).toEqual({ mode: 'window' })
-    expect(mocks.open).toHaveBeenCalledWith(request)
-    expect(mocks.update).toHaveBeenCalledWith(request)
+    expect(update({ sender: {} }, updateRequest)).toEqual({ mode: 'window' })
+    expect(mocks.open).toHaveBeenCalledWith(mocks.owner, request)
+    expect(mocks.update).toHaveBeenCalledWith(mocks.owner, updateRequest)
   })
 
   it('returns the DOM fallback when no external placement is available', () => {
@@ -140,7 +159,9 @@ describe('registerFloatingCommsSurfaceHandlers', () => {
   it('returns the DOM fallback when repositioning loses external space', () => {
     mocks.isTrusted.mockReturnValue(true)
     mocks.update.mockReturnValue(false)
-    expect(handler('floatingComms:update')({ sender: {} }, request)).toEqual({ mode: 'dom' })
+    expect(
+      handler('floatingComms:update')({ sender: {} }, { ...request, geometryRequestId: null })
+    ).toEqual({ mode: 'dom' })
   })
 
   it('routes validated auxiliary actions and rejects main-window impersonation', () => {

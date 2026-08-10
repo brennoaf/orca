@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   class Emitter {
@@ -58,14 +58,23 @@ const mocks = vi.hoisted(() => {
       }
     })
     focus = vi.fn()
+    showInactive = vi.fn(() => {
+      const wasVisible = this.visible
+      this.visible = true
+      if (!wasVisible) {
+        this.emit('show')
+      }
+    })
     setBounds = vi.fn()
     bounds: Electron.Rectangle
+    contentBounds: Electron.Rectangle
     loadURL = vi.fn()
     loadFile = vi.fn()
     constructor(options: Electron.BrowserWindowConstructorOptions) {
       super()
       this.options = options
       this.bounds = { x: 100, y: 40, width: 1_000, height: 720 }
+      this.contentBounds = { x: 100, y: 50, width: 1_000, height: 700 }
       FakeWindow.instances.push(this)
     }
     isDestroyed(): boolean {
@@ -75,7 +84,7 @@ const mocks = vi.hoisted(() => {
       return this.visible
     }
     getContentBounds(): Electron.Rectangle {
-      return { x: 100, y: 50, width: 1_000, height: 700 }
+      return this.contentBounds
     }
     getBounds(): Electron.Rectangle {
       return this.bounds
@@ -90,10 +99,23 @@ const mocks = vi.hoisted(() => {
   const parent = new FakeWindow({})
   FakeWindow.instances.length = 0
   const screen = Object.assign(new Emitter(), {
-    getDisplayMatching: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1_920, height: 1_080 } }))
+    getAllDisplays: vi.fn(() => [
+      {
+        bounds: { x: 0, y: 0, width: 1_920, height: 1_080 },
+        workArea: { x: 0, y: 0, width: 1_920, height: 1_080 }
+      }
+    ])
   })
   const app = new Emitter()
-  return { FakeWindow, parent, screen, app, send: vi.fn(), installPolicy: vi.fn() }
+  return {
+    FakeWindow,
+    parent,
+    trustedOwner: parent as FakeWindow | null,
+    screen,
+    app,
+    send: vi.fn(),
+    installPolicy: vi.fn()
+  }
 })
 
 vi.mock('electron', () => ({
@@ -103,7 +125,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('../ipc/ui', () => ({
-  getTrustedUIRendererWindow: () => mocks.parent,
+  getTrustedUIRendererWindow: () => mocks.trustedOwner,
   sendToTrustedUIRenderer: mocks.send
 }))
 vi.mock('./privileged-window-navigation', () => ({
@@ -116,15 +138,18 @@ import {
   getFloatingCommsSurfaceIdentity,
   isFloatingCommsSurfaceVisible,
   openFloatingCommsSurface,
-  resizeFloatingCommsSurface
+  resizeFloatingCommsSurface,
+  updateFloatingCommsSurface
 } from './floating-comms-surface-window'
 
 const request = {
   appId: 'discord' as const,
   requestId: 1,
-  anchor: { x: 200, y: 100, width: 40, height: 40 },
+  anchor: { x: 400, y: 100, width: 40, height: 40 },
+  workspace: { x: 400, y: 80, width: 400, height: 500 },
   height: 300
 }
+const owner = mocks.parent as unknown as Electron.BrowserWindow
 
 describe('floating communications BrowserWindow', () => {
   function surface(): InstanceType<typeof mocks.FakeWindow> {
@@ -135,20 +160,46 @@ describe('floating communications BrowserWindow', () => {
     return window
   }
 
+  function latestGeometryRequest(): {
+    appId: 'discord' | 'slack' | 'whatsapp-web'
+    requestId: number
+    geometryRequestId: number
+  } {
+    const call = mocks.parent.webContents.send.mock.calls.findLast(
+      ([channel]) => channel === 'floatingComms:geometryRequested'
+    )
+    if (!call) {
+      throw new Error('Geometry request was not sent')
+    }
+    return call[1] as {
+      appId: 'discord' | 'slack' | 'whatsapp-web'
+      requestId: number
+      geometryRequestId: number
+    }
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+
   afterEach(() => {
     destroyFloatingCommsSurface()
     mocks.FakeWindow.instances.length = 0
     vi.clearAllMocks()
     mocks.parent.bounds = { x: 100, y: 40, width: 1_000, height: 720 }
+    mocks.parent.contentBounds = { x: 100, y: 50, width: 1_000, height: 700 }
     mocks.parent.webContents.zoomFactor = 1
-    mocks.screen.getDisplayMatching.mockReturnValue({
-      workArea: { x: 0, y: 0, width: 1_920, height: 1_080 }
-    })
+    mocks.trustedOwner = mocks.parent
+    mocks.screen.getAllDisplays.mockReturnValue([
+      {
+        bounds: { x: 0, y: 0, width: 1_920, height: 1_080 },
+        workArea: { x: 0, y: 0, width: 1_920, height: 1_080 }
+      }
+    ])
+    vi.useRealTimers()
   })
 
   it('reuses one hardened child and tears it down with its parent', () => {
-    openFloatingCommsSurface(request)
-    openFloatingCommsSurface({ ...request, appId: 'slack', requestId: 2 })
+    openFloatingCommsSurface(owner, request)
+    openFloatingCommsSurface(owner, { ...request, appId: 'slack', requestId: 2 })
     expect(mocks.FakeWindow.instances).toHaveLength(1)
     const child = surface()
     expect(child.options).toMatchObject({
@@ -184,7 +235,7 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('waits for measured content before showing and focuses only on first reveal', () => {
-    openFloatingCommsSurface(request)
+    openFloatingCommsSurface(owner, request)
     const child = surface()
     expect(child.show).not.toHaveBeenCalled()
     child.webContents.emit('did-finish-load')
@@ -216,7 +267,7 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('invalidates the current request when it closes before its first measure', () => {
-    openFloatingCommsSurface(request)
+    openFloatingCommsSurface(owner, request)
     const child = surface()
     child.webContents.emit('did-finish-load')
     child.webContents.send.mockClear()
@@ -233,11 +284,11 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('invalidates a replacement request without replaying the previous visible identity', () => {
-    openFloatingCommsSurface(request)
+    openFloatingCommsSurface(owner, request)
     const child = surface()
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(1, 300)
-    openFloatingCommsSurface({ ...request, appId: 'slack', requestId: 2 })
+    openFloatingCommsSurface(owner, { ...request, appId: 'slack', requestId: 2 })
     child.webContents.send.mockClear()
 
     closeFloatingCommsSurface(2)
@@ -248,8 +299,8 @@ describe('floating communications BrowserWindow', () => {
     )
   })
 
-  it('closes on Escape and follows parent and display geometry changes', () => {
-    openFloatingCommsSurface(request)
+  it('closes on Escape', () => {
+    openFloatingCommsSurface(owner, request)
     const child = surface()
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(1, 300)
@@ -261,50 +312,193 @@ describe('floating communications BrowserWindow', () => {
     })
     expect(keyboardEvent.preventDefault).toHaveBeenCalledOnce()
     expect(child.hide).toHaveBeenCalledOnce()
-
-    openFloatingCommsSurface(request)
-    child.setBounds.mockClear()
-    mocks.parent.emit('move')
-    mocks.parent.emit('resize')
-    mocks.screen.emit('display-metrics-changed')
-    expect(child.setBounds).toHaveBeenCalledTimes(3)
   })
 
-  it('does not create a child when neither side of the parent has room', () => {
-    mocks.parent.bounds = { x: 326, y: 0, width: 1_940, height: 900 }
-    mocks.screen.getDisplayMatching.mockReturnValue({
-      workArea: { x: 0, y: 0, width: 2_560, height: 1_440 }
-    })
+  it('moves safely with its owner and waits for fresh renderer geometry after resize', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    child.setBounds.mockClear()
+    child.hide.mockClear()
 
-    expect(openFloatingCommsSurface(request)).toBe(false)
+    mocks.parent.contentBounds = { ...mocks.parent.contentBounds, x: 600 }
+    mocks.parent.emit('move')
+    const moved = child.setBounds.mock.calls[0]?.[0] as Electron.Rectangle | undefined
+    expect(moved).toBeDefined()
+    expect(moved?.x).toBeGreaterThanOrEqual(600)
+    expect((moved?.x ?? 0) + (moved?.width ?? 0)).toBeLessThanOrEqual(1_600)
+
+    mocks.parent.emit('resize')
+    expect(child.hide).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(80)
+    const geometryRequest = latestGeometryRequest()
+    expect(
+      updateFloatingCommsSurface(owner, {
+        ...request,
+        geometryRequestId: geometryRequest.geometryRequestId
+      })
+    ).toBe(true)
+    expect(child.showInactive).toHaveBeenCalledOnce()
+    expect(child.focus).toHaveBeenCalledOnce()
+  })
+
+  it('debounces geometry storms, rejects superseded replies, and requests after a final resize', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    mocks.parent.webContents.send.mockClear()
+
+    mocks.parent.emit('resize')
+    mocks.parent.emit('maximize')
+    mocks.parent.emit('resize')
+    vi.advanceTimersByTime(79)
+    expect(mocks.parent.webContents.send).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    const firstGeometryRequest = latestGeometryRequest()
+    expect(
+      updateFloatingCommsSurface(owner, {
+        ...request,
+        geometryRequestId: firstGeometryRequest.geometryRequestId
+      })
+    ).toBe(true)
+
+    mocks.parent.emit('resize')
+    expect(
+      updateFloatingCommsSurface(owner, {
+        ...request,
+        geometryRequestId: firstGeometryRequest.geometryRequestId
+      })
+    ).toBeNull()
+    vi.advanceTimersByTime(80)
+    const finalGeometryRequest = latestGeometryRequest()
+    expect(finalGeometryRequest.geometryRequestId).toBeGreaterThan(
+      firstGeometryRequest.geometryRequestId
+    )
+  })
+
+  it('ignores unrelated display scale changes and refreshes for the workspace display', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    child.hide.mockClear()
+    mocks.parent.webContents.send.mockClear()
+
+    mocks.screen.emit(
+      'display-metrics-changed',
+      {},
+      {
+        bounds: { x: 3_000, y: 0, width: 1_920, height: 1_080 },
+        workArea: { x: 3_000, y: 0, width: 1_920, height: 1_080 }
+      },
+      ['scaleFactor']
+    )
+    vi.advanceTimersByTime(80)
+    expect(child.hide).not.toHaveBeenCalled()
+    expect(mocks.parent.webContents.send).not.toHaveBeenCalled()
+
+    mocks.screen.emit(
+      'display-metrics-changed',
+      {},
+      {
+        bounds: { x: 0, y: 0, width: 1_920, height: 1_080 },
+        workArea: { x: 0, y: 0, width: 1_920, height: 1_080 }
+      },
+      ['scaleFactor']
+    )
+    expect(child.hide).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(80)
+    expect(latestGeometryRequest()).toMatchObject({ appId: 'discord', requestId: 1 })
+  })
+
+  it('destroys the suspended surface before fallback when fresh geometry times out', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+
+    mocks.parent.emit('resize')
+    vi.advanceTimersByTime(80)
+    latestGeometryRequest()
+    vi.advanceTimersByTime(500)
+
+    expect(child.destroy).toHaveBeenCalledOnce()
+    expect(mocks.send).toHaveBeenCalledWith('floatingComms:fallback', {
+      appId: 'discord',
+      requestId: 1
+    })
+    expect(child.destroy.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.send.mock.invocationCallOrder[0] ?? 0
+    )
+  })
+
+  it('records the first measure while suspended and reveals only after fresh geometry', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+
+    mocks.parent.emit('resize')
+    resizeFloatingCommsSurface(1, 260)
+    expect(child.show).not.toHaveBeenCalled()
+    expect(child.showInactive).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(80)
+    const geometryRequest = latestGeometryRequest()
+
+    expect(
+      updateFloatingCommsSurface(owner, {
+        ...request,
+        height: 260,
+        geometryRequestId: geometryRequest.geometryRequestId
+      })
+    ).toBe(true)
+    expect(child.show).toHaveBeenCalledOnce()
+    expect(child.showInactive).not.toHaveBeenCalled()
+    expect(child.focus).toHaveBeenCalledOnce()
+  })
+
+  it('does not create a child when neither workspace side has room inside Orca', () => {
+    const blocked = {
+      ...request,
+      anchor: { ...request.anchor, x: 300 },
+      workspace: { ...request.workspace, x: 300, width: 500 }
+    }
+
+    expect(openFloatingCommsSurface(owner, blocked)).toBe(false)
     expect(mocks.FakeWindow.instances).toHaveLength(0)
     expect(mocks.parent.handlers.get('move') ?? []).toHaveLength(0)
   })
 
   it('uses fallback for the restored offscreen parent at reduced renderer zoom', () => {
-    mocks.parent.bounds = { x: 326, y: 204, width: 1_936, height: 1_208 }
+    mocks.parent.contentBounds = { x: -500, y: 0, width: 1_000, height: 700 }
     mocks.parent.webContents.zoomFactor = 2 / 3
-    mocks.screen.getDisplayMatching.mockReturnValue({
-      workArea: { x: 0, y: 0, width: 1_920, height: 1_200 }
-    })
+    mocks.screen.getAllDisplays.mockReturnValue([
+      {
+        bounds: { x: 0, y: 0, width: 1_920, height: 1_200 },
+        workArea: { x: 0, y: 0, width: 1_920, height: 1_200 }
+      }
+    ])
+    const offscreen = {
+      ...request,
+      anchor: { ...request.anchor, x: 200 },
+      workspace: { ...request.workspace, x: 200, width: 500 }
+    }
 
-    expect(openFloatingCommsSurface({ ...request, height: 262 })).toBe(false)
+    expect(openFloatingCommsSurface(owner, { ...offscreen, height: 262 })).toBe(false)
     expect(mocks.FakeWindow.instances).toHaveLength(0)
   })
 
-  it('repositions outside the parent and switches to fallback if that becomes impossible', () => {
-    expect(openFloatingCommsSurface(request)).toBe(true)
+  it('destroys before fallback when fresh workspace geometry loses both sides', () => {
+    expect(openFloatingCommsSurface(owner, request)).toBe(true)
     const child = surface()
+    const blocked = {
+      ...request,
+      anchor: { ...request.anchor, x: 300 },
+      workspace: { ...request.workspace, x: 300, width: 500 }
+    }
 
-    mocks.parent.bounds = { x: 600, y: 40, width: 1_000, height: 720 }
-    child.setBounds.mockClear()
-    mocks.parent.emit('move')
-    const placement = child.setBounds.mock.calls[0]?.[0] as Electron.Rectangle | undefined
-    expect(placement).toBeDefined()
-    expect((placement?.x ?? 0) + (placement?.width ?? 0)).toBeLessThanOrEqual(592)
-
-    mocks.parent.bounds = { x: 300, y: 40, width: 1_320, height: 720 }
-    mocks.parent.emit('move')
+    expect(updateFloatingCommsSurface(owner, { ...blocked, geometryRequestId: null })).toBe(false)
     expect(child.destroy).toHaveBeenCalledOnce()
     expect(child.show).not.toHaveBeenCalled()
     expect(mocks.send).toHaveBeenCalledWith('floatingComms:fallback', {
@@ -319,13 +513,32 @@ describe('floating communications BrowserWindow', () => {
     expect(mocks.screen.handlers.get('display-metrics-changed') ?? []).toHaveLength(0)
   })
 
+  it('rejects stale and foreign-owner updates and destroys on owner loss', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    expect(
+      updateFloatingCommsSurface(owner, { ...request, requestId: 2, geometryRequestId: null })
+    ).toBeNull()
+    expect(child.destroy).not.toHaveBeenCalled()
+
+    const replacementOwner = new mocks.FakeWindow({})
+    mocks.trustedOwner = replacementOwner
+    expect(
+      updateFloatingCommsSurface(replacementOwner as unknown as Electron.BrowserWindow, {
+        ...request,
+        geometryRequestId: null
+      })
+    ).toBeNull()
+    expect(child.destroy).toHaveBeenCalledOnce()
+  })
+
   it('ignores stale close and blur events after reopening the same app', () => {
-    openFloatingCommsSurface(request)
+    openFloatingCommsSurface(owner, request)
     const child = surface()
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(1, 420)
 
-    openFloatingCommsSurface({ ...request, requestId: 2 })
+    openFloatingCommsSurface(owner, { ...request, requestId: 2 })
     expect(isFloatingCommsSurfaceVisible()).toBe(false)
     closeFloatingCommsSurface(1)
     child.emit('blur')
@@ -339,10 +552,10 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('ignores delayed lifecycle events from a replaced BrowserWindow', () => {
-    openFloatingCommsSurface(request)
+    openFloatingCommsSurface(owner, request)
     const first = surface()
     destroyFloatingCommsSurface()
-    openFloatingCommsSurface({ ...request, appId: 'slack', requestId: 2 })
+    openFloatingCommsSurface(owner, { ...request, appId: 'slack', requestId: 2 })
     const second = mocks.FakeWindow.instances[1]
     if (!second) {
       throw new Error('Replacement communications window was not created')

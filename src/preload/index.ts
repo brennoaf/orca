@@ -14,12 +14,14 @@ import type {
   FloatingCommsAction,
   FloatingCommsCloseRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfaceVisibility,
-  FloatingCommsSurfaceState
+  FloatingCommsSurfaceState,
+  FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
 import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
 import type {
@@ -2305,7 +2307,7 @@ const api = {
 
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => ipcRenderer.invoke('floatingComms:open', request),
-    update: (request: FloatingCommsOpenRequest): Promise<FloatingCommsOpenResult | null> =>
+    update: (request: FloatingCommsUpdateRequest): Promise<FloatingCommsOpenResult | null> =>
       ipcRenderer.invoke('floatingComms:update', request),
     close: (request?: FloatingCommsCloseRequest): Promise<void> =>
       ipcRenderer.invoke('floatingComms:close', request),
@@ -2352,6 +2354,16 @@ const api = {
       ): void => callback(identity)
       ipcRenderer.on('floatingComms:fallback', listener)
       return () => ipcRenderer.removeListener('floatingComms:fallback', listener)
+    },
+    onGeometryRequested: (
+      callback: (request: FloatingCommsGeometryRequest) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        request: FloatingCommsGeometryRequest
+      ): void => callback(request)
+      ipcRenderer.on('floatingComms:geometryRequested', listener)
+      return () => ipcRenderer.removeListener('floatingComms:geometryRequested', listener)
     },
     onAction: (callback: (action: FloatingCommsAction) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, action: FloatingCommsAction): void =>

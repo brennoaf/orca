@@ -7,10 +7,7 @@ import {
   useState,
   type RefObject
 } from 'react'
-import type {
-  FloatingCommsOpenRequest,
-  FloatingCommsSurfaceIdentity
-} from '../../../../../shared/floating-comms-surface'
+import type { FloatingCommsSurfaceIdentity } from '../../../../../shared/floating-comms-surface'
 import type {
   FloatingWorkspaceApp,
   FloatingWorkspaceAppId
@@ -26,9 +23,14 @@ import {
   listEnabledCommunicationManagers,
   type CommunicationManager
 } from './communication-managers'
+import {
+  createFloatingCommsOpenRequest,
+  useFloatingCommsGeometry
+} from './use-floating-comms-geometry'
 
 type FloatingCommsRailProps = {
   panelRef: RefObject<HTMLDivElement | null>
+  workspaceBounds: { left: number; top: number; width: number; height: number }
   openAppId: FloatingWorkspaceAppId | null
   onOpenAppIdChange: (appId: FloatingWorkspaceAppId | null) => void
   onOpenApp: (app: FloatingWorkspaceApp) => void
@@ -36,20 +38,6 @@ type FloatingCommsRailProps = {
 
 function reportFloatingCommsError(operation: string, error: unknown): void {
   console.error(`[floating-comms] ${operation} failed:`, error)
-}
-
-function requestFor(
-  appId: FloatingWorkspaceAppId,
-  element: HTMLElement,
-  requestId: number
-): FloatingCommsOpenRequest {
-  const rect = element.getBoundingClientRect()
-  return {
-    appId,
-    requestId,
-    anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-    height: 420
-  }
 }
 
 function RailItem({
@@ -131,6 +119,7 @@ function RailItem({
 
 export function FloatingCommsRail({
   panelRef,
+  workspaceBounds,
   openAppId,
   onOpenAppIdChange,
   onOpenApp
@@ -185,6 +174,15 @@ export function FloatingCommsRail({
     return surface ? surface.onClosed(releaseLocal) : undefined
   }, [releaseLocal])
 
+  useFloatingCommsGeometry({
+    panelRef,
+    buttonRefs,
+    openAppIdRef,
+    requestSequenceRef,
+    close,
+    setDomFallback
+  })
+
   useEffect(() => {
     const surface = window.api.floatingComms
     return surface
@@ -227,7 +225,8 @@ export function FloatingCommsRail({
       return
     }
     const button = buttonRefs.current.get(openAppId)
-    if (!button) {
+    const workspaceElement = panelRef.current
+    if (!button || !workspaceElement) {
       return
     }
     const update = (): void => {
@@ -238,7 +237,10 @@ export function FloatingCommsRail({
       }
       const sequence = requestSequenceRef.current
       void surface
-        .update(requestFor(openAppId, button, sequence))
+        .update({
+          ...createFloatingCommsOpenRequest(openAppId, button, workspaceElement, sequence),
+          geometryRequestId: null
+        })
         .then((result) => {
           if (
             result?.mode === 'dom' &&
@@ -258,17 +260,25 @@ export function FloatingCommsRail({
     update()
     const observer = new ResizeObserver(update)
     observer.observe(button)
-    if (panelRef.current) {
-      observer.observe(panelRef.current)
+    observer.observe(workspaceElement)
+    let resizeFrame: number | null = null
+    const scheduleUpdate = (): void => {
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame)
+      }
+      resizeFrame = requestAnimationFrame(update)
     }
-    window.addEventListener('resize', update)
+    window.addEventListener('resize', scheduleUpdate)
     window.addEventListener('scroll', update, true)
     return () => {
       observer.disconnect()
-      window.removeEventListener('resize', update)
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame)
+      }
+      window.removeEventListener('resize', scheduleUpdate)
       window.removeEventListener('scroll', update, true)
     }
-  }, [close, domFallback, openAppId, panelRef])
+  }, [close, domFallback, openAppId, panelRef, workspaceBounds])
 
   if (entries.length === 0) {
     return null
@@ -306,7 +316,8 @@ export function FloatingCommsRail({
                 return
               }
               const button = buttonRefs.current.get(app.id)
-              if (!button) {
+              const workspaceElement = panelRef.current
+              if (!button || !workspaceElement) {
                 return
               }
               const sequence = requestSequenceRef.current + 1
@@ -319,7 +330,7 @@ export function FloatingCommsRail({
                 return
               }
               void surface
-                .open(requestFor(app.id, button, sequence))
+                .open(createFloatingCommsOpenRequest(app.id, button, workspaceElement, sequence))
                 .then((result) => {
                   if (requestSequenceRef.current === sequence && openAppIdRef.current === app.id) {
                     setDomFallback(result.mode === 'dom')

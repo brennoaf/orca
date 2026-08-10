@@ -21,12 +21,14 @@ import type {
   FloatingCommsAction,
   FloatingCommsCloseRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfaceState,
-  FloatingCommsSurfaceVisibility
+  FloatingCommsSurfaceVisibility,
+  FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
 import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
 import type {
@@ -1196,7 +1198,7 @@ export type PreloadApi = {
   app: AppApi
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
-    update: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult | null>
+    update: (request: FloatingCommsUpdateRequest) => Promise<FloatingCommsOpenResult | null>
     close: (request?: FloatingCommsCloseRequest) => Promise<void>
     measure: (request: FloatingCommsMeasureRequest) => Promise<void>
     getState: () => Promise<FloatingCommsSurfaceState>
@@ -1209,6 +1211,7 @@ export type PreloadApi = {
     ) => () => void
     onClosed: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
     onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
+    onGeometryRequested: (callback: (request: FloatingCommsGeometryRequest) => void) => () => void
     onAction: (callback: (action: FloatingCommsAction) => void) => () => void
   }
   orcaProfiles: {

@@ -2,122 +2,139 @@ import { describe, expect, it } from 'vitest'
 import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
 import { placeFloatingCommsSurface } from './floating-comms-surface-placement'
 
-const contentBounds = { x: 100, y: 50, width: 1_000, height: 700 }
-const parentBounds = { x: 90, y: 40, width: 1_020, height: 720 }
-const anchor = { x: 200, y: 100, width: 40, height: 40 }
+const contentBounds = { x: 100, y: 50, width: 1_200, height: 800 }
+const workAreas = [{ x: 0, y: 0, width: 1_920, height: 1_080 }]
+const workspace = { x: 400, y: 100, width: 500, height: 500 }
+const anchor = { x: 400, y: 140, width: 40, height: 40 }
 
 describe('placeFloatingCommsSurface', () => {
-  it('places the surface outside to the left when workArea has room', () => {
+  it('prefers a whole left placement inside the Orca content bounds', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds,
         contentBounds,
-        workArea: { x: -500, y: 0, width: 2_000, height: 900 },
+        workAreas,
         anchor,
+        workspace,
         zoomFactor: 1,
         measuredHeight: 300
       })
-    ).toEqual({ x: -238, y: 150, width: 320, height: 300 })
+    ).toEqual({ x: 172, y: 190, width: 320, height: 300 })
   })
 
-  it('places the surface outside to the right when the left side does not fit', () => {
+  it('uses the whole right placement when the left side does not fit', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds: { ...parentBounds, x: 0 },
         contentBounds,
-        workArea: { x: 0, y: 0, width: 1_600, height: 600 },
-        anchor: { ...anchor, x: 20 },
+        workAreas,
+        anchor: { x: 20, y: 140, width: 40, height: 40 },
+        workspace: { ...workspace, x: 20 },
         zoomFactor: 1,
         measuredHeight: 300
       })
-    ).toEqual({ x: 1_028, y: 150, width: 320, height: 300 })
+    ).toEqual({ x: 628, y: 190, width: 320, height: 300 })
   })
 
-  it('returns no external placement when neither side has room', () => {
+  it('returns no placement when neither side fits despite available screen space', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds: { x: 326, y: 0, width: 1_940, height: 900 },
-        contentBounds,
-        workArea: { x: 0, y: 0, width: 2_560, height: 1_440 },
-        anchor,
+        contentBounds: { ...contentBounds, width: 1_000 },
+        workAreas: [{ x: -2_000, y: -1_000, width: 5_000, height: 3_000 }],
+        anchor: { x: 300, y: 140, width: 40, height: 40 },
+        workspace: { ...workspace, x: 300, width: 600 },
         zoomFactor: 1,
         measuredHeight: 300
       })
     ).toBeNull()
   })
 
-  it('clamps vertically and supports negative monitor coordinates', () => {
+  it('keeps the surface inside one display work area', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds: { x: -1_600, y: -220, width: 900, height: 940 },
-        contentBounds: { x: -1_800, y: -200, width: 1_200, height: 900 },
-        workArea: { x: -2_400, y: -300, width: 1_760, height: 720 },
-        anchor: { x: 900, y: 800, width: 40, height: 40 },
+        contentBounds: { x: 0, y: 0, width: 1_000, height: 700 },
+        workAreas: [
+          { x: 0, y: 0, width: 300, height: 700 },
+          { x: 300, y: 0, width: 300, height: 700 }
+        ],
+        anchor: { x: 500, y: 100, width: 40, height: 40 },
+        workspace: { x: 500, y: 60, width: 40, height: 500 },
         zoomFactor: 1,
-        measuredHeight: 420
-      })?.y
-    ).toBe(0)
-  })
-
-  it('scales only parent-renderer coordinates by zoom', () => {
-    expect(
-      placeFloatingCommsSurface({
-        parentBounds: { x: 400, y: 40, width: 1_020, height: 720 },
-        contentBounds,
-        workArea: { x: -1_000, y: 0, width: 2_000, height: 1_000 },
-        anchor,
-        zoomFactor: 1.5,
-        measuredHeight: 200
-      })
-    ).toEqual({ x: 72, y: 200, width: 320, height: 200 })
-  })
-
-  it('does not shrink the external window into a gap beside an offscreen parent', () => {
-    expect(
-      placeFloatingCommsSurface({
-        parentBounds: { x: 326, y: 204, width: 1_936, height: 1_208 },
-        contentBounds,
-        workArea: { x: 0, y: 0, width: 1_920, height: 1_200 },
-        anchor,
-        zoomFactor: 2 / 3,
-        measuredHeight: 262
+        measuredHeight: 300
       })
     ).toBeNull()
   })
 
-  it('rounds fractional zoom placement away from the parent bounds', () => {
-    const placement = placeFloatingCommsSurface({
-      parentBounds: { x: 400, y: 40, width: 900, height: 720 },
-      contentBounds,
-      workArea: { x: -1_000, y: 0, width: 2_500, height: 1_000 },
-      anchor,
-      zoomFactor: 1.1,
-      measuredHeight: 200
-    })
-    expect(placement).not.toBeNull()
-    expect((placement?.x ?? 0) + (placement?.width ?? 0)).toBeLessThanOrEqual(392)
-  })
-
-  it('limits the surface to a narrow display height', () => {
+  it('uses the vertically relevant work area for stacked displays', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds: { x: 330, y: 40, width: 1_020, height: 720 },
-        contentBounds,
-        workArea: { x: 0, y: 0, width: 1_800, height: 240 },
-        anchor,
+        contentBounds: { x: 0, y: 0, width: 1_200, height: 1_400 },
+        workAreas: [
+          { x: 0, y: 0, width: 1_200, height: 600 },
+          { x: 0, y: 600, width: 1_200, height: 800 }
+        ],
+        anchor: { x: 400, y: 740, width: 40, height: 40 },
+        workspace: { x: 400, y: 700, width: 500, height: 500 },
+        zoomFactor: 1,
+        measuredHeight: 300
+      })
+    ).toEqual({ x: 72, y: 740, width: 320, height: 300 })
+  })
+
+  it('supports negative display coordinates without leaving the Orca content bounds', () => {
+    expect(
+      placeFloatingCommsSurface({
+        contentBounds: { x: -900, y: -200, width: 1_800, height: 900 },
+        workAreas: [
+          { x: -1_200, y: -300, width: 1_200, height: 1_000 },
+          { x: 0, y: -300, width: 1_200, height: 1_000 }
+        ],
+        anchor: { x: 800, y: 100, width: 40, height: 40 },
+        workspace: { x: 800, y: 80, width: 500, height: 600 },
         zoomFactor: 1,
         measuredHeight: 420
-      })?.height
-    ).toBe(240)
+      })
+    ).toEqual({ x: -428, y: -100, width: 320, height: 420 })
   })
 
-  it('uses the DOM fallback on a display narrower than its preferred width', () => {
+  it.each([
+    { zoomFactor: 2 / 3, expectedX: 508, expectedY: 143 },
+    { zoomFactor: 1, expectedX: -28, expectedY: 190 },
+    { zoomFactor: 1.5, expectedX: 172, expectedY: 260 }
+  ])(
+    'scales only renderer geometry at zoom $zoomFactor',
+    ({ zoomFactor, expectedX, expectedY }) => {
+      expect(
+        placeFloatingCommsSurface({
+          contentBounds: { ...contentBounds, x: -100, width: 2_000, height: 1_100 },
+          workAreas: [{ x: -1_000, y: 0, width: 3_000, height: 1_200 }],
+          anchor,
+          workspace,
+          zoomFactor,
+          measuredHeight: 200
+        })
+      ).toEqual({ x: expectedX, y: expectedY, width: 320, height: 200 })
+    }
+  )
+
+  it('returns no placement when the full measured height cannot fit', () => {
     expect(
       placeFloatingCommsSurface({
-        parentBounds: { x: -180, y: 0, width: 200, height: 600 },
+        contentBounds: { ...contentBounds, height: 240 },
+        workAreas,
+        anchor,
+        workspace,
+        zoomFactor: 1,
+        measuredHeight: 300
+      })
+    ).toBeNull()
+  })
+
+  it('rejects an anchor outside the workspace shell', () => {
+    expect(
+      placeFloatingCommsSurface({
         contentBounds,
-        workArea: { x: -200, y: 0, width: 240, height: 600 },
-        anchor: { ...anchor, x: 20 },
+        workAreas,
+        anchor: { ...anchor, x: workspace.x - 41 },
+        workspace,
         zoomFactor: 1,
         measuredHeight: 300
       })

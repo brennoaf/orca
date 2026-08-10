@@ -5,12 +5,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   FloatingCommsAction,
+  FloatingCommsGeometryRequest,
   FloatingCommsSurfaceIdentity
 } from '../../../../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../../../../shared/floating-workspace-apps'
 import { FloatingCommsRail } from './FloatingCommsRail'
 
 const storeBox = vi.hoisted(() => ({ floatingWorkspaceApps: {} }))
+const defaultWorkspaceBounds = { left: 100, top: 80, width: 800, height: 500 }
 
 vi.mock('@/store', () => ({
   useAppStore: Object.assign(
@@ -58,13 +60,20 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>
 }))
 
-function Harness({ panel }: { panel: HTMLDivElement }): React.JSX.Element {
+function Harness({
+  panel,
+  workspaceBounds = defaultWorkspaceBounds
+}: {
+  panel: HTMLDivElement
+  workspaceBounds?: { left: number; top: number; width: number; height: number }
+}): React.JSX.Element {
   const [openAppId, setOpenAppId] = useState<FloatingWorkspaceAppId | null>(null)
   return (
     <>
       <div data-testid="webview-input" data-input-locked={openAppId !== null} />
       <FloatingCommsRail
         panelRef={{ current: panel }}
+        workspaceBounds={workspaceBounds}
         openAppId={openAppId}
         onOpenAppIdChange={setOpenAppId}
         onOpenApp={vi.fn()}
@@ -78,10 +87,12 @@ describe('FloatingCommsRail', () => {
   let container: HTMLDivElement | null = null
   let notifyClosed: ((identity: FloatingCommsSurfaceIdentity) => void) | null = null
   let notifyFallback: ((identity: FloatingCommsSurfaceIdentity) => void) | null = null
+  let notifyGeometry: ((request: FloatingCommsGeometryRequest) => void) | null = null
   let notifyAction: ((action: FloatingCommsAction) => void) | null = null
   let releaseClosed: ReturnType<typeof vi.fn>
   let releaseAction: ReturnType<typeof vi.fn>
   let releaseFallback: ReturnType<typeof vi.fn>
+  let releaseGeometry: ReturnType<typeof vi.fn>
 
   afterEach(() => {
     act(() => root?.unmount())
@@ -90,6 +101,7 @@ describe('FloatingCommsRail', () => {
     container = null
     notifyClosed = null
     notifyFallback = null
+    notifyGeometry = null
     notifyAction = null
     storeBox.floatingWorkspaceApps = {}
   })
@@ -98,6 +110,7 @@ describe('FloatingCommsRail', () => {
     releaseClosed = vi.fn()
     releaseAction = vi.fn()
     releaseFallback = vi.fn()
+    releaseGeometry = vi.fn()
     Object.assign(window, {
       api: {
         floatingComms: {
@@ -112,6 +125,12 @@ describe('FloatingCommsRail', () => {
             notifyFallback = callback
             return releaseFallback
           }),
+          onGeometryRequested: vi.fn(
+            (callback: (request: FloatingCommsGeometryRequest) => void) => {
+              notifyGeometry = callback
+              return releaseGeometry
+            }
+          ),
           onAction: vi.fn((callback: (action: FloatingCommsAction) => void) => {
             notifyAction = callback
             return releaseAction
@@ -257,6 +276,39 @@ describe('FloatingCommsRail', () => {
     expect(releaseClosed).toHaveBeenCalledOnce()
     expect(releaseAction).toHaveBeenCalledOnce()
     expect(releaseFallback).toHaveBeenCalledOnce()
+    expect(releaseGeometry).toHaveBeenCalled()
+  })
+
+  it('answers only the current native geometry request after layout', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    const panel = mountHarness()
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(240, 120, 700, 480))
+    await act(async () => railButton(panel, 'Discord').click())
+    vi.mocked(floatingComms.update).mockClear()
+
+    act(() => notifyGeometry?.({ appId: 'discord', requestId: 1, geometryRequestId: 7 }))
+
+    expect(floatingComms.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appId: 'discord',
+        requestId: 1,
+        geometryRequestId: 7,
+        workspace: { x: 240, y: 120, width: 700, height: 480 }
+      })
+    )
+    vi.mocked(floatingComms.update).mockClear()
+
+    act(() => notifyGeometry?.({ appId: 'discord', requestId: 2, geometryRequestId: 8 }))
+
+    expect(floatingComms.update).not.toHaveBeenCalled()
   })
 
   it('uses the DOM surface when a stale preload lacks floating communications IPC', async () => {
@@ -310,6 +362,29 @@ describe('FloatingCommsRail', () => {
     expect(
       panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
     ).toBe('true')
+  })
+
+  it('updates native placement when the workspace moves internally', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+    await act(async () => railButton(panel, 'Discord').click())
+    vi.mocked(floatingComms.update).mockClear()
+    const movedBounds = { left: 240, top: 120, width: 700, height: 480 }
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(240, 120, 700, 480))
+
+    act(() => root?.render(<Harness panel={panel} workspaceBounds={movedBounds} />))
+
+    expect(floatingComms.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appId: 'discord',
+        requestId: 1,
+        workspace: { x: 240, y: 120, width: 700, height: 480 }
+      })
+    )
   })
 
   it('ignores a fallback event for a stale app request', async () => {

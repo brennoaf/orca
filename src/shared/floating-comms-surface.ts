@@ -23,7 +23,16 @@ export type FloatingCommsSurfaceIdentity = {
 
 export type FloatingCommsOpenRequest = FloatingCommsSurfaceIdentity & {
   anchor: FloatingCommsAnchorRect
+  workspace: FloatingCommsAnchorRect
   height: number
+}
+
+export type FloatingCommsUpdateRequest = FloatingCommsOpenRequest & {
+  geometryRequestId: number | null
+}
+
+export type FloatingCommsGeometryRequest = FloatingCommsSurfaceIdentity & {
+  geometryRequestId: number
 }
 
 export type FloatingCommsOpenResult = { mode: 'window' | 'dom' }
