@@ -15065,7 +15065,10 @@
     "overlaySeparate": "Separate overlay",
     "overlaySeparateDescription": "Appears automatically when you join a call.",
     "openApp": "Open {{app}}",
+    "loadingTooltip": "{{app}} — loading",
     "unavailableTooltip": "{{app}} — unavailable",
+    "integrationLoading": "Loading {{provider}} status…",
+    "retryStatus": "Retry",
     "whatsappUnavailable": "WhatsApp fast responses are not enabled yet.",
     "slackUnavailable": "Slack fast responses are not enabled yet.",
     "integrationNeedsAttention": "Saved credentials need attention. Review them in Integrations.",
@@ -15108,6 +15111,7 @@
       "sending": "Sending…",
       "send": "Send",
       "conversationsLoadFailed": "Could not load WhatsApp fast responses.",
+      "tooltipLoading": "WhatsApp — loading",
       "tooltipReady": "WhatsApp — fast responses ready",
       "tooltipUnavailable": "WhatsApp — setup required"
     },

@@ -1,8 +1,10 @@
 import type { Rectangle } from 'electron'
-import type { FloatingCommsAnchorRect } from '../../shared/floating-comms-surface'
+import {
+  FLOATING_COMMS_SURFACE_MAX_HEIGHT,
+  type FloatingCommsAnchorRect
+} from '../../shared/floating-comms-surface'
 
 export const FLOATING_COMMS_SURFACE_WIDTH = 320
-export const FLOATING_COMMS_SURFACE_MAX_HEIGHT = 420
 export const FLOATING_COMMS_SURFACE_GAP = 8
 
 export function placeFloatingCommsSurface(args: {

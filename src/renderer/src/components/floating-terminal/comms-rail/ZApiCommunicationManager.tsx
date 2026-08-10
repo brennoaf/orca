@@ -310,12 +310,54 @@ export function ZApiCommunicationManagerPresentation({
   children
 }: PresentationProps): React.JSX.Element {
   const runtime = useCommunicationManagerRuntime()
-  const { getStatus } = useCommunicationManagerStatuses(runtime, isPopoverOpen)
+  const { getStatus, loading, error, refresh } = useCommunicationManagerStatuses(
+    runtime,
+    isPopoverOpen
+  )
   const integrationStatus = getStatus('z-api')
   const status = integrationStatus?.provider === 'z-api' ? integrationStatus : null
   const ready = isZApiFastResponseReady(status)
   const reason = statusMessage(status)
+  const openSettings = useOpenCommunicationSettings()
   const client = runtime?.zApi ?? LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT
+  if (loading && !status) {
+    return (
+      <>
+        {children({
+          status: { kind: 'loading' },
+          tooltip: translate('communicationRail.zApi.tooltipLoading', 'WhatsApp — loading'),
+          content: (
+            <SetupContent
+              status={null}
+              loading
+              error={null}
+              onConfigure={() => openSettings('z-api')}
+              onRetry={refresh}
+            />
+          )
+        })}
+      </>
+    )
+  }
+  if (error) {
+    return (
+      <>
+        {children({
+          status: { kind: 'unavailable', reason: error },
+          tooltip: translate('communicationRail.zApi.tooltipUnavailable', 'WhatsApp — unavailable'),
+          content: (
+            <SetupContent
+              status={null}
+              loading={false}
+              error={error}
+              onConfigure={() => openSettings('z-api')}
+              onRetry={refresh}
+            />
+          )
+        })}
+      </>
+    )
+  }
   return (
     <>
       {children({

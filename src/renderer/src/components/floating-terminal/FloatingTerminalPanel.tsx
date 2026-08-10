@@ -503,7 +503,7 @@ export function FloatingTerminalPanel({
     const surface = window.api.floatingComms
     if (surface) {
       void surface
-        .close()
+        .close(undefined)
         .catch((error: unknown) => console.error('[floating-comms] close failed:', error))
     }
   }, [activeTab?.id, open])

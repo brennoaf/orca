@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  CommunicationIntegrationStatus,
   ZApiCommunicationIntegrationStatus,
   ZApiMessageSnapshot
 } from '../../../../../shared/communication-integrations'
@@ -48,12 +49,38 @@ const READY_STATUS: ZApiCommunicationIntegrationStatus = {
   lastErrorCode: null
 }
 
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} {
+  let resolvePromise: ((value: T) => void) | null = null
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve
+  })
+  return {
+    promise,
+    resolve: (value) => {
+      if (!resolvePromise) {
+        throw new Error('Deferred promise is unavailable')
+      }
+      resolvePromise(value)
+    }
+  }
+}
+
 function createClient(): ZApiCommunicationManagerClient {
   return {
     getStatus: vi.fn(() => Promise.resolve(READY_STATUS)),
     listConversations: vi.fn(() =>
       Promise.resolve({
-        conversations: [{ id: 7, conversationKind: 'private' as const, displayName: 'Brenno', lastMessageAt: Date.now() }],
+        conversations: [
+          {
+            id: 7,
+            conversationKind: 'private' as const,
+            displayName: 'Brenno',
+            lastMessageAt: Date.now()
+          }
+        ],
         nextOffset: null
       })
     ),
@@ -140,6 +167,82 @@ describe('ZApiCommunicationManager', () => {
     await act(async () => undefined)
     expect(client.getStatus).not.toHaveBeenCalled()
     expect(client.listConversations).not.toHaveBeenCalled()
+  })
+
+  it('keeps an explicit loading state until runtime statuses resolve', async () => {
+    const statuses = deferred<readonly CommunicationIntegrationStatus[]>()
+    const client = createClient()
+    const runtime = createRuntime(client)
+    vi.mocked(runtime.loadIntegrationStatuses).mockReturnValue(statuses.promise)
+    const view = render(<ManagerHarness runtime={runtime} isPopoverOpen />)
+
+    expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('loading')
+    expect(screen.getByText('Loading WhatsApp fast responses…')).toBeTruthy()
+    expect(client.getStatus).not.toHaveBeenCalled()
+
+    statuses.resolve([READY_STATUS])
+    await waitFor(() =>
+      expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('idle')
+    )
+    expect(client.getStatus).toHaveBeenCalled()
+  })
+
+  it('ignores a stale status response after the runtime changes', async () => {
+    const firstStatuses = deferred<readonly CommunicationIntegrationStatus[]>()
+    const secondStatuses = deferred<readonly CommunicationIntegrationStatus[]>()
+    const client = createClient()
+    const firstRuntime = createRuntime(client)
+    const secondRuntime = createRuntime(client)
+    vi.mocked(firstRuntime.loadIntegrationStatuses).mockReturnValue(firstStatuses.promise)
+    vi.mocked(secondRuntime.loadIntegrationStatuses).mockReturnValue(secondStatuses.promise)
+    const view = render(<ManagerHarness runtime={firstRuntime} isPopoverOpen />)
+
+    view.rerender(<ManagerHarness runtime={secondRuntime} isPopoverOpen />)
+    firstStatuses.resolve([READY_STATUS])
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('loading')
+
+    secondStatuses.resolve([READY_STATUS])
+    await waitFor(() =>
+      expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('idle')
+    )
+  })
+
+  it('discards a pending status response after the surface closes', async () => {
+    const statuses = deferred<readonly CommunicationIntegrationStatus[]>()
+    const client = createClient()
+    const runtime = createRuntime(client)
+    vi.mocked(runtime.loadIntegrationStatuses).mockReturnValue(statuses.promise)
+    const view = render(<ManagerHarness runtime={runtime} isPopoverOpen />)
+
+    view.rerender(<ManagerHarness runtime={runtime} isPopoverOpen={false} />)
+    statuses.resolve([READY_STATUS])
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('loading')
+    expect(client.getStatus).not.toHaveBeenCalled()
+  })
+
+  it('renders a redacted unavailable state only after status loading fails', async () => {
+    const client = createClient()
+    const runtime = createRuntime(client)
+    vi.mocked(runtime.loadIntegrationStatuses).mockRejectedValue(
+      new Error('secret-client-token-value')
+    )
+    const view = render(<ManagerHarness runtime={runtime} isPopoverOpen />)
+
+    expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('loading')
+    await waitFor(() =>
+      expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('unavailable')
+    )
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Could not load communication integration status.'
+    )
+    expect(view.container.textContent).not.toContain('secret-client-token-value')
+    expect(client.getStatus).not.toHaveBeenCalled()
   })
 
   it('stops every poll while hidden and resumes one chain when shown again', async () => {

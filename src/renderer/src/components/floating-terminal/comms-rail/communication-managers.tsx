@@ -30,6 +30,10 @@ import {
   CommunicationOverlayControl,
   useOpenCommunicationSettings
 } from './communication-manager-actions'
+import {
+  CommunicationManagerStatusErrorContent,
+  CommunicationManagerStatusLoadingContent
+} from './CommunicationManagerStatusContent'
 
 export { getCommunicationSettingsTarget } from './communication-manager-actions'
 
@@ -40,6 +44,7 @@ export {
 } from './communication-manager-runtime'
 
 export type CommunicationManagerStatus =
+  | { kind: 'loading' }
   | { kind: 'unavailable'; reason: string }
   | { kind: 'setup' }
   | { kind: 'idle' }
@@ -316,7 +321,10 @@ function SlackPresentation({
   children
 }: CommunicationManagerPresentationProps): React.JSX.Element {
   const runtime = useCommunicationManagerRuntime()
-  const { getStatus } = useCommunicationManagerStatuses(runtime, isPopoverOpen)
+  const { getStatus, loading, error, refresh } = useCommunicationManagerStatuses(
+    runtime,
+    isPopoverOpen
+  )
   const openSettings = useOpenCommunicationSettings()
   const status = getStatus('slack')
   const setupState = integrationSetupState(status?.provider === 'slack' ? status : null)
@@ -324,14 +332,29 @@ function SlackPresentation({
     'communicationRail.slackUnavailable',
     'Slack fast responses are not enabled yet.'
   )
+  if (loading && !status) {
+    return (
+      <>
+        {children({
+          status: { kind: 'loading' },
+          tooltip: translate('communicationRail.loadingTooltip', '{{app}} — loading', {
+            app: 'Slack'
+          }),
+          content: <CommunicationManagerStatusLoadingContent providerName="Slack" />
+        })}
+      </>
+    )
+  }
   return (
     <>
       {children({
-        status: { kind: 'unavailable', reason },
+        status: { kind: 'unavailable', reason: error ?? reason },
         tooltip: translate('communicationRail.unavailableTooltip', '{{app}} — unavailable', {
           app: 'Slack'
         }),
-        content: (
+        content: error ? (
+          <CommunicationManagerStatusErrorContent error={error} onRetry={refresh} />
+        ) : (
           <UnavailableContent
             provider="slack"
             providerName="Slack"

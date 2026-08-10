@@ -2,10 +2,13 @@ import { ipcMain } from 'electron'
 import { z } from 'zod'
 import type {
   FloatingCommsAction,
+  FloatingCommsCloseRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
   FloatingCommsSurfaceState
 } from '../../shared/floating-comms-surface'
+import { FLOATING_COMMS_SURFACE_MAX_HEIGHT } from '../../shared/floating-comms-surface'
 import {
   FLOATING_WORKSPACE_APPS,
   type FloatingWorkspaceAppId
@@ -25,7 +28,7 @@ import {
 } from '../window/discord-voice-window'
 import {
   closeFloatingCommsSurface,
-  getFloatingCommsSurfaceAppId,
+  getFloatingCommsSurfaceIdentity,
   isFloatingCommsSurfaceRenderer,
   isFloatingCommsSurfaceVisible,
   openFloatingCommsSurface,
@@ -51,23 +54,63 @@ const FloatingCommsAnchor = z
 const FloatingCommsOpenRequestSchema: z.ZodType<FloatingCommsOpenRequest> = z
   .object({
     appId: FloatingCommsAppId,
+    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     anchor: FloatingCommsAnchor,
-    height: z.number().finite().positive().max(420)
+    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
   })
   .strict()
+const FloatingCommsCloseRequestSchema: z.ZodType<FloatingCommsCloseRequest> = z
+  .object({ requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
+  .strict()
+const FloatingCommsMeasureRequestSchema: z.ZodType<FloatingCommsMeasureRequest> = z
+  .object({
+    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
+  })
+  .strict()
+const FloatingCommsDiscordCommandIdentity = {
+  appId: z.literal('discord'),
+  requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+}
 const FloatingCommsDiscordCommandSchema: z.ZodType<FloatingCommsDiscordCommand> =
   z.discriminatedUnion('method', [
-    z.object({ method: z.literal('reconnect') }).strict(),
-    z.object({ method: z.literal('set-self-mute'), muted: z.boolean() }).strict(),
-    z.object({ method: z.literal('set-self-deaf'), deafened: z.boolean() }).strict(),
-    z.object({ method: z.literal('leave-call') }).strict(),
-    z.object({ method: z.literal('set-overlay-open'), open: z.boolean() }).strict()
+    z.object({ ...FloatingCommsDiscordCommandIdentity, method: z.literal('reconnect') }).strict(),
+    z
+      .object({
+        ...FloatingCommsDiscordCommandIdentity,
+        method: z.literal('set-self-mute'),
+        muted: z.boolean()
+      })
+      .strict(),
+    z
+      .object({
+        ...FloatingCommsDiscordCommandIdentity,
+        method: z.literal('set-self-deaf'),
+        deafened: z.boolean()
+      })
+      .strict(),
+    z.object({ ...FloatingCommsDiscordCommandIdentity, method: z.literal('leave-call') }).strict(),
+    z
+      .object({
+        ...FloatingCommsDiscordCommandIdentity,
+        method: z.literal('set-overlay-open'),
+        open: z.boolean()
+      })
+      .strict()
   ])
 const FloatingCommsActionSchema: z.ZodType<FloatingCommsAction> = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('open-app'), appId: FloatingCommsAppId }).strict(),
+  z
+    .object({
+      type: z.literal('open-app'),
+      appId: FloatingCommsAppId,
+      requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+    })
+    .strict(),
   z
     .object({
       type: z.literal('open-settings'),
+      appId: FloatingCommsAppId,
+      requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
       provider: z.enum(['discord', 'slack', 'z-api'])
     })
     .strict()
@@ -110,39 +153,56 @@ export function registerFloatingCommsSurfaceHandlers(): void {
       ? null
       : { mode: usesWindow ? ('window' as const) : ('dom' as const) }
   })
-  ipcMain.handle('floatingComms:close', (event) => {
-    if (!isTrustedUIRenderer(event.sender) && !isFloatingCommsSurfaceRenderer(event.sender)) {
+  ipcMain.handle('floatingComms:close', (event, value: unknown) => {
+    const request = FloatingCommsCloseRequestSchema.safeParse(value)
+    const trustedRenderer = isTrustedUIRenderer(event.sender)
+    const admittedRequest = request.success || (trustedRenderer && value === undefined)
+    if ((!trustedRenderer && !isFloatingCommsSurfaceRenderer(event.sender)) || !admittedRequest) {
       throw new Error('floating_comms_close_denied')
     }
-    closeFloatingCommsSurface()
+    closeFloatingCommsSurface(request.success ? request.data.requestId : undefined)
   })
-  ipcMain.handle('floatingComms:measure', (event, height: unknown) => {
-    const measuredHeight = z.number().finite().positive().max(420).safeParse(height)
-    if (!isFloatingCommsSurfaceRenderer(event.sender) || !measuredHeight.success) {
+  ipcMain.handle('floatingComms:measure', (event, value: unknown) => {
+    const request = FloatingCommsMeasureRequestSchema.safeParse(value)
+    if (!isFloatingCommsSurfaceRenderer(event.sender) || !request.success) {
       throw new Error('floating_comms_measure_denied')
     }
-    resizeFloatingCommsSurface(measuredHeight.data)
+    resizeFloatingCommsSurface(request.data.requestId, request.data.height)
   })
-  ipcMain.handle('floatingComms:getState', async (event): Promise<FloatingCommsSurfaceState> => {
+  ipcMain.handle('floatingComms:getState', (event): FloatingCommsSurfaceState => {
     if (!isFloatingCommsSurfaceRenderer(event.sender)) {
       throw new Error('floating_comms_state_denied')
     }
-    const appId = getFloatingCommsSurfaceAppId()
-    if (!appId) {
+    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
+    if (!surfaceIdentity) {
       throw new Error('floating_comms_state_unavailable')
     }
     return {
-      appId,
+      ...surfaceIdentity,
       discord: getDiscordVoiceSnapshot(),
-      integrations: await getCommunicationIntegrationStatuses(),
       overlayOpen: getDiscordVoiceOverlayState().open,
       visible: isFloatingCommsSurfaceVisible()
     }
+  })
+  ipcMain.handle('floatingComms:getIntegrationStatuses', async (event) => {
+    if (!isFloatingCommsSurfaceRenderer(event.sender)) {
+      throw new Error('floating_comms_integration_statuses_denied')
+    }
+    return getCommunicationIntegrationStatuses()
   })
   ipcMain.handle('floatingComms:discordCommand', async (event, value: unknown) => {
     const command = FloatingCommsDiscordCommandSchema.safeParse(value)
     if (!isFloatingCommsSurfaceRenderer(event.sender) || !command.success) {
       throw new Error('floating_comms_command_denied')
+    }
+    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
+    if (
+      !surfaceIdentity ||
+      !isFloatingCommsSurfaceVisible() ||
+      surfaceIdentity.appId !== command.data.appId ||
+      surfaceIdentity.requestId !== command.data.requestId
+    ) {
+      throw new Error('floating_comms_command_stale')
     }
     await runDiscordCommand(command.data)
     return getDiscordVoiceSnapshot()
@@ -152,7 +212,15 @@ export function registerFloatingCommsSurfaceHandlers(): void {
     if (!isFloatingCommsSurfaceRenderer(event.sender) || !action.success) {
       throw new Error('floating_comms_action_denied')
     }
+    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
+    if (
+      !surfaceIdentity ||
+      surfaceIdentity.appId !== action.data.appId ||
+      surfaceIdentity.requestId !== action.data.requestId
+    ) {
+      return
+    }
     sendToTrustedUIRenderer('floatingComms:action', action.data)
-    closeFloatingCommsSurface()
+    closeFloatingCommsSurface(action.data.requestId)
   })
 }

@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId,
@@ -10,6 +18,7 @@ import type {
 } from '../../../../../shared/communication-integrations'
 import type { DiscordVoiceSnapshot } from '../../../../../shared/discord-voice'
 import { useCommunicationIntegrationStatuses } from '@/components/settings/use-communication-integration-statuses'
+import { translate } from '@/i18n/i18n'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 
 export type ZApiCommunicationManagerClient = {
@@ -89,38 +98,79 @@ export function useCommunicationManagerStatuses(
   refreshWhen: boolean
 ): {
   getStatus: (provider: CommunicationProviderId) => CommunicationIntegrationStatus | null
+  loading: boolean
+  error: string | null
+  refresh: () => void
 } {
   const local = useCommunicationIntegrationStatuses({ refreshWhen, disabled: runtime !== null })
-  const [runtimeStatuses, setRuntimeStatuses] = useState<readonly CommunicationIntegrationStatus[]>(
-    []
-  )
+  const requestSequenceRef = useRef(0)
+  const [refreshSequence, setRefreshSequence] = useState(0)
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<{
+    runtime: CommunicationManagerRuntime | null
+    statuses: readonly CommunicationIntegrationStatus[]
+    loading: boolean
+    error: string | null
+  }>({ runtime: null, statuses: [], loading: true, error: null })
   useEffect(() => {
     if (!runtime || !refreshWhen) {
+      requestSequenceRef.current += 1
       return
     }
-    let disposed = false
+    const sequence = requestSequenceRef.current + 1
+    requestSequenceRef.current = sequence
+    setRuntimeSnapshot((current) =>
+      current.runtime === runtime
+        ? { ...current, loading: true, error: null }
+        : { runtime, statuses: [], loading: true, error: null }
+    )
     void runtime
       .loadIntegrationStatuses()
       .then((statuses) => {
-        if (!disposed) {
-          setRuntimeStatuses(statuses)
+        if (requestSequenceRef.current === sequence) {
+          setRuntimeSnapshot({ runtime, statuses, loading: false, error: null })
         }
       })
-      .catch((error: unknown) =>
-        console.error('[communication-manager] status refresh failed:', error)
-      )
+      .catch(() => {
+        if (requestSequenceRef.current === sequence) {
+          setRuntimeSnapshot({
+            runtime,
+            statuses: [],
+            loading: false,
+            error: translate(
+              'communicationIntegrations.status.loadFailed',
+              'Could not load communication integration status.'
+            )
+          })
+        }
+      })
     return () => {
-      disposed = true
+      if (requestSequenceRef.current === sequence) {
+        requestSequenceRef.current += 1
+      }
     }
-  }, [refreshWhen, runtime])
+  }, [refreshSequence, refreshWhen, runtime])
+  const current = runtime
+    ? runtimeSnapshot.runtime === runtime
+      ? runtimeSnapshot
+      : { runtime, statuses: [], loading: true, error: null }
+    : local
   const getStatus = useCallback(
     (provider: CommunicationProviderId) =>
-      runtime
-        ? (runtimeStatuses.find((status) => status.provider === provider) ?? null)
-        : local.getStatus(provider),
-    [local, runtime, runtimeStatuses]
+      current.statuses.find((status) => status.provider === provider) ?? null,
+    [current.statuses]
   )
-  return { getStatus }
+  return {
+    getStatus,
+    loading: current.loading,
+    error: current.error,
+    refresh: () => {
+      if (runtime) {
+        setRefreshSequence((value) => value + 1)
+      } else {
+        void local.refresh()
+      }
+    }
+  }
 }
 
 export function useCommunicationSettingsAction(

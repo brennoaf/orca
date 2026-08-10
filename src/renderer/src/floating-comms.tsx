@@ -14,8 +14,10 @@ import type { CommunicationProviderId } from '../../shared/communication-integra
 import { FLOATING_WORKSPACE_APPS } from '../../shared/floating-workspace-apps'
 import type {
   FloatingCommsDiscordCommand,
+  FloatingCommsSurfaceIdentity,
   FloatingCommsSurfaceState
 } from '../../shared/floating-comms-surface'
+import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
 import type { GlobalSettings } from '../../shared/types'
 import { TooltipProvider } from './components/ui/tooltip'
 import { CommunicationManagerSurfaceContent } from './components/floating-terminal/comms-rail/CommunicationManagerSurfaceContent'
@@ -45,21 +47,33 @@ function readBooleanParam(params: unknown, key: 'muted' | 'deafened'): boolean {
   throw new Error(`floating_comms_invalid_${key}`)
 }
 
-function toDiscordCommand(method: string, params?: unknown): FloatingCommsDiscordCommand | null {
+function sameSurfaceIdentity(
+  left: FloatingCommsSurfaceIdentity | null,
+  right: FloatingCommsSurfaceIdentity
+): boolean {
+  return left?.appId === right.appId && left.requestId === right.requestId
+}
+
+function toDiscordCommand(
+  method: string,
+  requestId: number,
+  params?: unknown
+): FloatingCommsDiscordCommand | null {
+  const identity = { appId: 'discord' as const, requestId }
   if (method === 'discordVoice.getState') {
     return null
   }
   if (method === 'discordVoice.setSelfMute') {
-    return { method: 'set-self-mute', muted: readBooleanParam(params, 'muted') }
+    return { ...identity, method: 'set-self-mute', muted: readBooleanParam(params, 'muted') }
   }
   if (method === 'discordVoice.setSelfDeaf') {
-    return { method: 'set-self-deaf', deafened: readBooleanParam(params, 'deafened') }
+    return { ...identity, method: 'set-self-deaf', deafened: readBooleanParam(params, 'deafened') }
   }
   if (method === 'discordVoice.leaveCall') {
-    return { method: 'leave-call' }
+    return { ...identity, method: 'leave-call' }
   }
   if (method === 'discordVoice.reconnect') {
-    return { method: 'reconnect' }
+    return { ...identity, method: 'reconnect' }
   }
   throw new Error(`floating_comms_unknown_discord_command:${method}`)
 }
@@ -109,75 +123,136 @@ function FloatingCommsAppearanceSync(): null {
 function FloatingCommsRoot(): React.JSX.Element {
   const [state, setState] = useState<FloatingCommsSurfaceState | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
-  const refresh = useCallback(async (): Promise<FloatingCommsSurfaceState> => {
-    const next = await window.api.floatingComms.getState()
-    setState(next)
-    return next
-  }, [])
+  const refreshSequenceRef = useRef(0)
+  const latestIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
+  const mountedRef = useRef(false)
+  const refresh = useCallback(
+    async (expectedIdentity?: FloatingCommsSurfaceIdentity): Promise<FloatingCommsSurfaceState> => {
+      const sequence = ++refreshSequenceRef.current
+      if (expectedIdentity) {
+        latestIdentityRef.current = expectedIdentity
+      }
+      const next = await window.api.floatingComms.getState()
+      if (
+        mountedRef.current &&
+        refreshSequenceRef.current === sequence &&
+        (!expectedIdentity || sameSurfaceIdentity(next, expectedIdentity))
+      ) {
+        latestIdentityRef.current = next
+        setState(next)
+      }
+      return next
+    },
+    []
+  )
   useEffect(() => {
     let disposed = false
-    const run = (): void => {
-      void refresh().catch((error: unknown) => reportSurfaceError('refresh', error))
+    mountedRef.current = true
+    const run = (identity?: FloatingCommsSurfaceIdentity): void => {
+      void refresh(identity).catch((error: unknown) => reportSurfaceError('refresh', error))
     }
+    const off = window.api.floatingComms.onStateChanged((identity) => {
+      if (!disposed) {
+        run(identity)
+      }
+    })
+    const offVisibilityChanged = window.api.floatingComms.onVisibilityChanged((visibility) => {
+      if (!disposed) {
+        if (
+          !visibility.visible &&
+          (!latestIdentityRef.current || sameSurfaceIdentity(latestIdentityRef.current, visibility))
+        ) {
+          refreshSequenceRef.current += 1
+          latestIdentityRef.current = null
+        }
+        setState((current) =>
+          current &&
+          current.appId === visibility.appId &&
+          current.requestId === visibility.requestId
+            ? { ...current, visible: visibility.visible }
+            : current
+        )
+      }
+    })
     run()
-    const off = window.api.floatingComms.onStateChanged(() => {
-      if (!disposed) {
-        run()
-      }
-    })
-    const offVisibilityChanged = window.api.floatingComms.onVisibilityChanged((visible) => {
-      if (!disposed) {
-        setState((current) => (current ? { ...current, visible } : current))
-      }
-    })
     return () => {
       disposed = true
+      mountedRef.current = false
+      refreshSequenceRef.current += 1
+      latestIdentityRef.current = null
       off()
       offVisibilityChanged()
     }
   }, [refresh])
+  const surfaceRequestId = state?.requestId
   useLayoutEffect(() => {
     const element = surfaceRef.current
-    if (!element) {
+    if (!element || surfaceRequestId === undefined) {
       return
     }
     const measure = (): void => {
+      const height = clampFloatingCommsSurfaceHeight(element.getBoundingClientRect().height)
       void window.api.floatingComms
-        .measure(element.scrollHeight)
+        .measure({ requestId: surfaceRequestId, height })
         .catch((error: unknown) => reportSurfaceError('measure', error))
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [state])
+  }, [surfaceRequestId])
+  const discordRequestId = state?.appId === 'discord' ? state.requestId : null
   const runtime = useMemo<CommunicationManagerRuntime>(
     () => ({
       commandDiscord: async (method: string, params?: unknown) => {
-        const command = toDiscordCommand(method, params)
+        if (discordRequestId === null) {
+          throw new Error('floating_comms_discord_surface_inactive')
+        }
+        const command = toDiscordCommand(method, discordRequestId, params)
+        const identity = { appId: 'discord' as const, requestId: discordRequestId }
         if (!command) {
-          return (await refresh()).discord
+          return (await refresh(identity)).discord
         }
         const discord = await window.api.floatingComms.discordCommand(command)
-        setState((current) => (current ? { ...current, discord } : current))
+        if (sameSurfaceIdentity(latestIdentityRef.current, identity)) {
+          setState((current) =>
+            current && sameSurfaceIdentity(current, identity) ? { ...current, discord } : current
+          )
+        }
         return discord
       },
-      loadIntegrationStatuses: async () => (await refresh()).integrations,
+      loadIntegrationStatuses: () => window.api.floatingComms.getIntegrationStatuses(),
       openSettings: (provider: CommunicationProviderId) => {
+        if (!state?.appId || state.requestId === undefined) {
+          return
+        }
         void window.api.floatingComms
-          .action({ type: 'open-settings', provider })
+          .action({
+            type: 'open-settings',
+            provider,
+            appId: state.appId,
+            requestId: state.requestId
+          })
           .catch((error: unknown) => reportSurfaceError('open settings', error))
       },
       overlayOpen: state?.overlayOpen ?? false,
       setOverlayOpen: (open: boolean) => {
+        if (discordRequestId === null) {
+          return
+        }
+        const identity = { appId: 'discord' as const, requestId: discordRequestId }
         void window.api.floatingComms
-          .discordCommand({ method: 'set-overlay-open', open })
-          .then(() => refresh())
+          .discordCommand({ ...identity, method: 'set-overlay-open', open })
+          .then(async () => {
+            if (sameSurfaceIdentity(latestIdentityRef.current, identity)) {
+              await refresh(identity)
+            }
+          })
           .catch((error: unknown) => reportSurfaceError('set overlay state', error))
       },
       zApi: LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT
     }),
-    [refresh, state?.overlayOpen]
+    [discordRequestId, refresh, state?.appId, state?.overlayOpen, state?.requestId]
   )
   if (!state) {
     return <div className="h-screen rounded-md border border-border bg-popover" />
@@ -201,7 +276,7 @@ function FloatingCommsRoot(): React.JSX.Element {
                 content={presentation.content}
                 onOpenApp={() => {
                   void window.api.floatingComms
-                    .action({ type: 'open-app', appId: state.appId })
+                    .action({ type: 'open-app', appId: state.appId, requestId: state.requestId })
                     .catch((error: unknown) => reportSurfaceError('open app', error))
                 }}
               />

@@ -110,7 +110,7 @@ describe('communication managers', () => {
     )
   })
 
-  it('keeps Slack unavailable and keeps Z-API send UI gated by readiness', () => {
+  it('shows explicit loading without false setup state before integration statuses resolve', () => {
     const renderPresentation = (id: 'slack' | 'whatsapp-web'): string => {
       const props = {
         isPopoverOpen: false,
@@ -124,10 +124,8 @@ describe('communication managers', () => {
     const slack = renderPresentation('slack')
     const zApi = renderPresentation('whatsapp-web')
 
-    expect(slack).toContain(
-      'Configure Slack credentials in Integrations. Socket Mode transport is not active yet.'
-    )
+    expect(slack).toContain('Loading Slack status')
     expect(zApi).toContain('Loading WhatsApp fast responses')
-    expect(`${slack}${zApi}`).not.toMatch(/send|composer|unread/i)
+    expect(`${slack}${zApi}`).not.toMatch(/configure|unavailable|send|composer|unread/i)
   })
 })

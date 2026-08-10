@@ -3,6 +3,10 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  FloatingCommsAction,
+  FloatingCommsSurfaceIdentity
+} from '../../../../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../../../../shared/floating-workspace-apps'
 import { FloatingCommsRail } from './FloatingCommsRail'
 
@@ -72,8 +76,9 @@ function Harness({ panel }: { panel: HTMLDivElement }): React.JSX.Element {
 describe('FloatingCommsRail', () => {
   let root: Root | null = null
   let container: HTMLDivElement | null = null
-  let notifyClosed: (() => void) | null = null
-  let notifyFallback: ((appId: FloatingWorkspaceAppId) => void) | null = null
+  let notifyClosed: ((identity: FloatingCommsSurfaceIdentity) => void) | null = null
+  let notifyFallback: ((identity: FloatingCommsSurfaceIdentity) => void) | null = null
+  let notifyAction: ((action: FloatingCommsAction) => void) | null = null
   let releaseClosed: ReturnType<typeof vi.fn>
   let releaseAction: ReturnType<typeof vi.fn>
   let releaseFallback: ReturnType<typeof vi.fn>
@@ -85,6 +90,7 @@ describe('FloatingCommsRail', () => {
     container = null
     notifyClosed = null
     notifyFallback = null
+    notifyAction = null
     storeBox.floatingWorkspaceApps = {}
   })
 
@@ -98,15 +104,18 @@ describe('FloatingCommsRail', () => {
           open: vi.fn(() => Promise.resolve({ mode: 'dom' })),
           update: vi.fn(() => Promise.resolve({ mode: 'window' as const })),
           close: vi.fn(() => Promise.resolve()),
-          onClosed: vi.fn((callback: () => void) => {
+          onClosed: vi.fn((callback: (identity: FloatingCommsSurfaceIdentity) => void) => {
             notifyClosed = callback
             return releaseClosed
           }),
-          onFallback: vi.fn((callback: (appId: FloatingWorkspaceAppId) => void) => {
+          onFallback: vi.fn((callback: (identity: FloatingCommsSurfaceIdentity) => void) => {
             notifyFallback = callback
             return releaseFallback
           }),
-          onAction: vi.fn(() => releaseAction)
+          onAction: vi.fn((callback: (action: FloatingCommsAction) => void) => {
+            notifyAction = callback
+            return releaseAction
+          })
         }
       }
     })
@@ -239,7 +248,7 @@ describe('FloatingCommsRail', () => {
     ).toBe('true')
     expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
 
-    act(() => notifyClosed?.())
+    act(() => notifyClosed?.({ appId: 'discord', requestId: 1 }))
     expect(
       panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
     ).toBe('false')
@@ -276,7 +285,7 @@ describe('FloatingCommsRail', () => {
 
     await act(async () => railButton(panel, 'Discord').click())
     expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
-    act(() => notifyFallback?.('discord'))
+    act(() => notifyFallback?.({ appId: 'discord', requestId: 1 }))
 
     expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(1)
     expect(
@@ -312,8 +321,51 @@ describe('FloatingCommsRail', () => {
     const panel = mountHarness()
 
     await act(async () => railButton(panel, 'Slack').click())
-    act(() => notifyFallback?.('discord'))
+    act(() => notifyFallback?.({ appId: 'discord', requestId: 1 }))
 
     expect(panel.querySelectorAll('[data-testid="popover-content"]')).toHaveLength(0)
+  })
+
+  it('ignores a closed event from the previous request after switching apps', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+
+    await act(async () => railButton(panel, 'Slack').click())
+    await act(async () => railButton(panel, 'Discord').click())
+    act(() => notifyClosed?.({ appId: 'slack', requestId: 1 }))
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+    expect(
+      Array.from(railButton(panel, 'Discord').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(true)
+  })
+
+  it('ignores an action from the previous request after switching apps', async () => {
+    const floatingComms = window.api.floatingComms
+    if (!floatingComms) {
+      throw new Error('Floating communications API is unavailable')
+    }
+    vi.mocked(floatingComms.open).mockResolvedValue({ mode: 'window' })
+    const panel = mountHarness()
+
+    await act(async () => railButton(panel, 'Slack').click())
+    await act(async () => railButton(panel, 'Discord').click())
+    act(() => notifyAction?.({ type: 'open-app', appId: 'slack', requestId: 1 }))
+
+    expect(
+      panel.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+    expect(
+      Array.from(railButton(panel, 'Discord').children).some((child) =>
+        child.classList.contains('w-[2px]')
+      )
+    ).toBe(true)
   })
 })

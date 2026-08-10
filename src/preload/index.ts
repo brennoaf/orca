@@ -12,12 +12,16 @@ import type {
 } from '../shared/dashboard-snapshot'
 import type {
   FloatingCommsAction,
+  FloatingCommsCloseRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
+  FloatingCommsSurfaceIdentity,
+  FloatingCommsSurfaceVisibility,
   FloatingCommsSurfaceState
 } from '../shared/floating-comms-surface'
-import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
+import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
@@ -2303,34 +2307,49 @@ const api = {
     open: (request: FloatingCommsOpenRequest) => ipcRenderer.invoke('floatingComms:open', request),
     update: (request: FloatingCommsOpenRequest): Promise<FloatingCommsOpenResult | null> =>
       ipcRenderer.invoke('floatingComms:update', request),
-    close: (): Promise<void> => ipcRenderer.invoke('floatingComms:close'),
-    measure: (height: number): Promise<void> => ipcRenderer.invoke('floatingComms:measure', height),
+    close: (request?: FloatingCommsCloseRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:close', request),
+    measure: (request: FloatingCommsMeasureRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:measure', request),
     getState: (): Promise<FloatingCommsSurfaceState> =>
       ipcRenderer.invoke('floatingComms:getState'),
+    getIntegrationStatuses: (): Promise<readonly CommunicationIntegrationStatus[]> =>
+      ipcRenderer.invoke('floatingComms:getIntegrationStatuses'),
     discordCommand: (command: FloatingCommsDiscordCommand) =>
       ipcRenderer.invoke('floatingComms:discordCommand', command),
     action: (action: FloatingCommsAction): Promise<void> =>
       ipcRenderer.invoke('floatingComms:action', action),
-    onStateChanged: (callback: (appId: FloatingWorkspaceAppId) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, appId: FloatingWorkspaceAppId): void =>
-        callback(appId)
+    onStateChanged: (callback: (identity: FloatingCommsSurfaceIdentity) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: FloatingCommsSurfaceIdentity
+      ): void => callback(identity)
       ipcRenderer.on('floatingComms:stateChanged', listener)
       return () => ipcRenderer.removeListener('floatingComms:stateChanged', listener)
     },
-    onVisibilityChanged: (callback: (visible: boolean) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, visible: boolean): void =>
-        callback(visible)
+    onVisibilityChanged: (
+      callback: (visibility: FloatingCommsSurfaceVisibility) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        visibility: FloatingCommsSurfaceVisibility
+      ): void => callback(visibility)
       ipcRenderer.on('floatingComms:visibilityChanged', listener)
       return () => ipcRenderer.removeListener('floatingComms:visibilityChanged', listener)
     },
-    onClosed: (callback: () => void): (() => void) => {
-      const listener = (): void => callback()
+    onClosed: (callback: (identity: FloatingCommsSurfaceIdentity) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: FloatingCommsSurfaceIdentity
+      ): void => callback(identity)
       ipcRenderer.on('floatingComms:closed', listener)
       return () => ipcRenderer.removeListener('floatingComms:closed', listener)
     },
-    onFallback: (callback: (appId: FloatingWorkspaceAppId) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, appId: FloatingWorkspaceAppId): void =>
-        callback(appId)
+    onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: FloatingCommsSurfaceIdentity
+      ): void => callback(identity)
       ipcRenderer.on('floatingComms:fallback', listener)
       return () => ipcRenderer.removeListener('floatingComms:fallback', listener)
     },

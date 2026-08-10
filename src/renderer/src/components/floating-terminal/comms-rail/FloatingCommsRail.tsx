@@ -7,7 +7,10 @@ import {
   useState,
   type RefObject
 } from 'react'
-import type { FloatingCommsOpenRequest } from '../../../../../shared/floating-comms-surface'
+import type {
+  FloatingCommsOpenRequest,
+  FloatingCommsSurfaceIdentity
+} from '../../../../../shared/floating-comms-surface'
 import type {
   FloatingWorkspaceApp,
   FloatingWorkspaceAppId
@@ -35,10 +38,15 @@ function reportFloatingCommsError(operation: string, error: unknown): void {
   console.error(`[floating-comms] ${operation} failed:`, error)
 }
 
-function requestFor(appId: FloatingWorkspaceAppId, element: HTMLElement): FloatingCommsOpenRequest {
+function requestFor(
+  appId: FloatingWorkspaceAppId,
+  element: HTMLElement,
+  requestId: number
+): FloatingCommsOpenRequest {
   const rect = element.getBoundingClientRect()
   return {
     appId,
+    requestId,
     anchor: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     height: 420
   }
@@ -138,16 +146,31 @@ export function FloatingCommsRail({
   entriesRef.current = entries
   onOpenAppRef.current = onOpenApp
   openAppIdRef.current = openAppId
-  const releaseLocal = useCallback(() => {
-    requestSequenceRef.current += 1
-    setDomFallback(false)
-    onOpenAppIdChange(null)
-  }, [onOpenAppIdChange])
+  const releaseLocal = useCallback(
+    (identity?: FloatingCommsSurfaceIdentity) => {
+      if (
+        identity &&
+        (openAppIdRef.current !== identity.appId ||
+          requestSequenceRef.current !== identity.requestId)
+      ) {
+        return
+      }
+      requestSequenceRef.current += 1
+      openAppIdRef.current = null
+      setDomFallback(false)
+      onOpenAppIdChange(null)
+    },
+    [onOpenAppIdChange]
+  )
   const close = useCallback(() => {
+    const appId = openAppIdRef.current
+    const requestId = requestSequenceRef.current
     releaseLocal()
     const surface = window.api.floatingComms
-    if (surface) {
-      void surface.close().catch((error: unknown) => reportFloatingCommsError('close', error))
+    if (surface && appId) {
+      void surface
+        .close({ requestId })
+        .catch((error: unknown) => reportFloatingCommsError('close', error))
     }
   }, [releaseLocal])
 
@@ -165,8 +188,11 @@ export function FloatingCommsRail({
   useEffect(() => {
     const surface = window.api.floatingComms
     return surface
-      ? surface.onFallback((appId) => {
-          if (openAppIdRef.current === appId) {
+      ? surface.onFallback((identity) => {
+          if (
+            openAppIdRef.current === identity.appId &&
+            requestSequenceRef.current === identity.requestId
+          ) {
             setDomFallback(true)
           }
         })
@@ -176,6 +202,12 @@ export function FloatingCommsRail({
   useEffect(() => {
     const surface = window.api.floatingComms
     return surface?.onAction((action) => {
+      if (
+        openAppIdRef.current !== action.appId ||
+        requestSequenceRef.current !== action.requestId
+      ) {
+        return
+      }
       if (action.type === 'open-app') {
         const app = entriesRef.current.find((entry) => entry.app.id === action.appId)?.app
         if (app) {
@@ -186,7 +218,7 @@ export function FloatingCommsRail({
         store.openSettingsTarget(getCommunicationSettingsTarget(action.provider))
         store.openSettingsPage()
       }
-      releaseLocal()
+      releaseLocal(action)
     })
   }, [releaseLocal])
 
@@ -206,7 +238,7 @@ export function FloatingCommsRail({
       }
       const sequence = requestSequenceRef.current
       void surface
-        .update(requestFor(openAppId, button))
+        .update(requestFor(openAppId, button, sequence))
         .then((result) => {
           if (
             result?.mode === 'dom' &&
@@ -218,7 +250,9 @@ export function FloatingCommsRail({
         })
         .catch((error: unknown) => {
           reportFloatingCommsError('update', error)
-          close()
+          if (requestSequenceRef.current === sequence && openAppIdRef.current === openAppId) {
+            close()
+          }
         })
     }
     update()
@@ -277,6 +311,7 @@ export function FloatingCommsRail({
               }
               const sequence = requestSequenceRef.current + 1
               requestSequenceRef.current = sequence
+              openAppIdRef.current = app.id
               onOpenAppIdChange(app.id)
               const surface = window.api.floatingComms
               if (!surface) {
@@ -284,7 +319,7 @@ export function FloatingCommsRail({
                 return
               }
               void surface
-                .open(requestFor(app.id, button))
+                .open(requestFor(app.id, button, sequence))
                 .then((result) => {
                   if (requestSequenceRef.current === sequence && openAppIdRef.current === app.id) {
                     setDomFallback(result.mode === 'dom')
@@ -292,7 +327,9 @@ export function FloatingCommsRail({
                 })
                 .catch((error: unknown) => {
                   reportFloatingCommsError('open', error)
-                  close()
+                  if (requestSequenceRef.current === sequence && openAppIdRef.current === app.id) {
+                    close()
+                  }
                 })
             }}
             onOpenApp={() => {

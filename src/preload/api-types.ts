@@ -10,7 +10,6 @@ import type {
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
 import type { DiscordVoiceSnapshot } from '../shared/discord-voice'
-import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type { BrowserFindSource } from '../shared/browser-find-source'
 import type {
   DashboardRevealAgentArgs,
@@ -20,11 +19,16 @@ import type {
 } from '../shared/dashboard-snapshot'
 import type {
   FloatingCommsAction,
+  FloatingCommsCloseRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsMeasureRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
-  FloatingCommsSurfaceState
+  FloatingCommsSurfaceIdentity,
+  FloatingCommsSurfaceState,
+  FloatingCommsSurfaceVisibility
 } from '../shared/floating-comms-surface'
+import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
@@ -1193,15 +1197,18 @@ export type PreloadApi = {
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
     update: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult | null>
-    close: () => Promise<void>
-    measure: (height: number) => Promise<void>
+    close: (request?: FloatingCommsCloseRequest) => Promise<void>
+    measure: (request: FloatingCommsMeasureRequest) => Promise<void>
     getState: () => Promise<FloatingCommsSurfaceState>
+    getIntegrationStatuses: () => Promise<readonly CommunicationIntegrationStatus[]>
     discordCommand: (command: FloatingCommsDiscordCommand) => Promise<DiscordVoiceSnapshot>
     action: (action: FloatingCommsAction) => Promise<void>
-    onStateChanged: (callback: (appId: FloatingWorkspaceAppId) => void) => () => void
-    onVisibilityChanged: (callback: (visible: boolean) => void) => () => void
-    onClosed: (callback: () => void) => () => void
-    onFallback: (callback: (appId: FloatingWorkspaceAppId) => void) => () => void
+    onStateChanged: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
+    onVisibilityChanged: (
+      callback: (visibility: FloatingCommsSurfaceVisibility) => void
+    ) => () => void
+    onClosed: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
+    onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
     onAction: (callback: (action: FloatingCommsAction) => void) => () => void
   }
   orcaProfiles: {

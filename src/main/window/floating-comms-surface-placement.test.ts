@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
 import { placeFloatingCommsSurface } from './floating-comms-surface-placement'
 
 const contentBounds = { x: 100, y: 50, width: 1_000, height: 700 }
@@ -121,5 +122,13 @@ describe('placeFloatingCommsSurface', () => {
         measuredHeight: 300
       })
     ).toBeNull()
+  })
+})
+
+describe('clampFloatingCommsSurfaceHeight', () => {
+  it('rounds rendered height and clamps growth to the surface maximum', () => {
+    expect(clampFloatingCommsSurfaceHeight(419.6)).toBe(420)
+    expect(clampFloatingCommsSurfaceHeight(431)).toBe(420)
+    expect(clampFloatingCommsSurfaceHeight(Number.NaN)).toBe(1)
   })
 })
