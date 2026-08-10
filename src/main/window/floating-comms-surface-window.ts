@@ -5,36 +5,46 @@ import {
   type FloatingCommsSurfaceIdentity,
   type FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
-import { getTrustedUIRendererWindow, sendToTrustedUIRenderer } from '../ipc/ui'
+import { getTrustedUIRendererWindow } from '../ipc/ui'
 import { createFloatingCommsSurfaceChildWindow } from './floating-comms-surface-child-window'
-import {
-  bindFloatingCommsGeometryListeners,
-  createFloatingCommsGeometryCoordinator,
-  floatingCommsWorkspaceIntersectsBounds,
-  getFloatingCommsSurfacePlacement
-} from './floating-comms-surface-geometry'
+import { createFloatingCommsAttachedGeometry } from './floating-comms-attached-geometry'
+import { openFloatingCommsAttachedSurface } from './floating-comms-attached-open'
 
 export { shouldUseFloatingCommsDomFallback } from './floating-comms-surface-child-window'
 
 let floatingCommsWindow: BrowserWindow | null = null
 let floatingCommsOwner: BrowserWindow | null = null
 let currentRequest: FloatingCommsOpenRequest | null = null
+let currentIdentity: FloatingCommsSurfaceIdentity | null = null
 let visibleRequest: FloatingCommsSurfaceIdentity | null = null
 let releaseWindowListeners: (() => void) | null = null
 let surfaceLoaded = false
 let surfaceMeasured = false
+let lifecycleHandlers: FloatingCommsAttachedLifecycleHandlers | null = null
 
-export function isFloatingCommsSurfaceRenderer(sender: WebContents): boolean {
-  return floatingCommsWindow?.webContents === sender && !sender.isDestroyed()
+export type FloatingCommsAttachedLifecycleHandlers = {
+  onClosed: (identity: FloatingCommsSurfaceIdentity) => void
+  onFallback: (identity: FloatingCommsSurfaceIdentity) => void
 }
 
-function identity(request: FloatingCommsOpenRequest): FloatingCommsSurfaceIdentity {
-  return { appId: request.appId, requestId: request.requestId }
+type FloatingCommsLegacyUpdateRequest = FloatingCommsOpenRequest & {
+  geometryRequestId: number | null
 }
 
-function isCurrentWindow(window: BrowserWindow): boolean {
-  return floatingCommsWindow === window && !window.isDestroyed()
+export const isFloatingCommsSurfaceRenderer = (sender: WebContents): boolean =>
+  floatingCommsWindow?.webContents === sender && !sender.isDestroyed()
+
+function matchesIdentity(identity: FloatingCommsSurfaceIdentity): boolean {
+  return (
+    currentIdentity?.appId === identity.appId &&
+    currentIdentity.requestId === identity.requestId &&
+    currentIdentity.surfaceId === identity.surfaceId &&
+    currentIdentity.mode === identity.mode
+  )
 }
+
+const isCurrentWindow = (window: BrowserWindow): boolean =>
+  floatingCommsWindow === window && !window.isDestroyed()
 
 function isCurrentOwner(owner: BrowserWindow): boolean {
   return (
@@ -42,96 +52,75 @@ function isCurrentOwner(owner: BrowserWindow): boolean {
   )
 }
 
-const geometryCoordinator = createFloatingCommsGeometryCoordinator({
-  isCurrent: (owner, requestIdentity) =>
-    isCurrentOwner(owner) &&
-    currentRequest?.appId === requestIdentity.appId &&
-    currentRequest.requestId === requestIdentity.requestId,
-  onTimeout: (requestIdentity) => {
+function releaseFloatingCommsOwnership(): void {
+  floatingCommsOwner = null
+  currentRequest = null
+  currentIdentity = null
+  visibleRequest = null
+  surfaceLoaded = false
+  surfaceMeasured = false
+  lifecycleHandlers = null
+  attachedGeometry.reset()
+  releaseWindowListeners?.()
+  releaseWindowListeners = null
+}
+
+const attachedGeometry = createFloatingCommsAttachedGeometry({
+  current: () => {
+    const window = floatingCommsWindow
+    if (!window || window.isDestroyed() || !currentRequest || !currentIdentity) {
+      return null
+    }
+    return {
+      identity: currentIdentity,
+      loaded: surfaceLoaded,
+      measured: surfaceMeasured,
+      request: currentRequest,
+      visible: visibleRequest,
+      window
+    }
+  },
+  destroy: () => destroyFloatingCommsSurface(),
+  fallback: (requestIdentity) => {
+    const handlers = lifecycleHandlers
     destroyFloatingCommsSurface()
-    sendToTrustedUIRenderer('floatingComms:fallback', requestIdentity)
-  }
+    handlers?.onFallback({ ...requestIdentity, mode: 'attached-dom' })
+  },
+  isCurrentOwner,
+  setVisible: (identity) => void (visibleRequest = identity)
 })
 
-export function getFloatingCommsSurfaceIdentity(): FloatingCommsSurfaceIdentity | null {
-  return currentRequest ? identity(currentRequest) : null
-}
+export const getFloatingCommsSurfaceIdentity = (): FloatingCommsSurfaceIdentity | null =>
+  currentIdentity
 
 export function isFloatingCommsSurfaceVisible(): boolean {
   const window = floatingCommsWindow
   return Boolean(
     currentRequest &&
     visibleRequest &&
-    currentRequest.appId === visibleRequest.appId &&
-    currentRequest.requestId === visibleRequest.requestId &&
+    matchesIdentity(visibleRequest) &&
     window &&
     !window.isDestroyed() &&
     window.isVisible()
   )
 }
 
-function requestFreshGeometry(owner: BrowserWindow): void {
-  const window = floatingCommsWindow
-  if (!isCurrentOwner(owner)) {
-    destroyFloatingCommsSurface()
-    return
-  }
-  if (!window || window.isDestroyed() || !currentRequest) {
-    return
-  }
-  geometryCoordinator.begin(owner, identity(currentRequest), window, visibleRequest)
-}
-
-function reposition(owner: BrowserWindow, freshGeometry = false): boolean | null {
-  const window = floatingCommsWindow
-  if (!window || window.isDestroyed() || !currentRequest) {
-    return null
-  }
-  if (!isCurrentOwner(owner)) {
-    destroyFloatingCommsSurface()
-    return null
-  }
-  if (geometryCoordinator.isAwaiting() && !freshGeometry) {
-    return null
-  }
-  const placement = getFloatingCommsSurfacePlacement(owner, currentRequest)
-  if (!placement) {
-    const requestIdentity = identity(currentRequest)
-    destroyFloatingCommsSurface()
-    sendToTrustedUIRenderer('floatingComms:fallback', requestIdentity)
-    return false
-  }
-  window.setBounds(placement, false)
-  if (freshGeometry) {
-    const { suspendedRequest, shouldFocus } = geometryCoordinator.complete()
-    if (
-      suspendedRequest &&
-      suspendedRequest.appId === currentRequest.appId &&
-      suspendedRequest.requestId === currentRequest.requestId &&
-      surfaceLoaded &&
-      surfaceMeasured
-    ) {
-      visibleRequest = identity(currentRequest)
-      if (shouldFocus) {
-        window.show()
-        window.focus()
-      } else {
-        window.showInactive()
-      }
-    }
-  }
-  return true
-}
-
-export function closeFloatingCommsSurface(requestId?: number): void {
+export function closeFloatingCommsSurface(identity?: FloatingCommsSurfaceIdentity | number): void {
   const request = currentRequest
-  if (!request || (requestId !== undefined && request.requestId !== requestId)) {
+  const requestIdentity = currentIdentity
+  const identityMismatch =
+    typeof identity === 'number'
+      ? request?.requestId !== identity
+      : identity !== undefined && !matchesIdentity(identity)
+  if (!request || !requestIdentity || identityMismatch) {
     return
   }
-  const requestIdentity = identity(request)
+  const handlers = lifecycleHandlers
   currentRequest = null
+  currentIdentity = null
+  lifecycleHandlers = null
   surfaceMeasured = false
-  geometryCoordinator.reset()
+  attachedGeometry.reset()
   const window = floatingCommsWindow
   if (window && !window.isDestroyed()) {
     visibleRequest = null
@@ -143,33 +132,31 @@ export function closeFloatingCommsSurface(requestId?: number): void {
     }
     window.hide()
   }
-  sendToTrustedUIRenderer('floatingComms:closed', requestIdentity)
+  handlers?.onClosed(requestIdentity)
 }
 
-function createFloatingCommsWindow(parent: BrowserWindow): BrowserWindow {
+function createFloatingCommsWindow(
+  parent: BrowserWindow,
+  loadFailed?: (window: BrowserWindow, error: unknown) => void
+): BrowserWindow {
   return createFloatingCommsSurfaceChildWindow(parent, {
-    close: closeFloatingCommsSurface,
+    close: (identity) => closeFloatingCommsSurface(identity),
     isCurrent: isCurrentWindow,
     loaded: () => {
       surfaceLoaded = true
-      return currentRequest ? identity(currentRequest) : null
+      return currentIdentity
     },
+    loadFailed,
     closed: (window) => {
       if (floatingCommsWindow !== window) {
         return
       }
-      const closedRequest = currentRequest ? identity(currentRequest) : visibleRequest
-      releaseWindowListeners?.()
-      releaseWindowListeners = null
+      const closedRequest = currentIdentity ?? visibleRequest
+      const handlers = lifecycleHandlers
       floatingCommsWindow = null
-      floatingCommsOwner = null
-      currentRequest = null
-      visibleRequest = null
-      surfaceLoaded = false
-      surfaceMeasured = false
-      geometryCoordinator.reset()
+      releaseFloatingCommsOwnership()
       if (closedRequest) {
-        sendToTrustedUIRenderer('floatingComms:closed', closedRequest)
+        handlers?.onClosed(closedRequest)
       }
     },
     takeVisible: () => {
@@ -183,71 +170,88 @@ function createFloatingCommsWindow(parent: BrowserWindow): BrowserWindow {
 
 export function openFloatingCommsSurface(
   owner: BrowserWindow,
-  request: FloatingCommsOpenRequest
+  request: FloatingCommsOpenRequest,
+  requestIdentity: FloatingCommsSurfaceIdentity = {
+    appId: request.appId,
+    requestId: request.requestId,
+    surfaceId: request.requestId,
+    mode: 'attached-native'
+  },
+  handlers: FloatingCommsAttachedLifecycleHandlers = {
+    onClosed: () => void 0,
+    onFallback: () => void 0
+  },
+  reusableWindow?: BrowserWindow
 ): boolean {
-  if (owner.isDestroyed() || getTrustedUIRendererWindow() !== owner) {
-    throw new Error('floating_comms_parent_unavailable')
-  }
-  if (floatingCommsOwner && floatingCommsOwner !== owner) {
-    destroyFloatingCommsSurface()
-  }
-  const placement = getFloatingCommsSurfacePlacement(owner, request)
-  if (!placement) {
-    destroyFloatingCommsSurface()
-    return false
-  }
-  floatingCommsOwner = owner
-  currentRequest = request
-  surfaceMeasured = false
-  geometryCoordinator.reset()
-  let window = floatingCommsWindow
-  if (!window || window.isDestroyed()) {
-    const createdWindow = createFloatingCommsWindow(owner)
-    window = createdWindow
-    floatingCommsWindow = createdWindow
-    releaseWindowListeners = bindFloatingCommsGeometryListeners({
-      owner,
-      window: createdWindow,
-      isCurrentWindow: () => isCurrentWindow(createdWindow),
-      isDisplayRelevant: (bounds) =>
-        floatingCommsWorkspaceIntersectsBounds(owner, currentRequest, bounds),
-      reposition: () => void reposition(owner),
-      requestRefresh: () => requestFreshGeometry(owner)
-    })
-  }
-  window.setBounds(placement, false)
-  if (surfaceLoaded) {
-    window.webContents.send('floatingComms:stateChanged', identity(request))
-  }
-  return true
+  lifecycleHandlers = handlers
+  return openFloatingCommsAttachedSurface(owner, request, requestIdentity, reusableWindow, {
+    createWindow: createFloatingCommsWindow,
+    currentRequest: () => currentRequest,
+    destroy: destroyFloatingCommsSurface,
+    loaded: () => surfaceLoaded,
+    owner: () => floatingCommsOwner,
+    reposition: (currentOwner) => void attachedGeometry.reposition(currentOwner),
+    requestRefresh: (currentOwner) => attachedGeometry.begin(currentOwner),
+    resetGeometry: () => attachedGeometry.reset(),
+    setCurrent: (currentOwner, currentRequestValue, identity) => {
+      floatingCommsOwner = currentOwner
+      currentRequest = currentRequestValue
+      currentIdentity = identity
+      surfaceMeasured = false
+    },
+    setReleaseListeners: (release) => {
+      releaseWindowListeners?.()
+      releaseWindowListeners = release
+    },
+    setWindow: (window) => {
+      floatingCommsWindow = window
+      surfaceLoaded = !window.webContents.isLoading()
+    },
+    window: () => floatingCommsWindow,
+    windowIsCurrent: isCurrentWindow
+  })
 }
 
 export function updateFloatingCommsSurface(
   owner: BrowserWindow,
-  request: FloatingCommsUpdateRequest
+  request: FloatingCommsUpdateRequest | FloatingCommsLegacyUpdateRequest
 ): boolean | null {
+  const strictIdentity = 'surfaceId' in request && 'mode' in request
   if (
     floatingCommsOwner !== owner ||
     !currentRequest ||
     currentRequest.appId !== request.appId ||
-    currentRequest.requestId !== request.requestId
+    currentRequest.requestId !== request.requestId ||
+    (strictIdentity && !matchesIdentity(request))
   ) {
     if (floatingCommsOwner && getTrustedUIRendererWindow() !== floatingCommsOwner) {
       destroyFloatingCommsSurface()
     }
     return null
   }
-  if (!geometryCoordinator.accept(request.geometryRequestId)) {
+  if (!attachedGeometry.accept(request.geometryRequestId)) {
     return null
   }
-  const { geometryRequestId, ...nextRequest } = request
-  currentRequest = nextRequest
-  return reposition(owner, geometryRequestId !== null)
+  currentRequest = {
+    appId: request.appId,
+    requestId: request.requestId,
+    anchor: request.anchor,
+    workspace: request.workspace,
+    height: request.height
+  }
+  return attachedGeometry.reposition(owner, request.geometryRequestId !== null)
 }
 
-export function resizeFloatingCommsSurface(requestId: number, height: number): void {
+export function resizeFloatingCommsSurface(
+  requestIdentity: FloatingCommsSurfaceIdentity | number,
+  height: number
+): void {
   const request = currentRequest
-  if (!request || request.requestId !== requestId) {
+  const admittedIdentity =
+    typeof requestIdentity === 'number'
+      ? currentIdentity?.requestId === requestIdentity
+      : matchesIdentity(requestIdentity)
+  if (!request || !admittedIdentity) {
     return
   }
   const resizedRequest = { ...request, height: clampFloatingCommsSurfaceHeight(height) }
@@ -259,18 +263,20 @@ export function resizeFloatingCommsSurface(requestId: number, height: number): v
   if (firstMeasurement) {
     surfaceMeasured = true
   }
-  if (geometryCoordinator.isAwaiting()) {
+  if (attachedGeometry.awaiting()) {
     if (firstMeasurement) {
-      geometryCoordinator.recordFirstMeasurement(identity(resizedRequest))
+      if (currentIdentity) {
+        attachedGeometry.recordFirstMeasurement(currentIdentity)
+      }
     }
     return
   }
   const owner = floatingCommsOwner
-  if (!owner || reposition(owner) !== true) {
+  if (!owner || attachedGeometry.reposition(owner) !== true) {
     return
   }
   if (firstMeasurement && window && !window.isDestroyed()) {
-    visibleRequest = identity(resizedRequest)
+    visibleRequest = currentIdentity
     if (window.isVisible()) {
       window.webContents.send('floatingComms:visibilityChanged', {
         ...visibleRequest,
@@ -283,17 +289,31 @@ export function resizeFloatingCommsSurface(requestId: number, height: number): v
   }
 }
 
+export function takeFloatingCommsSurfaceWindow(
+  requestIdentity: FloatingCommsSurfaceIdentity
+): BrowserWindow | null {
+  if (!matchesIdentity(requestIdentity)) {
+    return null
+  }
+  const window = floatingCommsWindow
+  floatingCommsWindow = null
+  releaseFloatingCommsOwnership()
+  return window && !window.isDestroyed() ? window : null
+}
+
+export function createUnownedFloatingCommsSurfaceWindow(
+  owner: BrowserWindow,
+  loadFailed: (window: BrowserWindow, error: unknown) => void
+): BrowserWindow {
+  const window = createFloatingCommsWindow(owner, loadFailed)
+  window.setParentWindow(null)
+  return window
+}
+
 export function destroyFloatingCommsSurface(): void {
   const window = floatingCommsWindow
   floatingCommsWindow = null
-  floatingCommsOwner = null
-  currentRequest = null
-  visibleRequest = null
-  surfaceLoaded = false
-  surfaceMeasured = false
-  geometryCoordinator.reset()
-  releaseWindowListeners?.()
-  releaseWindowListeners = null
+  releaseFloatingCommsOwnership()
   if (window && !window.isDestroyed()) {
     window.destroy()
   }

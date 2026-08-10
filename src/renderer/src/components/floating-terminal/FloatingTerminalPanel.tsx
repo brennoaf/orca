@@ -500,12 +500,6 @@ export function FloatingTerminalPanel({
 
   useEffect(() => {
     setOpenAppId(null)
-    const surface = window.api.floatingComms
-    if (surface) {
-      void surface
-        .close(undefined)
-        .catch((error: unknown) => console.error('[floating-comms] close failed:', error))
-    }
   }, [activeTab?.id, open])
 
   useContextualTour('floating-workspace', open, 'floating_workspace_visible', {
@@ -1877,6 +1871,7 @@ export function FloatingTerminalPanel({
         <div className="flex min-h-0 flex-1">
           <FloatingCommsRail
             panelRef={panelRef}
+            panelVisible={open}
             workspaceBounds={bounds}
             openAppId={openAppId}
             onOpenAppIdChange={setOpenAppId}

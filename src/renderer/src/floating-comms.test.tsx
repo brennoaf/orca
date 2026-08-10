@@ -2,40 +2,42 @@
 
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DiscordVoiceSnapshot } from '../../shared/discord-voice'
-import type { FloatingCommsSurfaceState } from '../../shared/floating-comms-surface'
+import type {
+  FloatingCommsSessionState,
+  FloatingCommsSurfaceChanged,
+  FloatingCommsSurfaceIdentity,
+  FloatingCommsSurfacePresentation,
+  FloatingCommsSurfaceVisibility
+} from '../../shared/floating-comms-surface'
 
-function discordSnapshot(): DiscordVoiceSnapshot {
-  return {
-    connection: 'connected',
-    channelId: null,
-    channelName: null,
-    selfUserId: null,
-    participants: [],
-    credentialsConfigured: true,
-    lastError: null
-  }
+function identity(
+  appId: FloatingCommsSurfaceIdentity['appId'],
+  mode: FloatingCommsSurfaceIdentity['mode'],
+  requestId = 1,
+  surfaceId = 10
+): FloatingCommsSurfaceIdentity {
+  return { appId, mode, requestId, surfaceId }
 }
 
-function surfaceState(requestId: number, visible: boolean): FloatingCommsSurfaceState {
+function presentation(
+  value: FloatingCommsSurfaceIdentity,
+  sessionState: FloatingCommsSessionState = { appId: 'discord' }
+): FloatingCommsSurfacePresentation {
   return {
-    appId: 'discord',
-    requestId,
-    discord: discordSnapshot(),
+    ...value,
+    discord: {
+      connection: 'connected',
+      channelId: null,
+      channelName: null,
+      selfUserId: null,
+      participants: [],
+      credentialsConfigured: true,
+      lastError: null
+    },
     overlayOpen: false,
-    visible
+    sessionState,
+    visible: true
   }
-}
-
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolvePromise: ((value: T) => void) | null = null
-  const promise = new Promise<T>((resolve) => {
-    resolvePromise = resolve
-  })
-  if (!resolvePromise) {
-    throw new Error('Deferred promise resolver was not initialized')
-  }
-  return { promise, resolve: resolvePromise }
 }
 
 const mocks = vi.hoisted(() => ({
@@ -43,63 +45,56 @@ const mocks = vi.hoisted(() => ({
   getIntegrationStatuses: vi.fn(() => new Promise<never>(() => undefined)),
   measure: vi.fn(() => Promise.resolve()),
   action: vi.fn(() => Promise.resolve()),
+  detach: vi.fn<() => Promise<FloatingCommsSurfacePresentation>>(),
+  minimizeDetached: vi.fn(() => Promise.resolve()),
   discordCommand: vi.fn(),
-  offStateChanged: vi.fn(),
-  offVisibilityChanged: vi.fn(),
-  resizeCallback: null as (() => void) | null,
-  stateChanged: null as ((identity: { appId: 'discord'; requestId: number }) => void) | null,
-  visibilityChanged: null as
-    | ((visibility: { appId: 'discord'; requestId: number; visible: boolean }) => void)
-    | null,
-  runtime: null as {
-    commandDiscord: (method: string, params?: unknown) => Promise<unknown>
-    loadIntegrationStatuses: () => Promise<unknown>
-    setOverlayOpen: (open: boolean) => void
-  } | null,
+  stateChanged: null as ((identity: FloatingCommsSurfaceIdentity) => void) | null,
+  surfaceChanged: null as ((event: FloatingCommsSurfaceChanged) => void) | null,
+  visibilityChanged: null as ((visibility: FloatingCommsSurfaceVisibility) => void) | null,
+  sessionChange: null as ((sessionState: FloatingCommsSessionState) => void) | null,
+  resizeObserverCount: 0,
   offSettingsChanged: vi.fn()
 }))
 
 vi.mock('./components/floating-terminal/comms-rail/communication-managers', () => ({
   LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT: {},
   COMMUNICATION_MANAGER_REGISTRY: {
-    discord: {
-      Presentation: ({
-        isPopoverOpen,
-        children
-      }: {
-        isPopoverOpen: boolean
-        children: (presentation: {
-          status: { kind: 'idle' }
-          tooltip: string
-          content: React.ReactNode
-        }) => React.ReactNode
-      }) =>
-        children({
-          status: { kind: 'idle' },
-          tooltip: 'Discord',
-          content: (
-            <div data-testid="manager-content" data-visible={isPopoverOpen}>
-              Manager content
-            </div>
-          )
-        })
-    }
+    discord: { Presentation: MockPresentation },
+    'whatsapp-web': { Presentation: MockPresentation }
   },
-  CommunicationManagerRuntimeProvider: ({
-    children,
-    runtime
-  }: {
-    children: React.ReactNode
-    runtime: NonNullable<typeof mocks.runtime>
-  }) => {
-    mocks.runtime = runtime
-    void runtime.loadIntegrationStatuses()
-    return children
-  }
+  CommunicationManagerRuntimeProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
+function MockPresentation({
+  isPopoverOpen,
+  initialSessionState,
+  onSessionStateChange,
+  children
+}: {
+  isPopoverOpen: boolean
+  initialSessionState?: FloatingCommsSessionState
+  onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
+  children: (value: {
+    status: { kind: 'idle' }
+    tooltip: string
+    content: React.ReactNode
+    sessionState: FloatingCommsSessionState
+  }) => React.ReactNode
+}) {
+  mocks.sessionChange = onSessionStateChange ?? null
+  return children({
+    status: { kind: 'idle' },
+    tooltip: 'Manager',
+    content: <div data-testid="manager-content" data-visible={isPopoverOpen} />,
+    sessionState: initialSessionState ?? { appId: 'discord' }
+  })
+}
+
 vi.mock('./components/ui/tooltip', () => ({
-  TooltipProvider: ({ children }: { children: React.ReactNode }) => children
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => children
 }))
 
 vi.mock('./i18n/I18nProvider', () => ({
@@ -119,22 +114,18 @@ describe('floating communications renderer root', () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       new DOMRect(0, 0, 320, 420)
     )
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(431)
     vi.stubGlobal(
       'ResizeObserver',
       class {
-        constructor(callback: () => void) {
-          mocks.resizeCallback = callback
+        constructor() {
+          mocks.resizeObserverCount += 1
         }
         observe(): void {}
         disconnect(): void {}
       }
     )
     Object.assign(window, {
-      matchMedia: vi.fn(() => ({
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn()
-      })),
+      matchMedia: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
       api: {
         settings: {
           getSync: vi.fn(() => null),
@@ -146,128 +137,222 @@ describe('floating communications renderer root', () => {
           getIntegrationStatuses: mocks.getIntegrationStatuses,
           measure: mocks.measure,
           action: mocks.action,
+          detach: mocks.detach,
+          minimizeDetached: mocks.minimizeDetached,
           discordCommand: mocks.discordCommand,
           onStateChanged: vi.fn((callback: typeof mocks.stateChanged) => {
             mocks.stateChanged = callback
-            return mocks.offStateChanged
+            return vi.fn()
+          }),
+          onSurfaceChanged: vi.fn((callback: typeof mocks.surfaceChanged) => {
+            mocks.surfaceChanged = callback
+            return vi.fn()
           }),
           onVisibilityChanged: vi.fn((callback: typeof mocks.visibilityChanged) => {
             mocks.visibilityChanged = callback
-            return mocks.offVisibilityChanged
+            return vi.fn()
           })
         }
       }
     })
-    mocks.getState.mockResolvedValue(surfaceState(1, false))
-    mocks.discordCommand.mockResolvedValue(discordSnapshot())
+    mocks.getState.mockResolvedValue(presentation(identity('discord', 'detached')))
+    mocks.detach.mockResolvedValue(presentation(identity('discord', 'detached')))
+    mocks.discordCommand.mockResolvedValue(presentation(identity('discord', 'detached')).discord)
     mocks.stateChanged = null
+    mocks.surfaceChanged = null
     mocks.visibilityChanged = null
-    mocks.resizeCallback = null
-    mocks.runtime = null
+    mocks.sessionChange = null
+    mocks.resizeObserverCount = 0
   })
 
-  it('renders the registered manager inside the translated shared surface shell', async () => {
+  it('renders a draggable detached header and minimizes back to the panel', async () => {
     await act(async () => {
       await import('./floating-comms')
     })
     await vi.waitFor(() =>
       expect(document.querySelector('[data-testid="manager-content"]')).toBeTruthy()
     )
-    const openButton = Array.from(document.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Open Discord')
-    )
-    if (!openButton) {
-      throw new Error('Shared open-app action was not rendered')
+    const back = document.querySelector('button[aria-label="Back to panel"]')
+    if (!(back instanceof HTMLButtonElement)) {
+      throw new Error('Back to panel action was not rendered')
     }
-    await act(async () => openButton.click())
-    expect(mocks.action).toHaveBeenCalledWith({
-      type: 'open-app',
-      appId: 'discord',
-      requestId: 1
+    expect(back.closest('[data-drag-region="true"]')).toBeTruthy()
+    expect(back.getAttribute('data-no-drag')).toBe('true')
+    expect(mocks.resizeObserverCount).toBe(0)
+    expect(mocks.measure).not.toHaveBeenCalled()
+    await act(async () => back.click())
+    expect(mocks.minimizeDetached).toHaveBeenCalledWith({
+      ...identity('discord', 'detached'),
+      sessionState: { appId: 'discord' }
     })
-    expect(mocks.getState).toHaveBeenCalled()
-    expect(mocks.getIntegrationStatuses).toHaveBeenCalled()
-    expect(mocks.measure).toHaveBeenCalledWith({ requestId: 1, height: 420 })
-    await act(async () => {
-      await mocks.runtime?.commandDiscord('discordVoice.setSelfMute', { muted: true })
-    })
-    expect(mocks.discordCommand).toHaveBeenCalledWith({
-      appId: 'discord',
-      requestId: 1,
-      method: 'set-self-mute',
-      muted: true
-    })
-    const content = document.querySelector('[data-testid="manager-content"]')
-    expect(content?.getAttribute('data-visible')).toBe('false')
-    await act(async () =>
-      mocks.visibilityChanged?.({ appId: 'discord', requestId: 1, visible: true })
-    )
-    expect(content?.getAttribute('data-visible')).toBe('true')
-    await act(async () =>
-      mocks.visibilityChanged?.({ appId: 'discord', requestId: 1, visible: false })
-    )
-    expect(content?.getAttribute('data-visible')).toBe('false')
-    await act(async () =>
-      mocks.visibilityChanged?.({ appId: 'discord', requestId: 0, visible: true })
-    )
-    expect(content?.getAttribute('data-visible')).toBe('false')
-
-    mocks.measure.mockClear()
-    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(
-      new DOMRect(0, 0, 320, 500)
-    )
-    await act(async () => mocks.resizeCallback?.())
-    expect(mocks.measure).toHaveBeenCalledWith({ requestId: 1, height: 420 })
   })
 
-  it('keeps the latest state when initial and replacement refreshes resolve out of order', async () => {
-    const initial = deferred<FloatingCommsSurfaceState>()
-    const replacement = deferred<FloatingCommsSurfaceState>()
-    let response = initial.promise
-    mocks.getState.mockImplementation(() => response)
-
+  it('detaches an attached manager with the latest in-memory WhatsApp session', async () => {
+    const attached = identity('whatsapp-web', 'attached-native')
+    mocks.getState.mockResolvedValue(
+      presentation(attached, {
+        appId: 'whatsapp-web',
+        selectedConversationId: 4,
+        draft: 'first'
+      })
+    )
+    mocks.detach.mockResolvedValue(
+      presentation(
+        { ...attached, mode: 'detached' },
+        { appId: 'whatsapp-web', selectedConversationId: 4, draft: 'latest' }
+      )
+    )
     await act(async () => {
       await import('./floating-comms')
     })
-    await vi.waitFor(() => expect(mocks.stateChanged).not.toBeNull())
-    response = replacement.promise
-    await act(async () => mocks.stateChanged?.({ appId: 'discord', requestId: 2 }))
-    replacement.resolve(surfaceState(2, true))
-    await act(async () => await replacement.promise)
-    await vi.waitFor(() =>
-      expect(mocks.measure).toHaveBeenCalledWith({ requestId: 2, height: 420 })
+    await vi.waitFor(() => expect(mocks.sessionChange).not.toBeNull())
+    act(() =>
+      mocks.sessionChange?.({
+        appId: 'whatsapp-web',
+        selectedConversationId: 4,
+        draft: 'latest'
+      })
     )
-
-    initial.resolve(surfaceState(1, true))
-    await act(async () => await initial.promise)
-    const openButton = Array.from(document.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Open Discord')
-    )
-    if (!openButton) {
-      throw new Error('Shared open-app action was not rendered')
+    const detach = document.querySelector('button[aria-label="Detach overlay"]')
+    if (!(detach instanceof HTMLButtonElement)) {
+      throw new Error('Detach action was not rendered')
     }
-    mocks.action.mockClear()
-    await act(async () => openButton.click())
-    expect(mocks.action).toHaveBeenCalledWith({
-      type: 'open-app',
-      appId: 'discord',
-      requestId: 2
+    await act(async () => detach.click())
+    expect(mocks.detach).toHaveBeenCalledWith({
+      ...attached,
+      sessionState: {
+        appId: 'whatsapp-web',
+        selectedConversationId: 4,
+        draft: 'latest'
+      }
     })
   })
 
-  it('invalidates the initial refresh when its request closes before resolution', async () => {
-    const initial = deferred<FloatingCommsSurfaceState>()
-    mocks.getState.mockReturnValue(initial.promise)
-
+  it('keeps detached identity hidden on minimize and resumes after attached readoption', async () => {
+    const detached = identity('discord', 'detached')
     await act(async () => {
       await import('./floating-comms')
     })
     await vi.waitFor(() => expect(mocks.visibilityChanged).not.toBeNull())
+    const content = document.querySelector('[data-testid="manager-content"]')
+    expect(content?.getAttribute('data-visible')).toBe('true')
+    act(() => mocks.visibilityChanged?.({ ...detached, visible: false }))
+    expect(content?.getAttribute('data-visible')).toBe('false')
+    act(() => mocks.visibilityChanged?.({ ...detached, visible: true }))
+    expect(content?.getAttribute('data-visible')).toBe('true')
+    const back = document.querySelector('button[aria-label="Back to panel"]')
+    if (!(back instanceof HTMLButtonElement)) {
+      throw new Error('Back to panel action was not rendered')
+    }
+    await act(async () => back.click())
+    const requestsBeforeMinimize = mocks.getState.mock.calls.length
+    act(() => mocks.visibilityChanged?.({ ...detached, visible: false }))
+    expect(content?.getAttribute('data-visible')).toBe('false')
+    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeMinimize)
+
+    const returned = identity('discord', 'attached-native', 1, 20)
+    mocks.getState.mockResolvedValue({ ...presentation(returned), visible: false })
     await act(async () =>
-      mocks.visibilityChanged?.({ appId: 'discord', requestId: 1, visible: false })
+      mocks.surfaceChanged?.({
+        appId: 'discord',
+        previous: detached,
+        current: returned,
+        reason: 'minimized',
+        sessionState: { appId: 'discord' }
+      })
     )
-    initial.resolve(surfaceState(1, true))
-    await act(async () => await initial.promise)
-    expect(document.querySelector('[data-testid="manager-content"]')).toBeNull()
+    await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeMinimize + 1))
+    expect(content?.getAttribute('data-visible')).toBe('false')
+    act(() => mocks.visibilityChanged?.({ ...returned, visible: true }))
+    expect(content?.getAttribute('data-visible')).toBe('true')
+
+    const openApp = Array.from(document.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Open Discord')
+    )
+    if (!openApp) {
+      throw new Error('Open Discord action was not rendered')
+    }
+    await act(async () => openApp.click())
+    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...returned })
+  })
+
+  it('accepts exact authoritative surface transitions and keeps actions on the current identity', async () => {
+    const attached = identity('discord', 'attached-native', 1, 10)
+    const detached = identity('discord', 'detached', 1, 20)
+    const returned = identity('discord', 'attached-native', 1, 30)
+    mocks.getState.mockResolvedValue(presentation(attached))
+    await act(async () => {
+      await import('./floating-comms')
+    })
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="manager-content"]')).toBeTruthy()
+    )
+    const openApp = (): HTMLButtonElement => {
+      const button = Array.from(document.querySelectorAll('button')).find((candidate) =>
+        candidate.textContent?.includes('Open Discord')
+      )
+      if (!button) {
+        throw new Error('Open Discord action was not rendered')
+      }
+      return button
+    }
+    await act(async () => openApp().click())
+    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...attached })
+
+    mocks.getState.mockResolvedValue(presentation(detached))
+    const requestsBeforeStateEvent = mocks.getState.mock.calls.length
+    act(() => mocks.stateChanged?.(detached))
+    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent)
+    await act(async () =>
+      mocks.surfaceChanged?.({
+        appId: 'discord',
+        previous: attached,
+        current: detached,
+        reason: 'detached',
+        sessionState: { appId: 'discord' }
+      })
+    )
+    await vi.waitFor(() =>
+      expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent + 1)
+    )
+    await act(async () => openApp().click())
+    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...detached })
+
+    mocks.getState.mockResolvedValue(presentation(returned))
+    await act(async () =>
+      mocks.surfaceChanged?.({
+        appId: 'discord',
+        previous: detached,
+        current: returned,
+        reason: 'minimized',
+        sessionState: { appId: 'discord' }
+      })
+    )
+    await vi.waitFor(() =>
+      expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent + 2)
+    )
+    await act(async () => openApp().click())
+    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...returned })
+
+    const requestsBeforeStaleEvents = mocks.getState.mock.calls.length
+    act(() =>
+      mocks.surfaceChanged?.({
+        appId: 'whatsapp-web',
+        previous: null,
+        current: identity('whatsapp-web', 'detached', 2, 40),
+        reason: 'detached',
+        sessionState: { appId: 'whatsapp-web', selectedConversationId: null, draft: '' }
+      })
+    )
+    act(() =>
+      mocks.surfaceChanged?.({
+        appId: 'discord',
+        previous: attached,
+        current: detached,
+        reason: 'detached',
+        sessionState: { appId: 'discord' }
+      })
+    )
+    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStaleEvents)
   })
 })

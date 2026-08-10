@@ -1,27 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  handlers: new Map<string, (event: { sender: unknown }, value?: unknown) => unknown>(),
+  handlers: new Map<string, (event: { sender: WebContents }, value?: unknown) => unknown>(),
   owner: { isDestroyed: vi.fn(() => false) },
   fromWebContents: vi.fn(),
   isTrusted: vi.fn(),
-  isSurface: vi.fn(),
-  useDomFallback: vi.fn(),
-  open: vi.fn(() => true),
-  update: vi.fn(() => true as boolean | null),
-  close: vi.fn(),
-  resize: vi.fn(),
-  send: vi.fn(),
-  getIdentity: vi.fn(() => ({
-    appId: 'discord' as 'discord' | 'slack' | 'whatsapp-web',
-    requestId: 1
-  })),
-  isVisible: vi.fn(() => false),
+  controller: {
+    open: vi.fn(),
+    update: vi.fn(),
+    closeAttached: vi.fn(),
+    resize: vi.fn(),
+    detachSurface: vi.fn(),
+    minimizeDetached: vi.fn(),
+    focusDetached: vi.fn(),
+    closeDetached: vi.fn(),
+    disable: vi.fn(),
+    listPresentations: vi.fn(() => []),
+    getPresentation: vi.fn(() => null),
+    getStateForSender: vi.fn(),
+    isAttachedSender: vi.fn(),
+    isDetachedSender: vi.fn(),
+    assertDiscordCommandSender: vi.fn(),
+    handleAction: vi.fn()
+  },
   getStatuses: vi.fn(async () => []),
-  leaveCall: vi.fn(),
-  reconnect: vi.fn(),
-  setSelfDeaf: vi.fn(),
-  setSelfMute: vi.fn(),
   getSnapshot: vi.fn(() => ({
     connection: 'connected',
     channelId: null,
@@ -33,46 +35,58 @@ const mocks = vi.hoisted(() => ({
   }))
 }))
 
+type WebContents = {
+  isDestroyed: () => boolean
+  getType: () => string
+}
+
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: mocks.fromWebContents },
   ipcMain: {
-    handle: (channel: string, handler: (event: { sender: unknown }, value?: unknown) => unknown) =>
-      mocks.handlers.set(channel, handler)
+    handle: (
+      channel: string,
+      callback: (event: { sender: WebContents }, value?: unknown) => unknown
+    ) => mocks.handlers.set(channel, callback)
   }
 }))
-vi.mock('./ui', () => ({
-  isTrustedUIRenderer: mocks.isTrusted,
-  sendToTrustedUIRenderer: mocks.send
-}))
-vi.mock('../window/floating-comms-surface-window', () => ({
-  isFloatingCommsSurfaceRenderer: mocks.isSurface,
-  shouldUseFloatingCommsDomFallback: mocks.useDomFallback,
-  openFloatingCommsSurface: mocks.open,
-  updateFloatingCommsSurface: mocks.update,
-  closeFloatingCommsSurface: mocks.close,
-  resizeFloatingCommsSurface: mocks.resize,
-  getFloatingCommsSurfaceIdentity: mocks.getIdentity,
-  isFloatingCommsSurfaceVisible: mocks.isVisible
+vi.mock('./ui', () => ({ isTrustedUIRenderer: mocks.isTrusted }))
+vi.mock('../window/floating-comms-surface-controller', () => ({
+  floatingCommsSurfaceController: mocks.controller
 }))
 vi.mock('../messaging/communication-integration-registry', () => ({
   getCommunicationIntegrationStatuses: mocks.getStatuses
 }))
 vi.mock('../messaging/discord-voice-service', () => ({
   getDiscordVoiceSnapshot: mocks.getSnapshot,
-  leaveDiscordVoiceCall: mocks.leaveCall,
-  reconnectDiscordVoiceService: mocks.reconnect,
-  setDiscordVoiceSelfDeaf: mocks.setSelfDeaf,
-  setDiscordVoiceSelfMute: mocks.setSelfMute
+  leaveDiscordVoiceCall: vi.fn(),
+  reconnectDiscordVoiceService: vi.fn(),
+  setDiscordVoiceSelfDeaf: vi.fn(),
+  setDiscordVoiceSelfMute: vi.fn()
 }))
 vi.mock('../window/discord-voice-window', () => ({
   closeDiscordVoiceWindow: vi.fn(),
-  createOrFocusDiscordVoiceWindow: vi.fn(),
-  getDiscordVoiceOverlayState: vi.fn(() => ({ open: false }))
+  createOrFocusDiscordVoiceWindow: vi.fn()
 }))
 
 import { registerFloatingCommsSurfaceHandlers } from './floating-comms-surface'
 
-function handler(channel: string): (event: { sender: unknown }, value?: unknown) => unknown {
+const sender: WebContents = { isDestroyed: () => false, getType: () => 'window' }
+const identity = {
+  appId: 'discord' as const,
+  requestId: 1,
+  surfaceId: 10,
+  mode: 'attached-native' as const
+}
+const openRequest = {
+  appId: 'discord' as const,
+  requestId: 1,
+  anchor: { x: 20, y: 30, width: 40, height: 40 },
+  workspace: { x: 20, y: 20, width: 800, height: 500 },
+  height: 300
+}
+const updateRequest = { ...openRequest, ...identity, geometryRequestId: null }
+
+function handler(channel: string): (event: { sender: WebContents }, value?: unknown) => unknown {
   const registered = mocks.handlers.get(channel)
   if (!registered) {
     throw new Error(`Missing handler: ${channel}`)
@@ -80,196 +94,136 @@ function handler(channel: string): (event: { sender: unknown }, value?: unknown)
   return registered
 }
 
-const request = {
-  appId: 'discord',
-  requestId: 1,
-  anchor: { x: 20, y: 30, width: 40, height: 40 },
-  workspace: { x: 20, y: 20, width: 800, height: 500 },
-  height: 300
-}
-
-describe('registerFloatingCommsSurfaceHandlers', () => {
+describe('floating communications IPC', () => {
   beforeEach(() => {
     mocks.handlers.clear()
-    mocks.isTrusted.mockReset()
     mocks.fromWebContents.mockReset().mockReturnValue(mocks.owner)
-    mocks.owner.isDestroyed.mockReset().mockReturnValue(false)
-    mocks.isSurface.mockReset()
-    mocks.useDomFallback.mockReset().mockReturnValue(false)
-    mocks.open.mockReset().mockReturnValue(true)
-    mocks.update.mockReset().mockReturnValue(true)
-    mocks.close.mockReset()
-    mocks.resize.mockReset()
-    mocks.send.mockReset()
-    mocks.getIdentity.mockReset().mockReturnValue({ appId: 'discord', requestId: 1 })
-    mocks.isVisible.mockReset().mockReturnValue(false)
-    mocks.leaveCall.mockReset()
-    mocks.reconnect.mockReset()
-    mocks.setSelfDeaf.mockReset()
-    mocks.setSelfMute.mockReset()
+    mocks.isTrusted.mockReset().mockReturnValue(true)
+    for (const candidate of Object.values(mocks.controller)) {
+      if (typeof candidate === 'function' && 'mockClear' in candidate) {
+        candidate.mockClear()
+      }
+    }
+    mocks.controller.open.mockReturnValue({ identity })
+    mocks.controller.update.mockReturnValue({ identity })
+    mocks.controller.isAttachedSender.mockReturnValue(false)
+    mocks.controller.isDetachedSender.mockReturnValue(false)
+    mocks.controller.getStateForSender.mockReturnValue(null)
     registerFloatingCommsSurfaceHandlers()
   })
 
-  it('rejects untrusted senders and malformed anchors with explicit errors', () => {
-    const open = handler('floatingComms:open')
+  it('admits strict local open and update requests only', () => {
+    expect(handler('floatingComms:open')({ sender }, openRequest)).toEqual({ identity })
+    expect(mocks.controller.open).toHaveBeenCalledWith(mocks.owner, openRequest)
+    expect(handler('floatingComms:update')({ sender }, updateRequest)).toEqual({ identity })
+    expect(mocks.controller.update).toHaveBeenCalledWith(mocks.owner, updateRequest)
+    expect(() =>
+      handler('floatingComms:open')({ sender }, { ...openRequest, extra: true })
+    ).toThrow('floating_comms_open_denied')
+    expect(() =>
+      handler('floatingComms:update')({ sender }, { ...updateRequest, surfaceId: 0 })
+    ).toThrow('floating_comms_update_denied')
     mocks.isTrusted.mockReturnValue(false)
-    expect(() => open({ sender: {} }, request)).toThrow('floating_comms_open_denied')
-    mocks.isTrusted.mockReturnValue(true)
-    expect(() =>
-      open({ sender: {} }, { ...request, anchor: { ...request.anchor, width: 0 } })
-    ).toThrow('floating_comms_open_denied')
-    expect(() =>
-      open({ sender: {} }, { ...request, workspace: { ...request.workspace, height: 0 } })
-    ).toThrow('floating_comms_open_denied')
-    expect(() => open({ sender: {} }, { ...request, unexpected: true })).toThrow(
+    expect(() => handler('floatingComms:open')({ sender }, openRequest)).toThrow(
       'floating_comms_open_denied'
     )
-    expect(() =>
-      open({ sender: {} }, { ...request, anchor: { ...request.anchor, unexpected: true } })
-    ).toThrow('floating_comms_open_denied')
-    expect(mocks.open).not.toHaveBeenCalled()
   })
 
-  it('rejects a trusted renderer without a current owner window', () => {
-    mocks.isTrusted.mockReturnValue(true)
-    mocks.fromWebContents.mockReturnValue(null)
-    expect(() => handler('floatingComms:open')({ sender: {} }, request)).toThrow(
-      'floating_comms_open_denied'
-    )
-    expect(mocks.open).not.toHaveBeenCalled()
-  })
-
-  it('opens and updates the native surface only for admitted trusted requests', () => {
-    mocks.isTrusted.mockReturnValue(true)
-    const open = handler('floatingComms:open')
-    const update = handler('floatingComms:update')
-    const updateRequest = { ...request, geometryRequestId: null }
-    expect(open({ sender: {} }, request)).toEqual({ mode: 'window' })
-    expect(update({ sender: {} }, updateRequest)).toEqual({ mode: 'window' })
-    expect(mocks.open).toHaveBeenCalledWith(mocks.owner, request)
-    expect(mocks.update).toHaveBeenCalledWith(mocks.owner, updateRequest)
-  })
-
-  it('returns the DOM fallback when no external placement is available', () => {
-    mocks.isTrusted.mockReturnValue(true)
-    mocks.open.mockReturnValue(false)
-    expect(handler('floatingComms:open')({ sender: {} }, request)).toEqual({ mode: 'dom' })
-  })
-
-  it('returns the DOM fallback when repositioning loses external space', () => {
-    mocks.isTrusted.mockReturnValue(true)
-    mocks.update.mockReturnValue(false)
-    expect(
-      handler('floatingComms:update')({ sender: {} }, { ...request, geometryRequestId: null })
-    ).toEqual({ mode: 'dom' })
-  })
-
-  it('routes validated auxiliary actions and rejects main-window impersonation', () => {
-    const action = handler('floatingComms:action')
-    mocks.isSurface.mockReturnValue(false)
-    expect(() =>
-      action({ sender: {} }, { type: 'open-app', appId: 'discord', requestId: 1 })
-    ).toThrow('floating_comms_action_denied')
-    mocks.isSurface.mockReturnValue(true)
-    action(
-      { sender: {} },
-      { type: 'open-settings', appId: 'discord', requestId: 1, provider: 'discord' }
-    )
-    expect(mocks.send).toHaveBeenCalledWith('floatingComms:action', {
-      type: 'open-settings',
-      appId: 'discord',
-      requestId: 1,
-      provider: 'discord'
-    })
-    expect(mocks.close).toHaveBeenCalledWith(1)
-  })
-
-  it('ignores an auxiliary action from a stale surface request', () => {
-    const action = handler('floatingComms:action')
-    mocks.isSurface.mockReturnValue(true)
-    mocks.getIdentity.mockReturnValue({ appId: 'slack', requestId: 2 })
-    action({ sender: {} }, { type: 'open-app', appId: 'discord', requestId: 1 })
-    expect(mocks.send).not.toHaveBeenCalled()
-    expect(mocks.close).not.toHaveBeenCalled()
-  })
-
-  it('admits close only from the main or current auxiliary renderer', () => {
-    const close = handler('floatingComms:close')
+  it('requires exact attached identity for measure and auxiliary close', () => {
     mocks.isTrusted.mockReturnValue(false)
-    mocks.isSurface.mockReturnValue(false)
-    expect(() => close({ sender: {} }, { requestId: 1 })).toThrow('floating_comms_close_denied')
-
-    mocks.isTrusted.mockReturnValue(true)
-    close({ sender: {} })
-    close({ sender: {} }, { requestId: 1 })
-    mocks.isTrusted.mockReturnValue(false)
-    mocks.isSurface.mockReturnValue(true)
-    close({ sender: {} }, { requestId: 2 })
-    expect(() => close({ sender: {} })).toThrow('floating_comms_close_denied')
-    expect(mocks.close).toHaveBeenNthCalledWith(1, undefined)
-    expect(mocks.close).toHaveBeenNthCalledWith(2, 1)
-    expect(mocks.close).toHaveBeenNthCalledWith(3, 2)
-  })
-
-  it('reports the native BrowserWindow visibility without awaiting integration statuses', () => {
-    mocks.isSurface.mockReturnValue(true)
-    mocks.isVisible.mockReturnValue(false)
-    expect(handler('floatingComms:getState')({ sender: {} })).toMatchObject({
-      appId: 'discord',
-      requestId: 1,
-      visible: false
-    })
-    expect(mocks.getStatuses).not.toHaveBeenCalled()
-  })
-
-  it('loads integration statuses through a separate auxiliary-only handler', async () => {
-    mocks.isSurface.mockReturnValue(true)
-    await expect(handler('floatingComms:getIntegrationStatuses')({ sender: {} })).resolves.toEqual(
-      []
+    mocks.controller.isAttachedSender.mockReturnValue(true)
+    const measure = { ...identity, height: 280 }
+    handler('floatingComms:measure')({ sender }, measure)
+    handler('floatingComms:closeAttached')({ sender }, identity)
+    expect(mocks.controller.resize).toHaveBeenCalledWith(measure, 280)
+    expect(mocks.controller.closeAttached).toHaveBeenCalledWith(identity)
+    mocks.controller.isAttachedSender.mockReturnValue(false)
+    expect(() => handler('floatingComms:measure')({ sender }, measure)).toThrow(
+      'floating_comms_measure_denied'
     )
-    expect(mocks.getStatuses).toHaveBeenCalledOnce()
+    expect(() =>
+      handler('floatingComms:closeAttached')({ sender }, { ...identity, mode: 'detached' })
+    ).toThrow('floating_comms_close_denied')
   })
 
-  it('rejects auxiliary commands with unknown fields', async () => {
-    const command = handler('floatingComms:discordCommand')
-    const action = handler('floatingComms:action')
-    mocks.isSurface.mockReturnValue(true)
-    await expect(
-      command(
-        { sender: {} },
+  it('validates handoff shape and app pairing before detach', () => {
+    const detach = { ...identity, sessionState: { appId: 'discord' as const } }
+    handler('floatingComms:detach')({ sender }, detach)
+    expect(mocks.controller.detachSurface).toHaveBeenCalledWith(detach)
+    expect(() =>
+      handler('floatingComms:detach')(
+        { sender },
         {
-          appId: 'discord',
-          requestId: 1,
-          method: 'set-self-mute',
-          muted: true,
-          unexpected: true
+          ...identity,
+          sessionState: { appId: 'whatsapp-web', selectedConversationId: null, draft: 'x' }
         }
       )
-    ).rejects.toThrow('floating_comms_command_denied')
+    ).toThrow('floating_comms_detach_denied')
     expect(() =>
-      action({ sender: {} }, { type: 'open-settings', provider: 'discord', unexpected: true })
-    ).toThrow('floating_comms_action_denied')
+      handler('floatingComms:detach')(
+        { sender },
+        {
+          ...identity,
+          sessionState: { appId: 'discord', unexpected: true }
+        }
+      )
+    ).toThrow('floating_comms_detach_denied')
   })
 
-  it('admits Discord commands only for the current visible surface identity', async () => {
-    const command = handler('floatingComms:discordCommand')
-    const mute = {
-      appId: 'discord',
-      requestId: 1,
-      method: 'set-self-mute',
-      muted: true
+  it('allows minimize only from the exact detached renderer', () => {
+    const detached = {
+      ...identity,
+      mode: 'detached' as const,
+      sessionState: { appId: 'discord' as const }
     }
-    mocks.isSurface.mockReturnValue(true)
-    mocks.isVisible.mockReturnValue(true)
+    mocks.controller.isDetachedSender.mockReturnValue(true)
+    handler('floatingComms:minimizeDetached')({ sender }, detached)
+    expect(mocks.controller.minimizeDetached).toHaveBeenCalledWith(detached)
+    mocks.controller.isDetachedSender.mockReturnValue(false)
+    expect(() => handler('floatingComms:minimizeDetached')({ sender }, detached)).toThrow(
+      'floating_comms_minimize_denied'
+    )
+  })
 
-    await expect(command({ sender: {} }, mute)).resolves.toEqual(mocks.getSnapshot())
-    expect(mocks.setSelfMute).toHaveBeenCalledExactlyOnceWith(true)
+  it('keeps focus close disable and presentation reads local to the main renderer', () => {
+    const appRequest = { appId: 'discord' }
+    handler('floatingComms:focusDetached')({ sender }, appRequest)
+    handler('floatingComms:closeDetached')({ sender }, appRequest)
+    handler('floatingComms:disable')({ sender }, appRequest)
+    handler('floatingComms:listPresentations')({ sender })
+    handler('floatingComms:getPresentation')({ sender }, appRequest)
+    expect(mocks.controller.focusDetached).toHaveBeenCalledWith('discord')
+    expect(mocks.controller.closeDetached).toHaveBeenCalledWith('discord')
+    expect(mocks.controller.disable).toHaveBeenCalledWith('discord')
+    mocks.isTrusted.mockReturnValue(false)
+    expect(() => handler('floatingComms:listPresentations')({ sender })).toThrow(
+      'floating_comms_presentations_denied'
+    )
+  })
 
-    mocks.isVisible.mockReturnValue(false)
-    await expect(command({ sender: {} }, mute)).rejects.toThrow('floating_comms_command_stale')
-    mocks.isVisible.mockReturnValue(true)
-    mocks.getIdentity.mockReturnValue({ appId: 'slack', requestId: 2 })
-    await expect(command({ sender: {} }, mute)).rejects.toThrow('floating_comms_command_stale')
-    expect(mocks.setSelfMute).toHaveBeenCalledTimes(1)
+  it('routes state commands and actions only through exact surface ownership', async () => {
+    const presentation = {
+      ...identity,
+      discord: mocks.getSnapshot(),
+      overlayOpen: false,
+      sessionState: { appId: 'discord' as const },
+      visible: true
+    }
+    mocks.controller.getStateForSender.mockReturnValue(presentation)
+    expect(handler('floatingComms:getState')({ sender })).toEqual(presentation)
+    await expect(handler('floatingComms:getIntegrationStatuses')({ sender })).resolves.toEqual([])
+    const command = { ...identity, appId: 'discord' as const, method: 'reconnect' as const }
+    await handler('floatingComms:discordCommand')({ sender }, command)
+    expect(mocks.controller.assertDiscordCommandSender).toHaveBeenCalledWith(sender, command)
+    const action = { ...identity, type: 'open-app' as const }
+    handler('floatingComms:action')({ sender }, action)
+    expect(mocks.controller.handleAction).toHaveBeenCalledWith(sender, action)
+    mocks.controller.getStateForSender.mockReturnValue(null)
+    expect(() => handler('floatingComms:getState')({ sender })).toThrow(
+      'floating_comms_state_denied'
+    )
+    expect(() => handler('floatingComms:action')({ sender }, { ...action, surfaceId: 0 })).toThrow(
+      'floating_comms_action_denied'
+    )
   })
 })

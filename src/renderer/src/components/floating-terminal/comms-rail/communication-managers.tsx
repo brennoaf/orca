@@ -7,6 +7,7 @@ import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId
 } from '../../../../../shared/communication-integrations'
+import type { FloatingCommsSessionState } from '../../../../../shared/floating-comms-surface'
 import {
   listEnabledFloatingWorkspaceApps,
   type FloatingWorkspaceApp,
@@ -54,10 +55,13 @@ export type CommunicationManagerPresentation = {
   status: CommunicationManagerStatus
   tooltip: string
   content: ReactNode
+  sessionState: FloatingCommsSessionState
 }
 
 type CommunicationManagerPresentationProps = {
   isPopoverOpen: boolean
+  initialSessionState?: FloatingCommsSessionState
+  onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
   children: (presentation: CommunicationManagerPresentation) => ReactNode
 }
 
@@ -250,6 +254,7 @@ function DiscordPresentation({
       {children({
         status,
         tooltip,
+        sessionState: { appId: 'discord' },
         content: (
           <DiscordContent
             snapshot={snapshot}
@@ -340,6 +345,7 @@ function SlackPresentation({
           tooltip: translate('communicationRail.loadingTooltip', '{{app}} — loading', {
             app: 'Slack'
           }),
+          sessionState: { appId: 'slack' },
           content: <CommunicationManagerStatusLoadingContent providerName="Slack" />
         })}
       </>
@@ -352,6 +358,7 @@ function SlackPresentation({
         tooltip: translate('communicationRail.unavailableTooltip', '{{app}} — unavailable', {
           app: 'Slack'
         }),
+        sessionState: { appId: 'slack' },
         content: error ? (
           <CommunicationManagerStatusErrorContent error={error} onRetry={refresh} />
         ) : (
@@ -385,6 +392,12 @@ export const COMMUNICATION_MANAGER_REGISTRY: Record<FloatingWorkspaceAppId, Comm
     slack: { Presentation: SlackPresentation },
     discord: { Presentation: DiscordPresentation }
   }
+
+export function createCommunicationManagerSessionState(
+  appId: FloatingWorkspaceAppId
+): FloatingCommsSessionState {
+  return appId === 'whatsapp-web' ? { appId, selectedConversationId: null, draft: '' } : { appId }
+}
 
 export function listEnabledCommunicationManagers(
   preferences: FloatingWorkspaceAppPreferences | undefined

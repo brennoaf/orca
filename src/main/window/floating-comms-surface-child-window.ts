@@ -22,9 +22,10 @@ async function loadFloatingCommsSurface(window: BrowserWindow): Promise<void> {
 export function createFloatingCommsSurfaceChildWindow(
   parent: BrowserWindow,
   lifecycle: {
-    close: (requestId: number) => void
+    close: (identity: FloatingCommsSurfaceIdentity) => void
     isCurrent: (window: BrowserWindow) => boolean
     loaded: (window: BrowserWindow) => FloatingCommsSurfaceIdentity | null
+    loadFailed?: (window: BrowserWindow, error: unknown) => void
     closed: (window: BrowserWindow) => void
     takeVisible: () => FloatingCommsSurfaceIdentity | null
     visible: () => FloatingCommsSurfaceIdentity | null
@@ -41,7 +42,7 @@ export function createFloatingCommsSurfaceChildWindow(
   window.on('blur', () => {
     const visibleRequest = lifecycle.isCurrent(window) ? lifecycle.visible() : null
     if (visibleRequest) {
-      lifecycle.close(visibleRequest.requestId)
+      lifecycle.close(visibleRequest)
     }
   })
   window.on('show', () => {
@@ -70,7 +71,7 @@ export function createFloatingCommsSurfaceChildWindow(
       event.preventDefault()
       const visibleRequest = lifecycle.visible()
       if (visibleRequest) {
-        lifecycle.close(visibleRequest.requestId)
+        lifecycle.close(visibleRequest)
       }
     }
   })
@@ -88,7 +89,9 @@ export function createFloatingCommsSurfaceChildWindow(
   })
   void loadFloatingCommsSurface(window).catch((error: unknown) => {
     console.error('[floating-comms] renderer load failed:', error)
-    if (lifecycle.isCurrent(window)) {
+    if (lifecycle.loadFailed) {
+      lifecycle.loadFailed(window, error)
+    } else if (lifecycle.isCurrent(window)) {
       window.destroy()
     }
   })

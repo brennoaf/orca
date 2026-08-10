@@ -10,6 +10,7 @@ import type {
   ZApiMessageSnapshot
 } from '../../../../../shared/communication-integrations'
 import { emptyDiscordVoiceSnapshot } from '../../../../../shared/discord-voice'
+import type { FloatingCommsWhatsAppSessionState } from '../../../../../shared/floating-comms-surface'
 import {
   CommunicationManagerRuntimeProvider,
   type CommunicationManagerRuntime,
@@ -116,14 +117,26 @@ function renderManager(
 
 function ManagerHarness({
   runtime,
-  isPopoverOpen
+  isPopoverOpen,
+  initialSessionState,
+  onSessionStateChange
 }: {
   runtime: CommunicationManagerRuntime
   isPopoverOpen: boolean
+  initialSessionState?: FloatingCommsWhatsAppSessionState
+  onSessionStateChange?: (sessionState: FloatingCommsWhatsAppSessionState) => void
 }): React.JSX.Element {
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
-      <ZApiCommunicationManagerPresentation isPopoverOpen={isPopoverOpen}>
+      <ZApiCommunicationManagerPresentation
+        isPopoverOpen={isPopoverOpen}
+        initialSessionState={initialSessionState}
+        onSessionStateChange={(sessionState) => {
+          if (sessionState.appId === 'whatsapp-web') {
+            onSessionStateChange?.(sessionState)
+          }
+        }}
+      >
         {(presentation) => <div data-status={presentation.status.kind}>{presentation.content}</div>}
       </ZApiCommunicationManagerPresentation>
     </CommunicationManagerRuntimeProvider>
@@ -351,6 +364,33 @@ describe('ZApiCommunicationManager', () => {
       limit: 20,
       offset: 0
     })
+  })
+
+  it('restores and reports the selected conversation draft in memory', async () => {
+    const client = createClient()
+    const onSessionStateChange = vi.fn()
+    render(
+      <ManagerHarness
+        runtime={createRuntime(client)}
+        isPopoverOpen
+        initialSessionState={{
+          appId: 'whatsapp-web',
+          selectedConversationId: 7,
+          draft: 'preserved draft'
+        }}
+        onSessionStateChange={onSessionStateChange}
+      />
+    )
+    const reply = await screen.findByLabelText('Reply on WhatsApp')
+    expect((reply as HTMLTextAreaElement).value).toBe('preserved draft')
+    await userEvent.type(reply, ' updated')
+    await waitFor(() =>
+      expect(onSessionStateChange).toHaveBeenLastCalledWith({
+        appId: 'whatsapp-web',
+        selectedConversationId: 7,
+        draft: 'preserved draft updated'
+      })
+    )
   })
 
   it('sends by conversation id and warns without retrying an ambiguous send', async () => {

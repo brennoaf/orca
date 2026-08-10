@@ -14,8 +14,9 @@ import type { CommunicationProviderId } from '../../shared/communication-integra
 import { FLOATING_WORKSPACE_APPS } from '../../shared/floating-workspace-apps'
 import type {
   FloatingCommsDiscordCommand,
+  FloatingCommsSessionState,
   FloatingCommsSurfaceIdentity,
-  FloatingCommsSurfaceState
+  FloatingCommsSurfacePresentation
 } from '../../shared/floating-comms-surface'
 import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
 import type { GlobalSettings } from '../../shared/types'
@@ -51,15 +52,31 @@ function sameSurfaceIdentity(
   left: FloatingCommsSurfaceIdentity | null,
   right: FloatingCommsSurfaceIdentity
 ): boolean {
-  return left?.appId === right.appId && left.requestId === right.requestId
+  return (
+    left?.appId === right.appId &&
+    left.requestId === right.requestId &&
+    left.surfaceId === right.surfaceId &&
+    left.mode === right.mode
+  )
+}
+
+function surfaceIdentityOf(identity: FloatingCommsSurfaceIdentity): FloatingCommsSurfaceIdentity {
+  const { appId, requestId, surfaceId, mode } = identity
+  return { appId, requestId, surfaceId, mode }
+}
+
+function discordIdentityOf(
+  identity: FloatingCommsSurfaceIdentity
+): Omit<FloatingCommsSurfaceIdentity, 'appId'> & { appId: 'discord' } {
+  const { requestId, surfaceId, mode } = identity
+  return { appId: 'discord', requestId, surfaceId, mode }
 }
 
 function toDiscordCommand(
   method: string,
-  requestId: number,
+  identity: Omit<FloatingCommsSurfaceIdentity, 'appId'> & { appId: 'discord' },
   params?: unknown
 ): FloatingCommsDiscordCommand | null {
-  const identity = { appId: 'discord' as const, requestId }
   if (method === 'discordVoice.getState') {
     return null
   }
@@ -121,13 +138,16 @@ function FloatingCommsAppearanceSync(): null {
 }
 
 function FloatingCommsRoot(): React.JSX.Element {
-  const [state, setState] = useState<FloatingCommsSurfaceState | null>(null)
+  const [state, setState] = useState<FloatingCommsSurfacePresentation | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
+  const latestSessionRef = useRef<FloatingCommsSessionState | null>(null)
   const refreshSequenceRef = useRef(0)
   const latestIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
   const mountedRef = useRef(false)
   const refresh = useCallback(
-    async (expectedIdentity?: FloatingCommsSurfaceIdentity): Promise<FloatingCommsSurfaceState> => {
+    async (
+      expectedIdentity?: FloatingCommsSurfaceIdentity
+    ): Promise<FloatingCommsSurfacePresentation | null> => {
       const sequence = ++refreshSequenceRef.current
       if (expectedIdentity) {
         latestIdentityRef.current = expectedIdentity
@@ -136,9 +156,10 @@ function FloatingCommsRoot(): React.JSX.Element {
       if (
         mountedRef.current &&
         refreshSequenceRef.current === sequence &&
-        (!expectedIdentity || sameSurfaceIdentity(next, expectedIdentity))
+        (!expectedIdentity || (next && sameSurfaceIdentity(next, expectedIdentity)))
       ) {
         latestIdentityRef.current = next
+        latestSessionRef.current = next?.sessionState ?? null
         setState(next)
       }
       return next
@@ -151,28 +172,47 @@ function FloatingCommsRoot(): React.JSX.Element {
     const run = (identity?: FloatingCommsSurfaceIdentity): void => {
       void refresh(identity).catch((error: unknown) => reportSurfaceError('refresh', error))
     }
-    const off = window.api.floatingComms.onStateChanged((identity) => {
-      if (!disposed) {
+    const off = window.api.floatingComms.onSurfaceChanged((event) => {
+      if (disposed) {
+        return
+      }
+      const current = latestIdentityRef.current
+      if (
+        event.current &&
+        event.current.appId === event.appId &&
+        ((!current && !event.previous) ||
+          (current?.appId === event.appId &&
+            event.previous &&
+            sameSurfaceIdentity(current, event.previous)))
+      ) {
+        run(event.current)
+      } else if (
+        !event.current &&
+        current &&
+        event.previous &&
+        sameSurfaceIdentity(current, event.previous)
+      ) {
+        refreshSequenceRef.current += 1
+        latestIdentityRef.current = null
+        latestSessionRef.current = null
+        setState(null)
+      }
+    })
+    const offStateChanged = window.api.floatingComms.onStateChanged((identity) => {
+      const current = latestIdentityRef.current
+      if (!disposed && current && sameSurfaceIdentity(current, identity)) {
         run(identity)
       }
     })
     const offVisibilityChanged = window.api.floatingComms.onVisibilityChanged((visibility) => {
-      if (!disposed) {
-        if (
-          !visibility.visible &&
-          (!latestIdentityRef.current || sameSurfaceIdentity(latestIdentityRef.current, visibility))
-        ) {
-          refreshSequenceRef.current += 1
-          latestIdentityRef.current = null
-        }
-        setState((current) =>
-          current &&
-          current.appId === visibility.appId &&
-          current.requestId === visibility.requestId
-            ? { ...current, visible: visibility.visible }
-            : current
-        )
+      if (disposed || !sameSurfaceIdentity(latestIdentityRef.current, visibility)) {
+        return
       }
+      setState((current) =>
+        current && sameSurfaceIdentity(current, visibility)
+          ? { ...current, visible: visibility.visible }
+          : current
+      )
     })
     run()
     return () => {
@@ -180,38 +220,44 @@ function FloatingCommsRoot(): React.JSX.Element {
       mountedRef.current = false
       refreshSequenceRef.current += 1
       latestIdentityRef.current = null
+      latestSessionRef.current = null
       off()
+      offStateChanged()
       offVisibilityChanged()
     }
   }, [refresh])
-  const surfaceRequestId = state?.requestId
+  const surfaceIdentity = state ? surfaceIdentityOf(state) : null
   useLayoutEffect(() => {
     const element = surfaceRef.current
-    if (!element || surfaceRequestId === undefined) {
+    if (!element || !surfaceIdentity || surfaceIdentity.mode === 'detached') {
       return
     }
     const measure = (): void => {
       const height = clampFloatingCommsSurfaceHeight(element.getBoundingClientRect().height)
       void window.api.floatingComms
-        .measure({ requestId: surfaceRequestId, height })
+        .measure({ ...surfaceIdentity, height })
         .catch((error: unknown) => reportSurfaceError('measure', error))
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [surfaceRequestId])
-  const discordRequestId = state?.appId === 'discord' ? state.requestId : null
+  }, [surfaceIdentity])
+  const discordIdentity = state?.appId === 'discord' ? state : null
   const runtime = useMemo<CommunicationManagerRuntime>(
     () => ({
       commandDiscord: async (method: string, params?: unknown) => {
-        if (discordRequestId === null) {
+        if (!discordIdentity) {
           throw new Error('floating_comms_discord_surface_inactive')
         }
-        const command = toDiscordCommand(method, discordRequestId, params)
-        const identity = { appId: 'discord' as const, requestId: discordRequestId }
+        const identity = discordIdentityOf(discordIdentity)
+        const command = toDiscordCommand(method, identity, params)
         if (!command) {
-          return (await refresh(identity)).discord
+          const next = await refresh(identity)
+          if (!next) {
+            throw new Error('floating_comms_discord_surface_inactive')
+          }
+          return next.discord
         }
         const discord = await window.api.floatingComms.discordCommand(command)
         if (sameSurfaceIdentity(latestIdentityRef.current, identity)) {
@@ -223,24 +269,23 @@ function FloatingCommsRoot(): React.JSX.Element {
       },
       loadIntegrationStatuses: () => window.api.floatingComms.getIntegrationStatuses(),
       openSettings: (provider: CommunicationProviderId) => {
-        if (!state?.appId || state.requestId === undefined) {
+        if (!state) {
           return
         }
         void window.api.floatingComms
           .action({
             type: 'open-settings',
             provider,
-            appId: state.appId,
-            requestId: state.requestId
+            ...surfaceIdentityOf(state)
           })
           .catch((error: unknown) => reportSurfaceError('open settings', error))
       },
       overlayOpen: state?.overlayOpen ?? false,
       setOverlayOpen: (open: boolean) => {
-        if (discordRequestId === null) {
+        if (!discordIdentity) {
           return
         }
-        const identity = { appId: 'discord' as const, requestId: discordRequestId }
+        const identity = discordIdentityOf(discordIdentity)
         void window.api.floatingComms
           .discordCommand({ ...identity, method: 'set-overlay-open', open })
           .then(async () => {
@@ -252,7 +297,7 @@ function FloatingCommsRoot(): React.JSX.Element {
       },
       zApi: LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT
     }),
-    [discordRequestId, refresh, state?.appId, state?.overlayOpen, state?.requestId]
+    [discordIdentity, refresh, state]
   )
   if (!state) {
     return <div className="h-screen rounded-md border border-border bg-popover" />
@@ -265,7 +310,13 @@ function FloatingCommsRoot(): React.JSX.Element {
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
       <TooltipProvider>
-        <Manager isPopoverOpen={state.visible}>
+        <Manager
+          isPopoverOpen={state.visible}
+          initialSessionState={state.sessionState}
+          onSessionStateChange={(sessionState) => {
+            latestSessionRef.current = sessionState
+          }}
+        >
           {(presentation) => (
             <div
               ref={surfaceRef}
@@ -274,10 +325,25 @@ function FloatingCommsRoot(): React.JSX.Element {
               <CommunicationManagerSurfaceContent
                 app={app}
                 content={presentation.content}
+                detached={state.mode === 'detached'}
                 onOpenApp={() => {
                   void window.api.floatingComms
-                    .action({ type: 'open-app', appId: state.appId, requestId: state.requestId })
+                    .action({ type: 'open-app', ...surfaceIdentityOf(state) })
                     .catch((error: unknown) => reportSurfaceError('open app', error))
+                }}
+                onToggleDetached={() => {
+                  const sessionState = latestSessionRef.current ?? presentation.sessionState
+                  const operation =
+                    state.mode === 'detached'
+                      ? window.api.floatingComms.minimizeDetached
+                      : window.api.floatingComms.detach
+                  void operation({ ...surfaceIdentityOf(state), sessionState }).catch(
+                    (error: unknown) =>
+                      reportSurfaceError(
+                        state.mode === 'detached' ? 'return to panel' : 'detach',
+                        error
+                      )
+                  )
                 }}
               />
             </div>

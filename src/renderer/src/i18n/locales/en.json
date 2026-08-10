@@ -15062,6 +15062,9 @@
     }
   },
   "communicationRail": {
+    "detach": "Detach overlay",
+    "focusDetached": "Focus {{app}} detached overlay",
+    "returnToPanel": "Back to panel",
     "overlaySeparate": "Separate overlay",
     "overlaySeparateDescription": "Appears automatically when you join a call.",
     "openApp": "Open {{app}}",

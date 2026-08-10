@@ -19,14 +19,21 @@ import type {
 } from '../shared/dashboard-snapshot'
 import type {
   FloatingCommsAction,
-  FloatingCommsCloseRequest,
+  FloatingCommsCloseAttachedRequest,
+  FloatingCommsCloseDetachedRequest,
+  FloatingCommsDetachRequest,
+  FloatingCommsDisableRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsFocusDetachedRequest,
   FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
+  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
+  FloatingCommsPresentationTarget,
+  FloatingCommsSurfaceChanged,
   FloatingCommsSurfaceIdentity,
-  FloatingCommsSurfaceState,
+  FloatingCommsSurfacePresentation,
   FloatingCommsSurfaceVisibility,
   FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
@@ -1198,18 +1205,29 @@ export type PreloadApi = {
   app: AppApi
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
-    update: (request: FloatingCommsUpdateRequest) => Promise<FloatingCommsOpenResult | null>
-    close: (request?: FloatingCommsCloseRequest) => Promise<void>
+    update: (request: FloatingCommsUpdateRequest) => Promise<FloatingCommsOpenResult>
+    closeAttached: (request: FloatingCommsCloseAttachedRequest) => Promise<void>
+    detach: (request: FloatingCommsDetachRequest) => Promise<FloatingCommsSurfacePresentation>
+    minimizeDetached: (request: FloatingCommsMinimizeDetachedRequest) => Promise<void>
+    focusDetached: (
+      request: FloatingCommsFocusDetachedRequest
+    ) => Promise<FloatingCommsSurfacePresentation>
+    closeDetached: (request: FloatingCommsCloseDetachedRequest) => Promise<void>
+    disable: (request: FloatingCommsDisableRequest) => Promise<void>
+    listPresentations: () => Promise<FloatingCommsSurfacePresentation[]>
+    getPresentation: (
+      target: FloatingCommsPresentationTarget
+    ) => Promise<FloatingCommsSurfacePresentation | null>
     measure: (request: FloatingCommsMeasureRequest) => Promise<void>
-    getState: () => Promise<FloatingCommsSurfaceState>
+    getState: () => Promise<FloatingCommsSurfacePresentation | null>
     getIntegrationStatuses: () => Promise<readonly CommunicationIntegrationStatus[]>
     discordCommand: (command: FloatingCommsDiscordCommand) => Promise<DiscordVoiceSnapshot>
     action: (action: FloatingCommsAction) => Promise<void>
     onStateChanged: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
+    onSurfaceChanged: (callback: (change: FloatingCommsSurfaceChanged) => void) => () => void
     onVisibilityChanged: (
       callback: (visibility: FloatingCommsSurfaceVisibility) => void
     ) => () => void
-    onClosed: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
     onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void) => () => void
     onGeometryRequested: (callback: (request: FloatingCommsGeometryRequest) => void) => () => void
     onAction: (callback: (action: FloatingCommsAction) => void) => () => void

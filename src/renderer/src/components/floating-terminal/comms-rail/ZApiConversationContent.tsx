@@ -62,12 +62,16 @@ export function ZApiConversationContent({
   active,
   conversation,
   client,
+  draft,
+  onDraftChange,
   onBack,
   onStatus
 }: {
   active: boolean
   conversation: ZApiConversationSnapshot
   client: ZApiCommunicationManagerClient
+  draft: string
+  onDraftChange: (draft: string) => void
   onBack: () => void
   onStatus: (status: ZApiCommunicationIntegrationStatus) => void
 }): React.JSX.Element {
@@ -76,7 +80,6 @@ export function ZApiConversationContent({
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [refreshSequence, setRefreshSequence] = useState(0)
@@ -148,7 +151,9 @@ export function ZApiConversationContent({
       const result = await client.sendReply({ conversationId: conversation.id, text })
       onStatus(result.status)
       if (result.ok) {
-        setDraft((current) => (current.trim() === text ? '' : current))
+        if (draft.trim() === text) {
+          onDraftChange('')
+        }
       } else if (result.error.code === 'ambiguous_send') {
         setSendError(
           translate(
@@ -249,7 +254,7 @@ export function ZApiConversationContent({
           placeholder={translate('communicationRail.zApi.replyPlaceholder', 'Write a reply…')}
           className="w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-2 text-xs shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30"
           disabled={sending}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => onDraftChange(event.target.value)}
         />
         {sendError ? (
           <p className="text-xs text-destructive" role="alert">

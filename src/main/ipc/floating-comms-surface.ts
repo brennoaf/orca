@@ -2,14 +2,18 @@ import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { z } from 'zod'
 import type {
   FloatingCommsAction,
-  FloatingCommsCloseRequest,
+  FloatingCommsCloseAttachedRequest,
+  FloatingCommsDetachRequest,
   FloatingCommsDiscordCommand,
   FloatingCommsMeasureRequest,
+  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
-  FloatingCommsSurfaceState,
   FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
-import { FLOATING_COMMS_SURFACE_MAX_HEIGHT } from '../../shared/floating-comms-surface'
+import {
+  FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH,
+  FLOATING_COMMS_SURFACE_MAX_HEIGHT
+} from '../../shared/floating-comms-surface'
 import {
   FLOATING_WORKSPACE_APPS,
   type FloatingWorkspaceAppId
@@ -24,26 +28,25 @@ import {
 } from '../messaging/discord-voice-service'
 import {
   closeDiscordVoiceWindow,
-  createOrFocusDiscordVoiceWindow,
-  getDiscordVoiceOverlayState
+  createOrFocusDiscordVoiceWindow
 } from '../window/discord-voice-window'
-import {
-  closeFloatingCommsSurface,
-  getFloatingCommsSurfaceIdentity,
-  isFloatingCommsSurfaceRenderer,
-  isFloatingCommsSurfaceVisible,
-  openFloatingCommsSurface,
-  resizeFloatingCommsSurface,
-  shouldUseFloatingCommsDomFallback,
-  updateFloatingCommsSurface
-} from '../window/floating-comms-surface-window'
-import { isTrustedUIRenderer, sendToTrustedUIRenderer } from './ui'
+import { floatingCommsSurfaceController } from '../window/floating-comms-surface-controller'
+import { isTrustedUIRenderer } from './ui'
 
 function isAppId(value: unknown): value is FloatingWorkspaceAppId {
   return typeof value === 'string' && FLOATING_WORKSPACE_APPS.some((app) => app.id === value)
 }
 
+const PositiveSafeInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const FloatingCommsAppId = z.custom<FloatingWorkspaceAppId>(isAppId)
+const FloatingCommsMode = z.enum(['attached-native', 'attached-dom', 'detached'])
+const FloatingCommsIdentityFields = {
+  appId: FloatingCommsAppId,
+  requestId: PositiveSafeInteger,
+  surfaceId: PositiveSafeInteger,
+  mode: FloatingCommsMode
+}
+const FloatingCommsIdentitySchema = z.object(FloatingCommsIdentityFields).strict()
 const FloatingCommsAnchor = z
   .object({
     x: z.number().finite(),
@@ -55,7 +58,7 @@ const FloatingCommsAnchor = z
 const FloatingCommsOpenRequestSchema: z.ZodType<FloatingCommsOpenRequest> = z
   .object({
     appId: FloatingCommsAppId,
-    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    requestId: PositiveSafeInteger,
     anchor: FloatingCommsAnchor,
     workspace: FloatingCommsAnchor,
     height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
@@ -63,26 +66,47 @@ const FloatingCommsOpenRequestSchema: z.ZodType<FloatingCommsOpenRequest> = z
   .strict()
 const FloatingCommsUpdateRequestSchema: z.ZodType<FloatingCommsUpdateRequest> = z
   .object({
-    appId: FloatingCommsAppId,
-    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    ...FloatingCommsIdentityFields,
     anchor: FloatingCommsAnchor,
     workspace: FloatingCommsAnchor,
     height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT),
-    geometryRequestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
+    geometryRequestId: PositiveSafeInteger.nullable()
   })
   .strict()
-const FloatingCommsCloseRequestSchema: z.ZodType<FloatingCommsCloseRequest> = z
-  .object({ requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
-  .strict()
+const FloatingCommsCloseAttachedRequestSchema: z.ZodType<FloatingCommsCloseAttachedRequest> =
+  FloatingCommsIdentitySchema
 const FloatingCommsMeasureRequestSchema: z.ZodType<FloatingCommsMeasureRequest> = z
   .object({
-    requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    ...FloatingCommsIdentityFields,
     height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
   })
   .strict()
+const FloatingCommsSessionStateSchema = z.discriminatedUnion('appId', [
+  z
+    .object({
+      appId: z.literal('whatsapp-web'),
+      selectedConversationId: z.number().finite().nullable(),
+      draft: z.string().max(FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH)
+    })
+    .strict(),
+  z.object({ appId: z.literal('slack') }).strict(),
+  z.object({ appId: z.literal('discord') }).strict()
+])
+const FloatingCommsDetachRequestSchema: z.ZodType<FloatingCommsDetachRequest> = z
+  .object({
+    ...FloatingCommsIdentityFields,
+    sessionState: FloatingCommsSessionStateSchema
+  })
+  .strict()
+  .refine((request) => request.appId === request.sessionState.appId)
+const FloatingCommsMinimizeDetachedRequestSchema: z.ZodType<FloatingCommsMinimizeDetachedRequest> =
+  FloatingCommsDetachRequestSchema
+const FloatingCommsAppRequestSchema = z.object({ appId: FloatingCommsAppId }).strict()
 const FloatingCommsDiscordCommandIdentity = {
   appId: z.literal('discord'),
-  requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+  requestId: PositiveSafeInteger,
+  surfaceId: PositiveSafeInteger,
+  mode: FloatingCommsMode
 }
 const FloatingCommsDiscordCommandSchema: z.ZodType<FloatingCommsDiscordCommand> =
   z.discriminatedUnion('method', [
@@ -111,18 +135,11 @@ const FloatingCommsDiscordCommandSchema: z.ZodType<FloatingCommsDiscordCommand> 
       .strict()
   ])
 const FloatingCommsActionSchema: z.ZodType<FloatingCommsAction> = z.discriminatedUnion('type', [
-  z
-    .object({
-      type: z.literal('open-app'),
-      appId: FloatingCommsAppId,
-      requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-    })
-    .strict(),
+  z.object({ type: z.literal('open-app'), ...FloatingCommsIdentityFields }).strict(),
   z
     .object({
       type: z.literal('open-settings'),
-      appId: FloatingCommsAppId,
-      requestId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      ...FloatingCommsIdentityFields,
       provider: z.enum(['discord', 'slack', 'z-api'])
     })
     .strict()
@@ -152,99 +169,136 @@ function getFloatingCommsOwner(sender: WebContents): BrowserWindow | null {
   return owner && !owner.isDestroyed() ? owner : null
 }
 
+function requireTrustedOwner(sender: WebContents, error: string): BrowserWindow {
+  const owner = getFloatingCommsOwner(sender)
+  if (!owner) {
+    throw new Error(error)
+  }
+  return owner
+}
+
 export function registerFloatingCommsSurfaceHandlers(): void {
   ipcMain.handle('floatingComms:open', (event, value: unknown) => {
     const request = FloatingCommsOpenRequestSchema.safeParse(value)
-    const owner = getFloatingCommsOwner(event.sender)
-    if (!owner || !request.success) {
+    if (!request.success) {
       throw new Error('floating_comms_open_denied')
     }
-    if (shouldUseFloatingCommsDomFallback()) {
-      return { mode: 'dom' as const }
-    }
-    return {
-      mode: openFloatingCommsSurface(owner, request.data) ? ('window' as const) : ('dom' as const)
-    }
+    return floatingCommsSurfaceController.open(
+      requireTrustedOwner(event.sender, 'floating_comms_open_denied'),
+      request.data
+    )
   })
   ipcMain.handle('floatingComms:update', (event, value: unknown) => {
     const request = FloatingCommsUpdateRequestSchema.safeParse(value)
-    const owner = getFloatingCommsOwner(event.sender)
-    if (!owner || !request.success) {
+    if (!request.success) {
       throw new Error('floating_comms_update_denied')
     }
-    const usesWindow = updateFloatingCommsSurface(owner, request.data)
-    return usesWindow === null
-      ? null
-      : { mode: usesWindow ? ('window' as const) : ('dom' as const) }
+    return floatingCommsSurfaceController.update(
+      requireTrustedOwner(event.sender, 'floating_comms_update_denied'),
+      request.data
+    )
   })
-  ipcMain.handle('floatingComms:close', (event, value: unknown) => {
-    const request = FloatingCommsCloseRequestSchema.safeParse(value)
-    const trustedRenderer = isTrustedUIRenderer(event.sender)
-    const admittedRequest = request.success || (trustedRenderer && value === undefined)
-    if ((!trustedRenderer && !isFloatingCommsSurfaceRenderer(event.sender)) || !admittedRequest) {
+  ipcMain.handle('floatingComms:closeAttached', (event, value: unknown) => {
+    const request = FloatingCommsCloseAttachedRequestSchema.safeParse(value)
+    if (
+      !request.success ||
+      (!isTrustedUIRenderer(event.sender) &&
+        !floatingCommsSurfaceController.isAttachedSender(event.sender, request.data))
+    ) {
       throw new Error('floating_comms_close_denied')
     }
-    closeFloatingCommsSurface(request.success ? request.data.requestId : undefined)
+    floatingCommsSurfaceController.closeAttached(request.data)
   })
   ipcMain.handle('floatingComms:measure', (event, value: unknown) => {
     const request = FloatingCommsMeasureRequestSchema.safeParse(value)
-    if (!isFloatingCommsSurfaceRenderer(event.sender) || !request.success) {
+    if (
+      !request.success ||
+      !floatingCommsSurfaceController.isAttachedSender(event.sender, request.data)
+    ) {
       throw new Error('floating_comms_measure_denied')
     }
-    resizeFloatingCommsSurface(request.data.requestId, request.data.height)
+    floatingCommsSurfaceController.resize(request.data, request.data.height)
   })
-  ipcMain.handle('floatingComms:getState', (event): FloatingCommsSurfaceState => {
-    if (!isFloatingCommsSurfaceRenderer(event.sender)) {
+  ipcMain.handle('floatingComms:detach', (event, value: unknown) => {
+    const request = FloatingCommsDetachRequestSchema.safeParse(value)
+    if (
+      !request.success ||
+      (!isTrustedUIRenderer(event.sender) &&
+        !floatingCommsSurfaceController.isAttachedSender(event.sender, request.data))
+    ) {
+      throw new Error('floating_comms_detach_denied')
+    }
+    return floatingCommsSurfaceController.detachSurface(request.data)
+  })
+  ipcMain.handle('floatingComms:minimizeDetached', (event, value: unknown) => {
+    const request = FloatingCommsMinimizeDetachedRequestSchema.safeParse(value)
+    if (
+      !request.success ||
+      !floatingCommsSurfaceController.isDetachedSender(event.sender, request.data)
+    ) {
+      throw new Error('floating_comms_minimize_denied')
+    }
+    floatingCommsSurfaceController.minimizeDetached(request.data)
+  })
+  ipcMain.handle('floatingComms:focusDetached', (event, value: unknown) => {
+    const request = FloatingCommsAppRequestSchema.safeParse(value)
+    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+      throw new Error('floating_comms_focus_denied')
+    }
+    return floatingCommsSurfaceController.focusDetached(request.data.appId)
+  })
+  ipcMain.handle('floatingComms:closeDetached', (event, value: unknown) => {
+    const request = FloatingCommsAppRequestSchema.safeParse(value)
+    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+      throw new Error('floating_comms_close_detached_denied')
+    }
+    floatingCommsSurfaceController.closeDetached(request.data.appId)
+  })
+  ipcMain.handle('floatingComms:disable', (event, value: unknown) => {
+    const request = FloatingCommsAppRequestSchema.safeParse(value)
+    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+      throw new Error('floating_comms_disable_denied')
+    }
+    floatingCommsSurfaceController.disable(request.data.appId)
+  })
+  ipcMain.handle('floatingComms:listPresentations', (event) => {
+    requireTrustedOwner(event.sender, 'floating_comms_presentations_denied')
+    return floatingCommsSurfaceController.listPresentations()
+  })
+  ipcMain.handle('floatingComms:getPresentation', (event, value: unknown) => {
+    const request = FloatingCommsAppRequestSchema.safeParse(value)
+    if (!isTrustedUIRenderer(event.sender) || !request.success) {
+      throw new Error('floating_comms_presentation_denied')
+    }
+    return floatingCommsSurfaceController.getPresentation(request.data.appId)
+  })
+  ipcMain.handle('floatingComms:getState', (event) => {
+    const state = floatingCommsSurfaceController.getStateForSender(event.sender)
+    if (!state) {
       throw new Error('floating_comms_state_denied')
     }
-    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
-    if (!surfaceIdentity) {
-      throw new Error('floating_comms_state_unavailable')
-    }
-    return {
-      ...surfaceIdentity,
-      discord: getDiscordVoiceSnapshot(),
-      overlayOpen: getDiscordVoiceOverlayState().open,
-      visible: isFloatingCommsSurfaceVisible()
-    }
+    return state
   })
   ipcMain.handle('floatingComms:getIntegrationStatuses', async (event) => {
-    if (!isFloatingCommsSurfaceRenderer(event.sender)) {
+    if (!floatingCommsSurfaceController.getStateForSender(event.sender)) {
       throw new Error('floating_comms_integration_statuses_denied')
     }
     return getCommunicationIntegrationStatuses()
   })
   ipcMain.handle('floatingComms:discordCommand', async (event, value: unknown) => {
     const command = FloatingCommsDiscordCommandSchema.safeParse(value)
-    if (!isFloatingCommsSurfaceRenderer(event.sender) || !command.success) {
+    if (!command.success) {
       throw new Error('floating_comms_command_denied')
     }
-    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
-    if (
-      !surfaceIdentity ||
-      !isFloatingCommsSurfaceVisible() ||
-      surfaceIdentity.appId !== command.data.appId ||
-      surfaceIdentity.requestId !== command.data.requestId
-    ) {
-      throw new Error('floating_comms_command_stale')
-    }
+    floatingCommsSurfaceController.assertDiscordCommandSender(event.sender, command.data)
     await runDiscordCommand(command.data)
     return getDiscordVoiceSnapshot()
   })
   ipcMain.handle('floatingComms:action', (event, value: unknown) => {
     const action = FloatingCommsActionSchema.safeParse(value)
-    if (!isFloatingCommsSurfaceRenderer(event.sender) || !action.success) {
+    if (!action.success) {
       throw new Error('floating_comms_action_denied')
     }
-    const surfaceIdentity = getFloatingCommsSurfaceIdentity()
-    if (
-      !surfaceIdentity ||
-      surfaceIdentity.appId !== action.data.appId ||
-      surfaceIdentity.requestId !== action.data.requestId
-    ) {
-      return
-    }
-    sendToTrustedUIRenderer('floatingComms:action', action.data)
-    closeFloatingCommsSurface(action.data.requestId)
+    floatingCommsSurfaceController.handleAction(event.sender, action.data)
   })
 }

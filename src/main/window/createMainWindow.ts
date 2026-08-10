@@ -56,7 +56,7 @@ import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId 
 import { resolveWindowCloseAction } from './window-close-decision'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { closeDashboardPopout } from './dashboard-popout-window'
-import { destroyFloatingCommsSurface } from './floating-comms-surface-window'
+import { floatingCommsSurfaceController } from './floating-comms-surface-controller'
 import { closeDiscordVoiceWindow, registerDiscordVoiceOverlayHost } from './discord-voice-window'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
 import { isMacosTahoeOrNewer } from './macos-tahoe-release'
@@ -1134,7 +1134,7 @@ export function createMainWindow(
     // alongside so it never orphans as a lone window after the app window is
     // gone (e.g. on macOS where the app stays alive after the window closes).
     closeDashboardPopout()
-    destroyFloatingCommsSurface()
+    void floatingCommsSurfaceController.shutdown()
     closeDiscordVoiceWindow()
     clearInitialRevealFallbackTimer()
     clearQuitRendererAckTimer()

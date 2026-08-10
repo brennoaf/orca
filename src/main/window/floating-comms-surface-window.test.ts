@@ -149,6 +149,12 @@ const request = {
   workspace: { x: 400, y: 80, width: 400, height: 500 },
   height: 300
 }
+const identityFor = (appId: 'discord' | 'slack', requestId: number) => ({
+  appId,
+  requestId,
+  surfaceId: requestId,
+  mode: 'attached-native' as const
+})
 const owner = mocks.parent as unknown as Electron.BrowserWindow
 
 describe('floating communications BrowserWindow', () => {
@@ -240,8 +246,7 @@ describe('floating communications BrowserWindow', () => {
     expect(child.show).not.toHaveBeenCalled()
     child.webContents.emit('did-finish-load')
     expect(child.webContents.send).toHaveBeenCalledWith('floatingComms:stateChanged', {
-      appId: 'discord',
-      requestId: 1
+      ...identityFor('discord', 1)
     })
     expect(child.show).not.toHaveBeenCalled()
 
@@ -250,8 +255,7 @@ describe('floating communications BrowserWindow', () => {
     expect(child.focus).toHaveBeenCalledOnce()
     expect(isFloatingCommsSurfaceVisible()).toBe(true)
     expect(child.webContents.send).toHaveBeenCalledWith('floatingComms:visibilityChanged', {
-      appId: 'discord',
-      requestId: 1,
+      ...identityFor('discord', 1),
       visible: true
     })
     resizeFloatingCommsSurface(1, 260)
@@ -260,8 +264,7 @@ describe('floating communications BrowserWindow', () => {
     closeFloatingCommsSurface()
     expect(isFloatingCommsSurfaceVisible()).toBe(false)
     expect(child.webContents.send).toHaveBeenCalledWith('floatingComms:visibilityChanged', {
-      appId: 'discord',
-      requestId: 1,
+      ...identityFor('discord', 1),
       visible: false
     })
   })
@@ -277,7 +280,7 @@ describe('floating communications BrowserWindow', () => {
     expect(child.show).not.toHaveBeenCalled()
     expect(child.webContents.send).toHaveBeenCalledExactlyOnceWith(
       'floatingComms:visibilityChanged',
-      { appId: 'discord', requestId: 1, visible: false }
+      { ...identityFor('discord', 1), visible: false }
     )
     expect(getFloatingCommsSurfaceIdentity()).toBeNull()
     expect(isFloatingCommsSurfaceVisible()).toBe(false)
@@ -295,12 +298,15 @@ describe('floating communications BrowserWindow', () => {
 
     expect(child.webContents.send).toHaveBeenCalledExactlyOnceWith(
       'floatingComms:visibilityChanged',
-      { appId: 'slack', requestId: 2, visible: false }
+      { ...identityFor('slack', 2), visible: false }
     )
   })
 
   it('closes on Escape', () => {
-    openFloatingCommsSurface(owner, request)
+    openFloatingCommsSurface(owner, request, identityFor('discord', 1), {
+      onClosed: () => void 0,
+      onFallback: (identity) => mocks.send('floatingComms:fallback', identity)
+    })
     const child = surface()
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(1, 300)
@@ -414,7 +420,10 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('destroys the suspended surface before fallback when fresh geometry times out', () => {
-    openFloatingCommsSurface(owner, request)
+    openFloatingCommsSurface(owner, request, identityFor('discord', 1), {
+      onClosed: () => void 0,
+      onFallback: (identity) => mocks.send('floatingComms:fallback', identity)
+    })
     const child = surface()
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(1, 300)
@@ -426,8 +435,8 @@ describe('floating communications BrowserWindow', () => {
 
     expect(child.destroy).toHaveBeenCalledOnce()
     expect(mocks.send).toHaveBeenCalledWith('floatingComms:fallback', {
-      appId: 'discord',
-      requestId: 1
+      ...identityFor('discord', 1),
+      mode: 'attached-dom'
     })
     expect(child.destroy.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.send.mock.invocationCallOrder[0] ?? 0
@@ -490,7 +499,12 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('destroys before fallback when fresh workspace geometry loses both sides', () => {
-    expect(openFloatingCommsSurface(owner, request)).toBe(true)
+    expect(
+      openFloatingCommsSurface(owner, request, identityFor('discord', 1), {
+        onClosed: () => void 0,
+        onFallback: (identity) => mocks.send('floatingComms:fallback', identity)
+      })
+    ).toBe(true)
     const child = surface()
     const blocked = {
       ...request,
@@ -502,8 +516,8 @@ describe('floating communications BrowserWindow', () => {
     expect(child.destroy).toHaveBeenCalledOnce()
     expect(child.show).not.toHaveBeenCalled()
     expect(mocks.send).toHaveBeenCalledWith('floatingComms:fallback', {
-      appId: 'discord',
-      requestId: 1
+      ...identityFor('discord', 1),
+      mode: 'attached-dom'
     })
     expect(mocks.send).not.toHaveBeenCalledWith('floatingComms:closed', null)
     expect(child.destroy.mock.invocationCallOrder[0]).toBeLessThan(
@@ -566,7 +580,7 @@ describe('floating communications BrowserWindow', () => {
     first.emit('hide')
     first.emit('closed')
 
-    expect(getFloatingCommsSurfaceIdentity()).toEqual({ appId: 'slack', requestId: 2 })
+    expect(getFloatingCommsSurfaceIdentity()).toEqual(identityFor('slack', 2))
     second.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(2, 300)
     expect(second.show).toHaveBeenCalledOnce()

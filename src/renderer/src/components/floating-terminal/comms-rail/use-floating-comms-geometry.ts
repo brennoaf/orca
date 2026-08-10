@@ -1,7 +1,8 @@
-import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type {
   FloatingCommsGeometryRequest,
   FloatingCommsOpenRequest,
+  FloatingCommsSurfaceIdentity,
   FloatingCommsUpdateRequest
 } from '../../../../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../../../../shared/floating-workspace-apps'
@@ -39,6 +40,8 @@ function createFloatingCommsUpdateRequest(
 ): FloatingCommsUpdateRequest {
   return {
     ...createFloatingCommsOpenRequest(request.appId, element, workspaceElement, request.requestId),
+    surfaceId: request.surfaceId,
+    mode: request.mode,
     geometryRequestId: request.geometryRequestId
   }
 }
@@ -46,17 +49,13 @@ function createFloatingCommsUpdateRequest(
 export function useFloatingCommsGeometry({
   panelRef,
   buttonRefs,
-  openAppIdRef,
-  requestSequenceRef,
-  close,
-  setDomFallback
+  attachedIdentityRef,
+  close
 }: {
   panelRef: RefObject<HTMLDivElement | null>
   buttonRefs: CurrentRef<Map<FloatingWorkspaceAppId, HTMLButtonElement>>
-  openAppIdRef: CurrentRef<FloatingWorkspaceAppId | null>
-  requestSequenceRef: CurrentRef<number>
+  attachedIdentityRef: CurrentRef<FloatingCommsSurfaceIdentity | null>
   close: () => void
-  setDomFallback: Dispatch<SetStateAction<boolean>>
 }): void {
   const geometryFrameRef = useRef<number | null>(null)
 
@@ -66,10 +65,8 @@ export function useFloatingCommsGeometry({
       return
     }
     const release = surface.onGeometryRequested((request: FloatingCommsGeometryRequest) => {
-      if (
-        openAppIdRef.current !== request.appId ||
-        requestSequenceRef.current !== request.requestId
-      ) {
+      const current = attachedIdentityRef.current
+      if (!current || current.surfaceId !== request.surfaceId || current.mode !== request.mode) {
         return
       }
       if (geometryFrameRef.current !== null) {
@@ -77,10 +74,8 @@ export function useFloatingCommsGeometry({
       }
       geometryFrameRef.current = requestAnimationFrame(() => {
         geometryFrameRef.current = null
-        if (
-          openAppIdRef.current !== request.appId ||
-          requestSequenceRef.current !== request.requestId
-        ) {
+        const latest = attachedIdentityRef.current
+        if (!latest || latest.surfaceId !== request.surfaceId || latest.mode !== request.mode) {
           return
         }
         const button = buttonRefs.current.get(request.appId)
@@ -91,21 +86,9 @@ export function useFloatingCommsGeometry({
         }
         void surface
           .update(createFloatingCommsUpdateRequest(request, button, workspaceElement))
-          .then((result) => {
-            if (
-              result?.mode === 'dom' &&
-              openAppIdRef.current === request.appId &&
-              requestSequenceRef.current === request.requestId
-            ) {
-              setDomFallback(true)
-            }
-          })
           .catch((error: unknown) => {
             console.error('[floating-comms] update failed:', error)
-            if (
-              openAppIdRef.current === request.appId &&
-              requestSequenceRef.current === request.requestId
-            ) {
+            if (attachedIdentityRef.current?.surfaceId === request.surfaceId) {
               close()
             }
           })
@@ -118,5 +101,5 @@ export function useFloatingCommsGeometry({
         geometryFrameRef.current = null
       }
     }
-  }, [buttonRefs, close, openAppIdRef, panelRef, requestSequenceRef, setDomFallback])
+  }, [attachedIdentityRef, buttonRefs, close, panelRef])
 }

@@ -12,15 +12,22 @@ import type {
 } from '../shared/dashboard-snapshot'
 import type {
   FloatingCommsAction,
-  FloatingCommsCloseRequest,
+  FloatingCommsCloseAttachedRequest,
+  FloatingCommsCloseDetachedRequest,
+  FloatingCommsDetachRequest,
+  FloatingCommsDisableRequest,
   FloatingCommsDiscordCommand,
+  FloatingCommsFocusDetachedRequest,
   FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
+  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
+  FloatingCommsPresentationTarget,
+  FloatingCommsSurfaceChanged,
   FloatingCommsSurfaceIdentity,
+  FloatingCommsSurfacePresentation,
   FloatingCommsSurfaceVisibility,
-  FloatingCommsSurfaceState,
   FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
 import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
@@ -2307,13 +2314,31 @@ const api = {
 
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => ipcRenderer.invoke('floatingComms:open', request),
-    update: (request: FloatingCommsUpdateRequest): Promise<FloatingCommsOpenResult | null> =>
+    update: (request: FloatingCommsUpdateRequest): Promise<FloatingCommsOpenResult> =>
       ipcRenderer.invoke('floatingComms:update', request),
-    close: (request?: FloatingCommsCloseRequest): Promise<void> =>
-      ipcRenderer.invoke('floatingComms:close', request),
+    closeAttached: (request: FloatingCommsCloseAttachedRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:closeAttached', request),
+    detach: (request: FloatingCommsDetachRequest): Promise<FloatingCommsSurfacePresentation> =>
+      ipcRenderer.invoke('floatingComms:detach', request),
+    minimizeDetached: (request: FloatingCommsMinimizeDetachedRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:minimizeDetached', request),
+    focusDetached: (
+      request: FloatingCommsFocusDetachedRequest
+    ): Promise<FloatingCommsSurfacePresentation> =>
+      ipcRenderer.invoke('floatingComms:focusDetached', request),
+    closeDetached: (request: FloatingCommsCloseDetachedRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:closeDetached', request),
+    disable: (request: FloatingCommsDisableRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:disable', request),
+    listPresentations: (): Promise<FloatingCommsSurfacePresentation[]> =>
+      ipcRenderer.invoke('floatingComms:listPresentations'),
+    getPresentation: (
+      target: FloatingCommsPresentationTarget
+    ): Promise<FloatingCommsSurfacePresentation | null> =>
+      ipcRenderer.invoke('floatingComms:getPresentation', target),
     measure: (request: FloatingCommsMeasureRequest): Promise<void> =>
       ipcRenderer.invoke('floatingComms:measure', request),
-    getState: (): Promise<FloatingCommsSurfaceState> =>
+    getState: (): Promise<FloatingCommsSurfacePresentation | null> =>
       ipcRenderer.invoke('floatingComms:getState'),
     getIntegrationStatuses: (): Promise<readonly CommunicationIntegrationStatus[]> =>
       ipcRenderer.invoke('floatingComms:getIntegrationStatuses'),
@@ -2329,6 +2354,14 @@ const api = {
       ipcRenderer.on('floatingComms:stateChanged', listener)
       return () => ipcRenderer.removeListener('floatingComms:stateChanged', listener)
     },
+    onSurfaceChanged: (callback: (change: FloatingCommsSurfaceChanged) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        change: FloatingCommsSurfaceChanged
+      ): void => callback(change)
+      ipcRenderer.on('floatingComms:surfaceChanged', listener)
+      return () => ipcRenderer.removeListener('floatingComms:surfaceChanged', listener)
+    },
     onVisibilityChanged: (
       callback: (visibility: FloatingCommsSurfaceVisibility) => void
     ): (() => void) => {
@@ -2338,14 +2371,6 @@ const api = {
       ): void => callback(visibility)
       ipcRenderer.on('floatingComms:visibilityChanged', listener)
       return () => ipcRenderer.removeListener('floatingComms:visibilityChanged', listener)
-    },
-    onClosed: (callback: (identity: FloatingCommsSurfaceIdentity) => void): (() => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        identity: FloatingCommsSurfaceIdentity
-      ): void => callback(identity)
-      ipcRenderer.on('floatingComms:closed', listener)
-      return () => ipcRenderer.removeListener('floatingComms:closed', listener)
     },
     onFallback: (callback: (identity: FloatingCommsSurfaceIdentity) => void): (() => void) => {
       const listener = (
