@@ -1,3 +1,5 @@
+import type { ZApiConversationKind } from '../../shared/communication-integrations'
+
 export type ZApiMessageDirection = 'inbound' | 'outbound'
 
 export type NormalizedZApiMessage = {
@@ -5,6 +7,7 @@ export type NormalizedZApiMessage = {
   instanceId: string
   messageId: string
   conversationAddress: string
+  conversationKind: ZApiConversationKind
   senderAddress: string | null
   conversationName: string | null
   senderName: string | null
@@ -78,8 +81,65 @@ function requiredStringArray(record: Record<string, unknown>, field: string): st
   return value
 }
 
-function conversationAddress(record: Record<string, unknown>): string {
-  const address = optionalString(record.chatLid) ?? optionalString(record.phone)
+export function isZApiGroupConversationAddress(value: string): boolean {
+  return /^\d+-group$/u.test(value) || /^\d+-\d+$/u.test(value)
+}
+
+function optionalBoolean(record: Record<string, unknown>, field: string): boolean | undefined {
+  const value = record[field]
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'boolean') {
+    throw new ZApiCallbackError(`Z-API callback has an invalid ${field} value.`)
+  }
+  return value
+}
+
+function isZApiNewsletterConversationAddress(value: string): boolean {
+  return value.endsWith('@newsletter')
+}
+
+function isZApiBroadcastConversationAddress(value: string): boolean {
+  return value.endsWith('-broadcast') || value.endsWith('@broadcast')
+}
+
+function isZApiPrivateConversationAddress(value: string): boolean {
+  return /^\d+$/u.test(value) || /^\d+@lid$/u.test(value)
+}
+
+function conversationKind(record: Record<string, unknown>): ZApiConversationKind {
+  const isNewsletter = optionalBoolean(record, 'isNewsletter')
+  const broadcast = optionalBoolean(record, 'broadcast')
+  const isGroup = optionalBoolean(record, 'isGroup')
+  const addresses = [optionalString(record.chatLid), optionalString(record.phone)].filter(
+    (address): address is string => address !== null
+  )
+  if (isGroup) {
+    return 'group'
+  }
+  if (isNewsletter || addresses.some(isZApiNewsletterConversationAddress)) {
+    return 'newsletter'
+  }
+  if (broadcast || addresses.some(isZApiBroadcastConversationAddress)) {
+    return 'broadcast'
+  }
+  if (isGroup === false && addresses.some(isZApiPrivateConversationAddress)) {
+    return 'private'
+  }
+  return 'unknown'
+}
+
+function conversationAddress(record: Record<string, unknown>, kind: ZApiConversationKind): string {
+  const chatLid = optionalString(record.chatLid)
+  const phone = optionalString(record.phone)
+  if (kind === 'group') {
+    if (!phone || !isZApiGroupConversationAddress(phone)) {
+      throw new ZApiCallbackError('Z-API group callback has an invalid phone.')
+    }
+    return phone
+  }
+  const address = chatLid ?? phone
   if (!address) {
     throw new ZApiCallbackError('Z-API callback is missing its conversation address.')
   }
@@ -133,11 +193,13 @@ export function normalizeZApiCallback(payload: unknown): NormalizedZApiMessage {
     throw new ZApiCallbackError('Z-API callback is missing fromMe.')
   }
   const text = isRecord(payload.text) ? payload.text.message : undefined
+  const kind = conversationKind(payload)
   return {
     provider: 'z-api',
     instanceId: requiredString(payload, 'instanceId'),
     messageId: requiredString(payload, 'messageId'),
-    conversationAddress: conversationAddress(payload),
+    conversationAddress: conversationAddress(payload, kind),
+    conversationKind: kind,
     senderAddress:
       optionalString(payload.participantLid) ??
       optionalString(payload.senderLid) ??
@@ -160,7 +222,8 @@ function validateNotification(
   requiredString(record, 'notification')
   requiredBoolean(record, 'fromMe')
   callbackTimestamp(record)
-  conversationAddress(record)
+  const kind = conversationKind(record)
+  conversationAddress(record, kind)
   return { kind: 'acknowledge', instanceId, callbackType: 'ReceivedNotification' }
 }
 

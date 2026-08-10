@@ -27,6 +27,7 @@ describe('createZApiTransactionService', () => {
     store.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'inherited-pending',
       text: 'mensagem',
       occurredAt: 10

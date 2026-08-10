@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { MessagingReplyDestination } from './message-store'
+import { isZApiGroupConversationAddress } from './z-api-message-normalizer'
 import { ZApiAmbiguousSendError } from './z-api-communication-client'
 import type { ZApiSendTextResult } from './z-api-communication-client-contract'
 import type { ZApiTransactionActive } from './z-api-transaction-journal'
@@ -46,6 +47,24 @@ function replyDestination(
       'The conversation does not belong to the active Z-API instance.'
     )
   }
+  if (
+    destination.conversationKind === 'newsletter' ||
+    destination.conversationKind === 'broadcast'
+  ) {
+    throw new ZApiTransactionError(
+      'conversation_not_replyable',
+      'Z-API newsletters and broadcast lists do not support replies.'
+    )
+  }
+  if (
+    destination.conversationKind === 'group' &&
+    !isZApiGroupConversationAddress(destination.conversationAddress)
+  ) {
+    throw new ZApiTransactionError(
+      'invalid_configuration',
+      'The stored Z-API group destination is invalid.'
+    )
+  }
   return destination
 }
 
@@ -69,6 +88,7 @@ export async function sendZApiTransactionText(args: {
   dependencies.messageStore.registerOutboundPending({
     instanceId: active.configuration.instanceId,
     conversationAddress: destination.conversationAddress,
+    conversationKind: destination.conversationKind,
     clientMessageId,
     text: args.text,
     occurredAt: (dependencies.now ?? Date.now)()

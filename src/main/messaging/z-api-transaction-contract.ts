@@ -33,6 +33,7 @@ export type ZApiTransactionErrorCode =
   | 'webhook_challenge_failed'
   | 'webhook_state_conflict'
   | 'webhook_restore_failed'
+  | 'conversation_not_replyable'
   | 'ambiguous_send'
   | 'message_persistence_failed'
 

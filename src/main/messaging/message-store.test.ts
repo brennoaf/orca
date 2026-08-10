@@ -25,6 +25,7 @@ function message(
     instanceId: 'instance-1',
     messageId,
     conversationAddress: 'chat-1',
+    conversationKind: 'private',
     senderAddress: null,
     conversationName: 'Chat',
     senderName: null,
@@ -54,14 +55,19 @@ describe('MessageStore', () => {
     ).toBe(true)
     expect(value.ingest(message('message-1', 10)).inserted).toBe(false)
     const conversation = value.listConversations()[0]
-    expect(conversation).toMatchObject({ address: 'chat-1', lastMessageAt: 20 })
+    expect(conversation).toMatchObject({
+      address: 'chat-1',
+      conversationKind: 'private',
+      lastMessageAt: 20
+    })
     const recentMessages = value.listRecentMessages(conversation!.id)
     expect(recentMessages.map((item) => item.providerMessageId)).toEqual(['message-1', 'message-2'])
     expect(recentMessages[0]).toMatchObject({ senderAddress: 'sender-1', senderName: 'Pessoa' })
     expect(value.getReplyDestination(conversation!.id)).toEqual({
       provider: 'z-api',
       instanceId: 'instance-1',
-      conversationAddress: 'chat-1'
+      conversationAddress: 'chat-1',
+      conversationKind: 'private'
     })
   })
 
@@ -86,6 +92,7 @@ describe('MessageStore', () => {
     const first = value.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'client-1',
       text: 'resposta',
       occurredAt: 10
@@ -94,6 +101,7 @@ describe('MessageStore', () => {
       value.registerOutboundPending({
         instanceId: 'instance-1',
         conversationAddress: 'chat-1',
+        conversationKind: 'unknown',
         clientMessageId: 'client-1',
         text: 'resposta',
         occurredAt: 10
@@ -111,6 +119,7 @@ describe('MessageStore', () => {
     value.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'client-failed',
       text: 'falhou',
       occurredAt: 11
@@ -128,6 +137,7 @@ describe('MessageStore', () => {
     value.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'client-race',
       text: 'texto local',
       occurredAt: 10
@@ -158,6 +168,7 @@ describe('MessageStore', () => {
     value.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'client-first',
       text: 'primeira',
       occurredAt: 10
@@ -165,6 +176,7 @@ describe('MessageStore', () => {
     value.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'client-second',
       text: 'segunda',
       occurredAt: 20
@@ -227,6 +239,7 @@ describe('MessageStore', () => {
     first.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'inherited-pending',
       text: 'antes do restart',
       occurredAt: 10
@@ -238,6 +251,7 @@ describe('MessageStore', () => {
     restarted.registerOutboundPending({
       instanceId: 'instance-1',
       conversationAddress: 'chat-1',
+      conversationKind: 'unknown',
       clientMessageId: 'current-pending',
       text: 'depois do restart',
       occurredAt: 20
@@ -252,18 +266,21 @@ describe('MessageStore', () => {
     })
   })
 
-  it('migrates a v1 database to failed-capable v2 without losing data', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'orca-messaging-store-v1-'))
-    directories.push(directory)
-    const path = join(directory, 'orca-messaging.db')
-    const legacy = new SyncDatabase(path)
-    legacy.exec(`
+  it.each([1, 2, 3, 4] as const)(
+    'migrates a v%i database with an explicit unknown kind',
+    (version) => {
+      const directory = mkdtempSync(join(tmpdir(), `orca-messaging-store-v${version}-`))
+      directories.push(directory)
+      const path = join(directory, 'orca-messaging.db')
+      const legacy = new SyncDatabase(path)
+      legacy.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         provider TEXT NOT NULL CHECK(provider IN ('z-api')),
         instance_id TEXT NOT NULL,
         address TEXT NOT NULL,
+        ${version === 4 ? "conversation_kind TEXT NOT NULL DEFAULT 'unknown' CHECK(conversation_kind IN ('group', 'private', 'unknown'))," : ''}
         display_name TEXT,
         last_message_at INTEGER NOT NULL,
         UNIQUE(provider, instance_id, address)
@@ -282,7 +299,7 @@ describe('MessageStore', () => {
         body TEXT,
         provider_content_type TEXT,
         occurred_at INTEGER NOT NULL,
-        delivery_status TEXT NOT NULL CHECK(delivery_status IN ('received', 'pending', 'sent', 'unknown')),
+        delivery_status TEXT NOT NULL CHECK(delivery_status IN (${version === 1 ? "'received', 'pending', 'sent', 'unknown'" : "'received', 'pending', 'sent', 'unknown', 'failed'"})),
         UNIQUE(provider, instance_id, provider_message_id),
         UNIQUE(provider, instance_id, client_message_id)
       );
@@ -292,25 +309,35 @@ describe('MessageStore', () => {
         ON messages(conversation_id, occurred_at DESC, id DESC);
       CREATE INDEX idx_messaging_messages_ttl ON messages(occurred_at);
       INSERT INTO conversations(
-        id, provider, instance_id, address, display_name, last_message_at
-      ) VALUES (1, 'z-api', 'instance-1', 'chat-1', 'Chat', 10);
+        id, provider, instance_id, address, ${version === 4 ? 'conversation_kind,' : ''} display_name, last_message_at
+      ) VALUES (1, 'z-api', 'instance-1', 'chat-1', ${version === 4 ? "'unknown'," : ''} 'Chat', 10);
       INSERT INTO messages(
         id, conversation_id, provider, instance_id, client_message_id, direction,
         content_kind, body, occurred_at, delivery_status
       ) VALUES (1, 1, 'z-api', 'instance-1', 'legacy-client', 'outbound', 'text', 'legacy', 10, 'pending');
-      PRAGMA user_version = 1;
+      PRAGMA user_version = ${version};
     `)
-    legacy.close()
-    const migrated = new MessageStore(path)
-    stores.push(migrated)
-    migrated.markOutboundFailed('legacy-client', 'instance-1')
-    expect(migrated.listRecentMessages(1)).toEqual([
-      expect.objectContaining({
+      legacy.close()
+      const migrated = new MessageStore(path)
+      stores.push(migrated)
+      expect(migrated.listConversations()[0]).toMatchObject({
+        address: 'chat-1',
+        conversationKind: 'unknown'
+      })
+      migrated.ingest(message('kind-update', 20, { conversationKind: 'newsletter' }))
+      expect(migrated.listConversations()[0]).toMatchObject({
+        address: 'chat-1',
+        conversationKind: 'newsletter'
+      })
+      migrated.markOutboundFailed('legacy-client', 'instance-1')
+      expect(
+        migrated.listRecentMessages(1).find((item) => item.clientMessageId === 'legacy-client')
+      ).toMatchObject({
         id: 1,
         clientMessageId: 'legacy-client',
         text: 'legacy',
         deliveryStatus: 'failed'
       })
-    ])
-  })
+    }
+  )
 })

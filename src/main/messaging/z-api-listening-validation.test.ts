@@ -29,6 +29,7 @@ function message(
     instanceId: INSTANCE_ID,
     messageId,
     conversationAddress: 'private-chat',
+    conversationKind: 'private',
     senderAddress: null,
     conversationName: null,
     senderName: null,

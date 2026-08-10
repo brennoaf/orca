@@ -108,6 +108,41 @@ describe('ZApiWebhookReceiver', () => {
 
   it.each([
     {
+      expectedKind: 'newsletter',
+      expectedAddress: '120363418284553@newsletter',
+      fields: {
+        isNewsletter: true,
+        isGroup: false,
+        phone: '120363418284553@newsletter'
+      }
+    },
+    {
+      expectedKind: 'broadcast',
+      expectedAddress: '1774895799-broadcast',
+      fields: { broadcast: true, isGroup: false, phone: '1774895799-broadcast' }
+    }
+  ] as const)(
+    'persists a $expectedKind callback instead of discarding a non-replyable conversation',
+    async ({ expectedKind, expectedAddress, fields }) => {
+      const ingest = vi.fn(() => ({ inserted: true, messageId: 1 }))
+      const { value } = receiver({ ingest })
+      const endpoint = await value.start()
+
+      expect(await post(endpoint.port, endpoint.path, JSON.stringify(payload(fields)))).toBe(204)
+      expect(ingest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationAddress: expectedAddress,
+          conversationKind: expectedKind
+        }),
+        expect.objectContaining({
+          configurationId: '11111111111111111111111111111111'
+        })
+      )
+    }
+  )
+
+  it.each([
+    {
       type: 'DeliveryCallback',
       instanceId: 'instance-1',
       messageId: 'message-1',

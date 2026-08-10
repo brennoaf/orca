@@ -45,6 +45,8 @@ const TRANSACTION_ERROR_MESSAGES: Record<ZApiTransactionErrorCode, string> = {
   webhook_challenge_failed: 'The public webhook challenge failed.',
   webhook_state_conflict: 'The Z-API webhook configuration changed unexpectedly.',
   webhook_restore_failed: 'The previous Z-API webhook configuration could not be restored.',
+  conversation_not_replyable:
+    'WhatsApp newsletters and broadcast lists do not support fast replies. Choose a private or group conversation.',
   ambiguous_send: 'Z-API message delivery is ambiguous.',
   message_persistence_failed: 'The message could not be persisted safely.'
 }

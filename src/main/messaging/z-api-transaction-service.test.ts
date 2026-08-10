@@ -135,7 +135,8 @@ function fixture(
     getReplyDestination: vi.fn(() => ({
       provider: 'z-api' as const,
       instanceId: 'instance-1',
-      conversationAddress: 'conversation-address'
+      conversationAddress: 'conversation-address',
+      conversationKind: 'private' as const
     })),
     registerOutboundPending: vi.fn(() => 1),
     markOutboundSent: vi.fn(),
@@ -714,6 +715,46 @@ describe('ZApiTransactionService', () => {
     expect(value.messageStore.markOutboundUnknown).toHaveBeenCalledTimes(1)
     expect(value.messageStore.markOutboundFailed).not.toHaveBeenCalled()
   })
+
+  it('rejects a stored group destination that is not a canonical group phone', async () => {
+    const value = fixture()
+    vi.mocked(value.messageStore.getReplyDestination).mockReturnValue({
+      provider: 'z-api',
+      instanceId: 'instance-1',
+      conversationAddress: 'group-chat@lid',
+      conversationKind: 'group'
+    })
+    await value.service.saveAndConfigure(await prepare(value))
+    await expect(
+      value.service.sendText({ conversationId: 7, text: 'Resposta' })
+    ).rejects.toMatchObject({ code: 'invalid_configuration' })
+    expect(value.messageStore.registerOutboundPending).not.toHaveBeenCalled()
+    expect(value.client.sendText).not.toHaveBeenCalled()
+  })
+
+  it.each(['newsletter', 'broadcast'] as const)(
+    'rejects a stored %s before pending persistence or provider construction',
+    async (conversationKind) => {
+      const value = fixture()
+      await value.service.saveAndConfigure(await prepare(value))
+      vi.mocked(value.messageStore.getReplyDestination).mockReturnValue({
+        provider: 'z-api',
+        instanceId: 'instance-1',
+        conversationAddress:
+          conversationKind === 'newsletter' ? '120363418284553@newsletter' : '1774895799-broadcast',
+        conversationKind
+      })
+      value.createClient.mockClear()
+      vi.mocked(value.client.sendText).mockClear()
+
+      await expect(
+        value.service.sendText({ conversationId: 7, text: 'Resposta' })
+      ).rejects.toMatchObject({ code: 'conversation_not_replyable' })
+      expect(value.messageStore.registerOutboundPending).not.toHaveBeenCalled()
+      expect(value.createClient).not.toHaveBeenCalled()
+      expect(value.client.sendText).not.toHaveBeenCalled()
+    }
+  )
 
   it('cleans pending and status when client construction fails after journaling', async () => {
     const value = fixture()

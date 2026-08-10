@@ -174,6 +174,7 @@ export async function listZApiConversations(args: {
   return {
     conversations: rows.slice(0, args.limit).map((conversation) => ({
       id: conversation.id,
+      conversationKind: conversation.conversationKind,
       displayName: conversation.displayName,
       lastMessageAt: conversation.lastMessageAt
     })),

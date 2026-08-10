@@ -105,6 +105,7 @@ const ERROR_CODES: readonly CommunicationIntegrationErrorCode[] = [
   'receiver_unavailable',
   'webhook_challenge_failed',
   'webhook_restore_failed',
+  'conversation_not_replyable',
   'ambiguous_send',
   'message_persistence_failed',
   'network_error',

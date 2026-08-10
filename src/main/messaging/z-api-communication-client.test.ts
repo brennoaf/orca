@@ -8,8 +8,10 @@ import type {
   CommunicationHttpsResponse,
   CommunicationHttpsRequester
 } from './communication-api-endpoint'
+import { MessageStore } from './message-store'
 import { ZApiAmbiguousSendError, ZApiCommunicationClient } from './z-api-communication-client'
 import type { ZApiCommunicationClientParams } from './z-api-communication-client-contract'
+import { normalizeZApiCallback } from './z-api-message-normalizer'
 
 class FakeRequest extends EventEmitter {
   readonly destroy = vi.fn()
@@ -403,6 +405,47 @@ describe('ZApiCommunicationClient', () => {
     expect(fixture.requests[0]?.write).toHaveBeenCalledWith(
       JSON.stringify({ phone: 'group-id', message: 'Mensagem' })
     )
+  })
+
+  it('sends a group reply to the canonical phone persisted from its callback', async () => {
+    const store = new MessageStore(':memory:')
+    try {
+      store.ingest(
+        normalizeZApiCallback({
+          type: 'ReceivedCallback',
+          instanceId: 'instance:id',
+          messageId: 'group-message-1',
+          momment: 1_786_250_000_000,
+          isGroup: true,
+          phone: '120363019502650977-group',
+          chatLid: 'group-chat@lid',
+          participantLid: 'participant@lid',
+          fromMe: false,
+          text: { message: 'Mensagem recebida' }
+        })
+      )
+      const conversation = store.listConversations()[0]
+      expect(conversation).toMatchObject({
+        address: '120363019502650977-group',
+        conversationKind: 'group'
+      })
+      const destination = store.getReplyDestination(conversation!.id)
+      if (!destination) {
+        throw new Error('Missing persisted group destination.')
+      }
+      const fixture = client([
+        { body: { zaapId: 'zaap-1', messageId: 'message-1', id: 'message-1' } }
+      ])
+      await fixture.client.sendText({
+        destination: destination.conversationAddress,
+        message: 'Resposta'
+      })
+      expect(fixture.requests[0]?.write).toHaveBeenCalledWith(
+        JSON.stringify({ phone: '120363019502650977-group', message: 'Resposta' })
+      )
+    } finally {
+      store.close()
+    }
   })
 
   it.each([

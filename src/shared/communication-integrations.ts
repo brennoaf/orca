@@ -48,6 +48,7 @@ export type CommunicationIntegrationErrorCode =
   | 'active_ingress_locked'
   | 'webhook_challenge_failed'
   | 'webhook_restore_failed'
+  | 'conversation_not_replyable'
   | 'ambiguous_send'
   | 'message_persistence_failed'
   | 'network_error'
@@ -236,8 +237,11 @@ export type ZApiPreparedIngressSnapshot = {
   localTunnelTarget: string
 }
 
+export type ZApiConversationKind = 'group' | 'private' | 'newsletter' | 'broadcast' | 'unknown'
+
 export type ZApiConversationSnapshot = {
   id: number
+  conversationKind: ZApiConversationKind
   displayName: string | null
   lastMessageAt: number
 }

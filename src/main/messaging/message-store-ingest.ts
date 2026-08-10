@@ -29,6 +29,7 @@ export function ingestZApiMessage(
       provider: message.provider,
       instanceId: message.instanceId,
       address: message.conversationAddress,
+      conversationKind: message.conversationKind,
       displayName: message.conversationName,
       occurredAt: message.occurredAt
     })

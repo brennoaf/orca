@@ -1,7 +1,9 @@
 import { chmodSync, existsSync } from 'node:fs'
+import type { ZApiConversationKind } from '../../shared/communication-integrations'
 import type SyncDatabase from '../sqlite/sync-database'
+import { migrateMessageStoreV4 } from './message-store-migrate-v4'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 5
 
 export const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 export const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 200
@@ -12,6 +14,7 @@ export type MessagingConversation = {
   provider: 'z-api'
   instanceId: string
   address: string
+  conversationKind: ZApiConversationKind
   displayName: string | null
   lastMessageAt: number
 }
@@ -35,6 +38,7 @@ export type MessagingReplyDestination = {
   provider: 'z-api'
   instanceId: string
   conversationAddress: string
+  conversationKind: ZApiConversationKind
 }
 
 export type MessagingGcResult = {
@@ -53,6 +57,7 @@ export type ConversationRow = {
   provider: string
   instance_id: string
   address: string
+  conversation_kind: string
   display_name: string | null
   last_message_at: number
 }
@@ -103,6 +108,14 @@ function nullableStringField(value: unknown, field: string): string | null {
   return stringField(value, field)
 }
 
+export function parseMessagingConversationKind(value: unknown): ZApiConversationKind {
+  const kind = stringField(value, 'conversation kind')
+  if (!['group', 'private', 'newsletter', 'broadcast', 'unknown'].includes(kind)) {
+    throw new Error('Invalid messaging database conversation kind.')
+  }
+  return kind as ZApiConversationKind
+}
+
 export function parseConversation(row: ConversationRow): MessagingConversation {
   const provider = stringField(row.provider, 'provider')
   if (provider !== 'z-api') {
@@ -113,6 +126,7 @@ export function parseConversation(row: ConversationRow): MessagingConversation {
     provider,
     instanceId: stringField(row.instance_id, 'instance id'),
     address: stringField(row.address, 'conversation address'),
+    conversationKind: parseMessagingConversationKind(row.conversation_kind),
     displayName: nullableStringField(row.display_name, 'display name'),
     lastMessageAt: numberField(row.last_message_at, 'last message timestamp')
   }
@@ -165,6 +179,7 @@ export function initializeMessageStoreDatabase(
       provider TEXT NOT NULL CHECK(provider IN ('z-api')),
       instance_id TEXT NOT NULL,
       address TEXT NOT NULL,
+      conversation_kind TEXT NOT NULL DEFAULT 'unknown' CHECK(conversation_kind IN ('group', 'private', 'newsletter', 'broadcast', 'unknown')),
       display_name TEXT,
       last_message_at INTEGER NOT NULL,
       UNIQUE(provider, instance_id, address)
@@ -254,6 +269,18 @@ export function initializeMessageStoreDatabase(
         ON messages(provider, instance_id, id DESC);
       COMMIT;
     `)
+  }
+  if (version > 0 && version < 4) {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      ALTER TABLE conversations ADD COLUMN conversation_kind TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(conversation_kind IN ('group', 'private', 'newsletter', 'broadcast', 'unknown'));
+      PRAGMA user_version = 5;
+      COMMIT;
+    `)
+  }
+  if (version === 4) {
+    migrateMessageStoreV4(db)
   }
   if (version < SCHEMA_VERSION) {
     db.pragma(`user_version = ${SCHEMA_VERSION}`)

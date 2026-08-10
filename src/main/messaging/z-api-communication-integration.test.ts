@@ -416,6 +416,7 @@ describe('Z-API communication integration', () => {
         provider: 'z-api',
         instanceId: 'active-instance',
         address: '5511999999999',
+        conversationKind: 'private',
         displayName: 'Customer',
         lastMessageAt: 123
       }
@@ -436,6 +437,7 @@ describe('Z-API communication integration', () => {
     expect(status.publicWebhookBaseUrl).toBe('https://hook.example.com')
     expect(JSON.stringify(status)).not.toContain('/orca/z-api/secret')
     expect(JSON.stringify(conversations)).not.toContain('5511999999999')
+    expect(conversations.conversations[0]?.conversationKind).toBe('private')
     expect(result.ok).toBe(true)
     expect(mocks.prepareIngress).toHaveBeenNthCalledWith(1, 0)
     expect(mocks.prepareIngress).toHaveBeenNthCalledWith(2, 4321)
@@ -582,5 +584,26 @@ describe('Z-API communication integration', () => {
     expect(mocks.stopIngress.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.closeStore.mock.invocationCallOrder[0] ?? 0
     )
+  })
+
+  it('returns an actionable redacted error for conversations that cannot receive replies', async () => {
+    const api = await integration()
+    const { ZApiTransactionError } = await import('./z-api-transaction-service')
+    mocks.sendText.mockRejectedValueOnce(
+      new ZApiTransactionError('conversation_not_replyable', 'provider detail')
+    )
+
+    const result = await api.sendZApiReply({ conversationId: 7, text: 'Hello' })
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'conversation_not_replyable',
+        message:
+          'WhatsApp newsletters and broadcast lists do not support fast replies. Choose a private or group conversation.',
+        field: null
+      }
+    })
+    expect(JSON.stringify(result)).not.toContain('provider detail')
   })
 })

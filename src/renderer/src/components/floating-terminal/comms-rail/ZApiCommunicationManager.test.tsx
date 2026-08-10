@@ -53,7 +53,7 @@ function createClient(): ZApiCommunicationManagerClient {
     getStatus: vi.fn(() => Promise.resolve(READY_STATUS)),
     listConversations: vi.fn(() =>
       Promise.resolve({
-        conversations: [{ id: 7, displayName: 'Brenno', lastMessageAt: Date.now() }],
+        conversations: [{ id: 7, conversationKind: 'private' as const, displayName: 'Brenno', lastMessageAt: Date.now() }],
         nextOffset: null
       })
     ),

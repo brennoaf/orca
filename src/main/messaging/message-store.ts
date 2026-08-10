@@ -18,6 +18,7 @@ import {
   initializeMessageStoreDatabase,
   numberField,
   parseMessage,
+  parseMessagingConversationKind,
   positiveInteger,
   stringField,
   type MessageRow,
@@ -75,6 +76,7 @@ export class MessageStore {
   registerOutboundPending(args: {
     instanceId: string
     conversationAddress: string
+    conversationKind: MessagingConversation['conversationKind']
     conversationName?: string | null
     clientMessageId: string
     text: string
@@ -97,6 +99,7 @@ export class MessageStore {
         provider: 'z-api',
         instanceId: args.instanceId,
         address: args.conversationAddress,
+        conversationKind: args.conversationKind,
         displayName: args.conversationName ?? null,
         occurredAt: args.occurredAt
       })
@@ -188,9 +191,16 @@ export class MessageStore {
   getReplyDestination(conversationId: number): MessagingReplyDestination | null {
     this.ensureOpen()
     const row = this.db
-      .prepare('SELECT provider, instance_id, address FROM conversations WHERE id = ?')
+      .prepare(
+        'SELECT provider, instance_id, address, conversation_kind FROM conversations WHERE id = ?'
+      )
       .get(conversationId) as
-      | { provider?: unknown; instance_id?: unknown; address?: unknown }
+      | {
+          provider?: unknown
+          instance_id?: unknown
+          address?: unknown
+          conversation_kind?: unknown
+        }
       | undefined
     if (!row) {
       return null
@@ -202,7 +212,8 @@ export class MessageStore {
     return {
       provider,
       instanceId: stringField(row.instance_id, 'instance id'),
-      conversationAddress: stringField(row.address, 'conversation address')
+      conversationAddress: stringField(row.address, 'conversation address'),
+      conversationKind: parseMessagingConversationKind(row.conversation_kind)
     }
   }
 
