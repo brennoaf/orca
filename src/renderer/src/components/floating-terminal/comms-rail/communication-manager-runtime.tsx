@@ -12,6 +12,7 @@ import type {
   CommunicationProviderId,
   ZApiCommunicationIntegrationStatus,
   ZApiCommunicationOperationResult,
+  ZApiConversationAvatarSnapshot,
   ZApiConversationPage,
   ZApiMessagePage,
   ZApiSendReplyResult
@@ -23,6 +24,9 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 
 export type ZApiCommunicationManagerClient = {
   getStatus: () => Promise<ZApiCommunicationIntegrationStatus>
+  getConversationAvatar: (params: {
+    conversationId: number
+  }) => Promise<ZApiConversationAvatarSnapshot>
   listConversations: (params: { limit: number; offset: number }) => Promise<ZApiConversationPage>
   listMessages: (params: {
     conversationId: number
@@ -43,6 +47,12 @@ export const LOCAL_Z_API_COMMUNICATION_MANAGER_CLIENT: ZApiCommunicationManagerC
       LOCAL_RUNTIME_TARGET,
       'communicationIntegrations.zApi.getStatus',
       null
+    ),
+  getConversationAvatar: (params) =>
+    callRuntimeRpc<ZApiConversationAvatarSnapshot>(
+      LOCAL_RUNTIME_TARGET,
+      'communicationIntegrations.zApi.getConversationAvatar',
+      params
     ),
   listConversations: (params) =>
     callRuntimeRpc<ZApiConversationPage>(

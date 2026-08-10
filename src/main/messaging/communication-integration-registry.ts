@@ -25,6 +25,7 @@ import * as ZApiStore from './z-api-communication-credential-store'
 import {
   cancelZApiListeningValidation,
   discardPreparedZApiIngress,
+  getZApiConversationAvatar,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
   listZApiMessages,
@@ -292,6 +293,7 @@ export function testCommunicationIntegration(provider: CommunicationProviderId) 
 export {
   cancelZApiListeningValidation,
   discardPreparedZApiIngress,
+  getZApiConversationAvatar,
   getZApiCommunicationIntegrationStatus,
   listZApiConversations,
   listZApiMessages,

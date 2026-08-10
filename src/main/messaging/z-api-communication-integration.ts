@@ -3,6 +3,7 @@ import {
   type SaveAndConfigureZApiParams,
   type ZApiCommunicationIntegrationStatus,
   type ZApiCommunicationOperationResult,
+  type ZApiConversationAvatarSnapshot,
   type ZApiConversationPage,
   type ZApiMessagePage,
   type ZApiPreparedIngressSnapshot,
@@ -98,6 +99,7 @@ export async function saveAndConfigureZApi(
     const configuration = currentZApiConfiguration(runtime)
     if (active && configuration && active.configurationId !== configuration.configurationId) {
       runtime.listeningValidation.clear(active.configurationId)
+      runtime.avatarService.clearConfiguration(active.configurationId)
     }
     clearZApiCommunicationCredentials()
     return undefined
@@ -114,6 +116,7 @@ export async function removeZApiCommunicationIntegration(): Promise<
     if (configuration) {
       runtime.listeningValidation.clearInstance(configuration.instanceId)
     }
+    runtime.avatarService.clear()
     clearZApiCommunicationCredentials()
     return undefined
   })
@@ -212,6 +215,13 @@ export async function listZApiMessages(args: {
     })),
     nextOffset: rows.length > args.limit ? args.offset + args.limit : null
   }
+}
+
+export async function getZApiConversationAvatar(
+  conversationId: number
+): Promise<ZApiConversationAvatarSnapshot> {
+  const runtime = await getZApiCommunicationRuntime()
+  return runtime.avatarService.getConversationAvatar(conversationId)
 }
 
 export async function sendZApiReply(args: {

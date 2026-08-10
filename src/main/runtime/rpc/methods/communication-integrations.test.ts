@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
+import type { ZApiConversationAvatarSnapshot } from '../../../../shared/communication-integrations'
 import type { RpcContext } from '../core'
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   zApiSave: vi.fn(async () => ({})),
   zApiConversations: vi.fn(async () => ({})),
   zApiMessages: vi.fn(async () => ({})),
+  zApiAvatar: vi.fn<() => Promise<ZApiConversationAvatarSnapshot>>(async () => ({
+    state: 'unavailable'
+  })),
   zApiSend: vi.fn(async () => ({})),
   zApiRemove: vi.fn(async () => ({})),
   zApiStartValidation: vi.fn(async () => ({})),
@@ -38,6 +42,7 @@ vi.mock('../../../messaging/communication-integration-registry', () => ({
   saveAndConfigureZApi: mocks.zApiSave,
   listZApiConversations: mocks.zApiConversations,
   listZApiMessages: mocks.zApiMessages,
+  getZApiConversationAvatar: mocks.zApiAvatar,
   sendZApiReply: mocks.zApiSend,
   removeZApiCommunicationIntegration: mocks.zApiRemove,
   startZApiListeningValidation: mocks.zApiStartValidation,
@@ -65,6 +70,7 @@ describe('communication integration RPC methods', () => {
     mocks.zApiSave.mockClear()
     mocks.zApiStartValidation.mockClear()
     mocks.zApiCancelValidation.mockClear()
+    mocks.zApiAvatar.mockClear()
   })
 
   it('registers the communication integration methods exactly once in its manifest', () => {
@@ -81,10 +87,11 @@ describe('communication integration RPC methods', () => {
       'communicationIntegrations.zApi.cancelListeningValidation',
       'communicationIntegrations.zApi.listConversations',
       'communicationIntegrations.zApi.listMessages',
+      'communicationIntegrations.zApi.getConversationAvatar',
       'communicationIntegrations.zApi.sendReply',
       'communicationIntegrations.zApi.remove'
     ])
-    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(14)
+    expect(new Set(COMMUNICATION_INTEGRATION_METHODS.map(({ name }) => name)).size).toBe(15)
     const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
     expect(indexSource.match(/\.\.\.COMMUNICATION_INTEGRATION_METHODS/g)).toHaveLength(1)
   })
@@ -180,6 +187,29 @@ describe('communication integration RPC methods', () => {
     expect(conversations?.safeParse({}).success).toBe(true)
     expect(conversations?.safeParse({ limit: 101, offset: 0 }).success).toBe(false)
     expect(conversations?.safeParse({ limit: 20, offset: -1 }).success).toBe(false)
+  })
+
+  it('strictly validates and locally delegates conversation avatar requests', async () => {
+    const candidate = method('communicationIntegrations.zApi.getConversationAvatar')
+    expect(candidate.params?.safeParse({ conversationId: 1 }).success).toBe(true)
+    expect(candidate.params?.safeParse({ conversationId: 0 }).success).toBe(false)
+    expect(
+      candidate.params?.safeParse({ conversationId: Number.MAX_SAFE_INTEGER + 1 }).success
+    ).toBe(false)
+    expect(candidate.params?.safeParse({ conversationId: 1, phone: 'hidden' }).success).toBe(false)
+    mocks.zApiAvatar.mockResolvedValueOnce({
+      state: 'available',
+      mimeType: 'image/webp',
+      contentBase64: 'base64-content'
+    })
+    await expect(
+      candidate.handler(candidate.params?.parse({ conversationId: 7 }), {} as RpcContext)
+    ).resolves.toEqual({
+      state: 'available',
+      mimeType: 'image/webp',
+      contentBase64: 'base64-content'
+    })
+    expect(mocks.zApiAvatar).toHaveBeenCalledExactlyOnceWith(7)
   })
 
   it('flows an ephemeral prepared port into transactional Z-API save', async () => {

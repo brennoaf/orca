@@ -71,6 +71,7 @@ function deferred<T>(): {
 function createClient(): ZApiCommunicationManagerClient {
   return {
     getStatus: vi.fn(() => Promise.resolve(READY_STATUS)),
+    getConversationAvatar: vi.fn(() => Promise.resolve({ state: 'unavailable' as const })),
     listConversations: vi.fn(() =>
       Promise.resolve({
         conversations: [
@@ -184,7 +185,7 @@ describe('ZApiCommunicationManager', () => {
     await waitFor(() =>
       expect(view.container.firstElementChild?.getAttribute('data-status')).toBe('idle')
     )
-    expect(client.getStatus).toHaveBeenCalled()
+    await waitFor(() => expect(client.getStatus).toHaveBeenCalled())
   })
 
   it('ignores a stale status response after the runtime changes', async () => {
@@ -332,7 +333,14 @@ describe('ZApiCommunicationManager', () => {
     ]
     vi.mocked(client.listMessages).mockResolvedValue({ messages, nextOffset: null })
     renderManager(client)
-    await userEvent.click(await screen.findByRole('button', { name: /Brenno/ }))
+    const conversationButton = await screen.findByRole('button', { name: /Brenno/ })
+    expect(conversationButton.querySelector('[aria-hidden="true"]')).toBeTruthy()
+    await userEvent.click(conversationButton)
+    expect(
+      screen
+        .getByRole('button', { name: 'Back to conversations' })
+        .parentElement?.querySelector('[aria-hidden="true"]')
+    ).toBeTruthy()
     expect(await screen.findByText('Oi')).toBeTruthy()
     expect(screen.getByText('Unsupported message · image')).toBeTruthy()
     expect(screen.getByText(/Pending/)).toBeTruthy()

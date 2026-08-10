@@ -246,6 +246,14 @@ export type ZApiConversationSnapshot = {
   lastMessageAt: number
 }
 
+export type ZApiConversationAvatarSnapshot =
+  | {
+      state: 'available'
+      mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
+      contentBase64: string
+    }
+  | { state: 'unavailable' }
+
 export type ZApiMessageSnapshot = {
   id: number
   conversationId: number

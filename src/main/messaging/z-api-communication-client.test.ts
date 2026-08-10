@@ -160,6 +160,32 @@ afterEach(() => {
 })
 
 describe('ZApiCommunicationClient', () => {
+  it('loads chat metadata through the encoded conversation path', async () => {
+    const fixture = client([
+      { body: { profileThumbnail: 'https://cdn.example.com/avatar.jpg', ignored: true } }
+    ])
+
+    await expect(fixture.client.getChatMetadata('120363019502650977@lid')).resolves.toEqual({
+      profileThumbnail: 'https://cdn.example.com/avatar.jpg'
+    })
+    expect(fixture.options[0]).toMatchObject({
+      method: 'GET',
+      path: '/instances/instance%3Aid/token/instance%2Btoken/chats/120363019502650977%40lid',
+      headers: { 'Client-Token': 'client-secret' }
+    })
+  })
+
+  it('accepts a nullable thumbnail and rejects malformed chat metadata', async () => {
+    const nullable = client([{ body: { profileThumbnail: null } }])
+    await expect(nullable.client.getChatMetadata('5511999999999')).resolves.toEqual({
+      profileThumbnail: null
+    })
+    const malformed = client([{ body: { profileThumbnail: 42 } }])
+    await expect(malformed.client.getChatMetadata('5511999999999')).rejects.toMatchObject({
+      code: 'invalid_response'
+    })
+  })
+
   it('gets strict connection state and relevant provider status without returning extras', async () => {
     const fixture = client([
       {

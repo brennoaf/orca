@@ -10,11 +10,13 @@ import {
   type CommunicationApiRequestDependencies
 } from './communication-api-endpoint'
 import {
+  zApiChatMetadataSchema,
   zApiProviderRecordSchema,
   zApiSendTextResponseSchema,
   zApiStatusPayloadSchema,
   zApiTrueResponseSchema,
   type ZApiCommunicationClientParams,
+  type ZApiChatMetadata,
   type ZApiInstanceStatus,
   type ZApiInstanceWebhookState,
   type ZApiRestorableWebhookState,
@@ -180,6 +182,21 @@ export class ZApiCommunicationClient {
 
   async getRestorableWebhookState(): Promise<ZApiRestorableWebhookState> {
     return restorableZApiWebhookState(await this.getInstanceWebhookState())
+  }
+
+  async getChatMetadata(address: string): Promise<ZApiChatMetadata> {
+    if (!address) {
+      throw new CommunicationApiError(
+        'invalid_configuration',
+        'Z-API requires a conversation destination.'
+      )
+    }
+    const response = await this.request('GET', `chats/${encodeURIComponent(address)}`)
+    const parsed = zApiChatMetadataSchema.safeParse(response.body)
+    if (!parsed.success) {
+      throw invalidResponse()
+    }
+    return { profileThumbnail: parsed.data.profileThumbnail }
   }
 
   async updateEveryWebhooks(publicWebhookUrl: string): Promise<ZApiRestorableWebhookState> {

@@ -283,6 +283,7 @@ vi.mock('./z-api-communication-integration', () => ({
   })),
   listZApiConversations: vi.fn(),
   listZApiMessages: vi.fn(),
+  getZApiConversationAvatar: vi.fn(),
   discardPreparedZApiIngress: vi.fn(),
   prepareZApiIngress: vi.fn(),
   removeZApiCommunicationIntegration: vi.fn(async () => ({ ok: true })),

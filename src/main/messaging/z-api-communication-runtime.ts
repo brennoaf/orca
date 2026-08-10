@@ -14,6 +14,7 @@ import {
   readZApiCommunicationCredentials
 } from './z-api-communication-credential-store'
 import { ZApiAmbiguousSendError } from './z-api-communication-client'
+import { ZApiConversationAvatarService } from './z-api-conversation-avatar-service'
 import { ZApiListeningValidation } from './z-api-listening-validation'
 import type { ZApiTransactionConfiguration } from './z-api-transaction-journal'
 import { ZApiTransactionJournal } from './z-api-transaction-journal'
@@ -30,6 +31,7 @@ export type ZApiCommunicationRuntime = {
   store: MessageStore
   journal: ZApiTransactionJournal
   listeningValidation: ZApiListeningValidation
+  avatarService: ZApiConversationAvatarService
   gcTimer: ReturnType<typeof setInterval> | null
   gcPromise: Promise<void> | null
 }
@@ -90,11 +92,16 @@ async function createRuntime(): Promise<ZApiCommunicationRuntime> {
     }
   })
   const listeningValidation = new ZApiListeningValidation(store.listeningValidation)
+  const avatarService = new ZApiConversationAvatarService({
+    messageStore: store,
+    getConfiguration: () => journal.read().active?.configuration ?? null
+  })
   const runtime: ZApiCommunicationRuntime = {
     service,
     store,
     journal,
     listeningValidation,
+    avatarService,
     gcTimer: null,
     gcPromise: null
   }
@@ -260,6 +267,7 @@ export async function disposeZApiCommunicationRuntime(): Promise<void> {
     try {
       const results = await Promise.allSettled([
         Promise.resolve().then(() => runtime.listeningValidation.cancelPending()),
+        runtime.avatarService.dispose(),
         runtime.gcPromise ?? Promise.resolve(),
         runtime.service.stopIngress()
       ])

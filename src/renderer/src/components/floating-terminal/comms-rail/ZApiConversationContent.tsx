@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { formatUiRelativeTime } from '@/i18n/relative-time-format'
 import { translate } from '@/i18n/i18n'
 import type { ZApiCommunicationManagerClient } from './communication-manager-runtime'
+import { ZApiConversationAvatar } from './ZApiConversationAvatar'
 
 const MESSAGE_PAGE_SIZE = 20
 const MAX_MESSAGE_LIMIT = 100
@@ -183,7 +184,8 @@ export function ZApiConversationContent({
         >
           <ArrowLeft />
         </Button>
-        <span className="min-w-0 truncate text-xs font-medium">
+        <ZApiConversationAvatar active={active} conversation={conversation} client={client} />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {conversation.displayName ??
             translate('communicationRail.zApi.unnamedConversation', 'WhatsApp conversation')}
         </span>

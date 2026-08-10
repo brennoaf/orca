@@ -3,6 +3,7 @@ import {
   cancelZApiListeningValidation,
   clearCommunicationIntegration,
   discardPreparedZApiIngress,
+  getZApiConversationAvatar,
   getZApiCommunicationIntegrationStatus,
   getCommunicationIntegrationStatuses,
   listZApiConversations,
@@ -100,6 +101,10 @@ const PaginationParams = z
 const ZApiMessageParams = PaginationParams.extend({
   conversationId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 }).strict()
+
+const ZApiConversationAvatarParams = z
+  .object({ conversationId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
+  .strict()
 
 const ZApiSendReplyParams = z
   .object({
@@ -212,6 +217,14 @@ export const COMMUNICATION_INTEGRATION_METHODS: RpcMethod[] = [
     handler: (params, ctx) => {
       assertLocalWindow(ctx)
       return listZApiMessages(params)
+    }
+  }),
+  defineMethod({
+    name: 'communicationIntegrations.zApi.getConversationAvatar',
+    params: ZApiConversationAvatarParams,
+    handler: (params, ctx) => {
+      assertLocalWindow(ctx)
+      return getZApiConversationAvatar(params.conversationId)
     }
   }),
   defineMethod({

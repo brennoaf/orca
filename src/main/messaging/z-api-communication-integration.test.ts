@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ZApiConversationAvatarSnapshot } from '../../shared/communication-integrations'
 import type { ZApiTransactionJournalState } from './z-api-transaction-journal'
 
 const mocks = vi.hoisted(() => ({
   clearLegacy: vi.fn(),
+  avatarClear: vi.fn(),
+  avatarClearConfiguration: vi.fn(),
+  avatarDispose: vi.fn<() => Promise<void>>(async () => undefined),
+  avatarGet: vi.fn<() => Promise<ZApiConversationAvatarSnapshot>>(async () => ({
+    state: 'unavailable'
+  })),
   closeStore: vi.fn(),
   collectGarbage: vi.fn(),
   discardPreparedIngress: vi.fn(),
@@ -112,6 +119,15 @@ vi.mock('./z-api-listening-validation', () => ({
     retain = mocks.listeningRetain
     start = mocks.listeningStart
     status = mocks.listeningStatus
+  }
+}))
+
+vi.mock('./z-api-conversation-avatar-service', () => ({
+  ZApiConversationAvatarService: class {
+    clear = mocks.avatarClear
+    clearConfiguration = mocks.avatarClearConfiguration
+    dispose = mocks.avatarDispose
+    getConversationAvatar = mocks.avatarGet
   }
 }))
 
@@ -364,6 +380,9 @@ describe('Z-API communication integration', () => {
     ).resolves.toMatchObject({ ok: true })
     expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
     expect(mocks.listeningClear).toHaveBeenCalledExactlyOnceWith('11111111111111111111111111111111')
+    expect(mocks.avatarClearConfiguration).toHaveBeenCalledExactlyOnceWith(
+      '11111111111111111111111111111111'
+    )
   })
 
   it('preserves existing validation when reconfiguration rolls back', async () => {
@@ -387,6 +406,7 @@ describe('Z-API communication integration', () => {
     ).resolves.toMatchObject({ ok: false })
     expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
     expect(mocks.listeningClear).not.toHaveBeenCalled()
+    expect(mocks.avatarClearConfiguration).not.toHaveBeenCalled()
   })
 
   it('clears every validation for the removed instance', async () => {
@@ -395,6 +415,27 @@ describe('Z-API communication integration', () => {
     await api.removeZApiCommunicationIntegration()
     expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
     expect(mocks.listeningClearInstance).toHaveBeenCalledExactlyOnceWith('active-instance')
+    expect(mocks.avatarClear).toHaveBeenCalledOnce()
+  })
+
+  it('delegates conversation avatar reads without exposing the stored destination', async () => {
+    mocks.journalRead.mockImplementation(activeJournal)
+    mocks.avatarGet.mockResolvedValueOnce({
+      state: 'available',
+      mimeType: 'image/jpeg',
+      contentBase64: 'base64-content'
+    })
+    const api = await integration()
+
+    const result = await api.getZApiConversationAvatar(7)
+
+    expect(result).toEqual({
+      state: 'available',
+      mimeType: 'image/jpeg',
+      contentBase64: 'base64-content'
+    })
+    expect(mocks.avatarGet).toHaveBeenCalledExactlyOnceWith(7)
+    expect(JSON.stringify(result)).not.toMatch(/instance|address|phone|token|thumbnail/iu)
   })
 
   it('uses active journal credentials instead of divergent legacy credentials', async () => {
@@ -534,6 +575,7 @@ describe('Z-API communication integration', () => {
 
     expect(mocks.factory).toHaveBeenCalledOnce()
     expect(mocks.stopIngress).toHaveBeenCalledOnce()
+    expect(mocks.avatarDispose).toHaveBeenCalledOnce()
     expect(mocks.closeStore).toHaveBeenCalledOnce()
   })
 
@@ -545,6 +587,28 @@ describe('Z-API communication integration', () => {
     await api.getZApiCommunicationIntegrationStatus()
 
     await expect(api.disposeZApiCommunicationIntegration()).rejects.toThrow('Z-API shutdown failed')
+    expect(mocks.stopIngress).toHaveBeenCalledOnce()
+    expect(mocks.avatarDispose).toHaveBeenCalledOnce()
+    expect(mocks.closeStore).toHaveBeenCalledOnce()
+  })
+
+  it('still waits for avatar disposal when another shutdown participant fails', async () => {
+    const avatarDisposal = deferred<void>()
+    mocks.listeningCancelPending.mockImplementationOnce(() => {
+      throw new Error('database unavailable')
+    })
+    mocks.avatarDispose.mockReturnValueOnce(avatarDisposal.promise)
+    const api = await integration()
+    await api.getZApiCommunicationIntegrationStatus()
+
+    let settled = false
+    const disposal = api.disposeZApiCommunicationIntegration().finally(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    avatarDisposal.resolve(undefined)
+    await expect(disposal).rejects.toThrow('Z-API shutdown failed')
     expect(mocks.stopIngress).toHaveBeenCalledOnce()
     expect(mocks.closeStore).toHaveBeenCalledOnce()
   })

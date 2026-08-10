@@ -15,6 +15,7 @@ import {
   type ZApiCommunicationManagerClient
 } from './communication-manager-runtime'
 import type { CommunicationManagerPresentation } from './communication-managers'
+import { ZApiConversationAvatar } from './ZApiConversationAvatar'
 import { ZApiConversationContent } from './ZApiConversationContent'
 
 const CONVERSATION_PAGE_SIZE = 20
@@ -121,12 +122,16 @@ function SetupContent({
 }
 
 function ConversationList({
+  active,
+  client,
   conversations,
   loading,
   error,
   onSelect,
   onRetry
 }: {
+  active: boolean
+  client: ZApiCommunicationManagerClient
   conversations: readonly ZApiConversationSnapshot[]
   loading: boolean
   error: string | null
@@ -183,10 +188,11 @@ function ConversationList({
         <button
           key={conversation.id}
           type="button"
-          className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => onSelect(conversation)}
         >
-          <span className="min-w-0 truncate text-sm">
+          <ZApiConversationAvatar active={active} conversation={conversation} client={client} />
+          <span className="min-w-0 flex-1 truncate text-sm">
             {conversation.displayName ??
               translate('communicationRail.zApi.unnamedConversation', 'WhatsApp conversation')}
           </span>
@@ -296,6 +302,8 @@ function ZApiContent({
   }
   return (
     <ConversationList
+      active={isPopoverOpen}
+      client={client}
       conversations={conversations}
       loading={loading}
       error={error}

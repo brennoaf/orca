@@ -19,6 +19,9 @@ export const zApiSendTextResponseSchema = z
     id: z.string().min(1)
   })
   .loose()
+export const zApiChatMetadataSchema = z
+  .object({ profileThumbnail: z.string().min(1).nullable() })
+  .loose()
 
 export type ZApiCommunicationClientParams = {
   baseUrl: string
@@ -64,4 +67,8 @@ export type ZApiSendTextResult = {
   zaapId: string
   messageId: string
   id: string
+}
+
+export type ZApiChatMetadata = {
+  profileThumbnail: string | null
 }

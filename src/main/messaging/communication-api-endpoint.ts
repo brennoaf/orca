@@ -98,7 +98,7 @@ export function assertCommunicationEndpointTrust(
   }
 }
 
-async function resolveApprovedAddresses(
+export async function resolveApprovedAddresses(
   endpoint: CommunicationApiEndpoint,
   resolver: CommunicationDnsResolver
 ): Promise<readonly CommunicationResolvedAddress[]> {
@@ -126,14 +126,14 @@ async function resolveApprovedAddresses(
   return addresses
 }
 
-const defaultDnsResolver: CommunicationDnsResolver = async (hostname) => {
+export const defaultDnsResolver: CommunicationDnsResolver = async (hostname) => {
   const addresses = await dnsLookup(hostname, { all: true, verbatim: true })
   return addresses.flatMap(({ address, family }) =>
     family === 4 || family === 6 ? [{ address, family }] : []
   )
 }
 
-function pinnedLookup(
+export function pinnedLookup(
   addresses: readonly CommunicationResolvedAddress[]
 ): RequestOptions['lookup'] {
   return (_hostname, options, callback) => {
