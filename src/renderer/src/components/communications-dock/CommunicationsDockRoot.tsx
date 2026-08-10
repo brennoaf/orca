@@ -219,7 +219,7 @@ export function CommunicationsDockRoot({
           .discordCommand({ ...identity, appId: 'discord', method: 'set-overlay-open', open })
           .then(() => setOverlayOpen(open))
           .catch((error: unknown) => reportError('set Discord overlay', error))
-      },
+      }
     }),
     [identity, overlayOpen, reportError]
   )

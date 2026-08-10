@@ -241,30 +241,5 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
       ...translateSearchKeyword('communicationIntegrations.search.appToken', 'app token'),
       ...translateSearchKeyword('communicationIntegrations.search.userToken', 'user token')
     ]
-  },
-  {
-    title: translate('communicationIntegrations.search.zApiTitle', 'Z-API Integration'),
-    description: translate(
-      'communicationIntegrations.search.zApiDescription',
-      'Configure Z-API credentials, webhooks, and the local WhatsApp receiver.'
-    ),
-    targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS['z-api'],
-    keywords: [
-      ...translateSearchKeyword('communicationIntegrations.search.zApi', 'Z-API', {
-        englishOnly: true
-      }),
-      ...translateSearchKeyword('communicationIntegrations.search.whatsapp', 'WhatsApp', {
-        englishOnly: true
-      }),
-      ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
-      ...translateSearchKeyword('communicationIntegrations.search.endpoint', 'endpoint'),
-      ...translateSearchKeyword('communicationIntegrations.search.instance', 'instance'),
-      ...translateSearchKeyword('communicationIntegrations.search.clientToken', 'client token'),
-      ...translateSearchKeyword('communicationIntegrations.search.webhook', 'webhook'),
-      ...translateSearchKeyword('communicationIntegrations.search.receiver', 'receiver'),
-      ...translateSearchKeyword('communicationIntegrations.search.tunnel', 'tunnel'),
-      ...translateSearchKeyword('communicationIntegrations.search.publicUrl', 'public URL'),
-      ...translateSearchKeyword('communicationIntegrations.search.localPort', 'local port')
-    ]
   }
 ])

@@ -1,13 +1,11 @@
 export const DEFAULT_SLACK_API_BASE_URL = 'https://slack.com/api'
-export const DEFAULT_Z_API_BASE_URL = 'https://api.z-api.io'
 
 export const COMMUNICATION_INTEGRATION_SECTION_IDS = {
   discord: 'integrations-communications-discord',
-  slack: 'integrations-communications-slack',
-  'z-api': 'integrations-communications-z-api'
+  slack: 'integrations-communications-slack'
 } as const
 
-export type CommunicationProviderId = 'discord' | 'slack' | 'z-api'
+export type CommunicationProviderId = 'discord' | 'slack'
 
 export type CommunicationSecretMutation =
   | { action: 'keep' }
@@ -59,9 +57,6 @@ export type CommunicationIntegrationFieldName =
   | 'clientSecret'
   | 'appToken'
   | 'userToken'
-  | 'instanceId'
-  | 'instanceToken'
-  | 'clientToken'
   | 'baseUrl'
 
 export type CommunicationIntegrationRedactedError = {
@@ -109,86 +104,9 @@ export type SlackCommunicationIntegrationStatus = {
   workspace: SlackCommunicationWorkspace | null
 }
 
-export type ZApiCommunicationIntegrationStatus = {
-  provider: 'z-api'
-  endpoint: CommunicationEndpointStatus
-  readiness: CommunicationIntegrationReadiness
-  instanceId: string | null
-  instanceTokenStored: boolean
-  clientTokenStored: boolean
-  instanceConnected: boolean | null
-  smartphoneConnected: boolean | null
-  ingressPrepared: boolean
-  listenPort: number | null
-  localTunnelTarget: string | null
-  publicWebhookBaseUrl: string | null
-  publicIngressVerified: boolean
-  webhooksConfigured: boolean
-  listeningValidation?: ZApiListeningValidationSnapshot
-  lastErrorCode: CommunicationIntegrationErrorCode | null
-  hideArchivedConversations: boolean
-}
-
-type ZApiListeningValidationBase = {
-  attemptId: string | null
-  code: string | null
-  deadline: string | null
-  remainingMs: number | null
-  confirmedAt: string | null
-  error: CommunicationIntegrationRedactedError | null
-}
-
-export type ZApiListeningValidationSnapshot =
-  | (ZApiListeningValidationBase & {
-      state: 'not_started'
-      attemptId: null
-      code: null
-      deadline: null
-      remainingMs: null
-      confirmedAt: null
-      error: null
-    })
-  | (ZApiListeningValidationBase & {
-      state: 'awaiting'
-      attemptId: string
-      code: string
-      deadline: string
-      remainingMs: number
-      confirmedAt: null
-      error: null
-    })
-  | (ZApiListeningValidationBase & {
-      state: 'confirmed'
-      attemptId: string
-      code: null
-      deadline: string
-      remainingMs: 0
-      confirmedAt: string
-      error: null
-    })
-  | (ZApiListeningValidationBase & {
-      state: 'expired' | 'cancelled'
-      attemptId: string
-      code: null
-      deadline: string
-      remainingMs: 0
-      confirmedAt: null
-      error: null
-    })
-  | (ZApiListeningValidationBase & {
-      state: 'failed'
-      attemptId: null
-      code: null
-      deadline: null
-      remainingMs: null
-      confirmedAt: null
-      error: CommunicationIntegrationRedactedError
-    })
-
 export type CommunicationIntegrationStatus =
   | DiscordCommunicationIntegrationStatus
   | SlackCommunicationIntegrationStatus
-  | ZApiCommunicationIntegrationStatus
 
 export type CommunicationIntegrationOperationResult =
   | { ok: true; status: CommunicationIntegrationStatus }
@@ -212,107 +130,6 @@ export type SaveSlackCommunicationIntegrationParams = {
   userToken: CommunicationSecretMutation
 }
 
-export type SaveZApiCommunicationIntegrationParams = {
-  provider: 'z-api'
-  baseUrl: string
-  endpointTrust: CommunicationEndpointTrust
-  instanceId: string
-  instanceToken: CommunicationSecretMutation
-  clientToken: CommunicationSecretMutation
-}
-
-export type ZApiSecretMutation = { action: 'keep' } | { action: 'replace'; value: string }
-
-export type SaveAndConfigureZApiParams = {
-  instanceId: string
-  instanceToken: ZApiSecretMutation
-  clientToken: ZApiSecretMutation
-  apiBaseUrl: string
-  endpointTrust: CommunicationEndpointTrust
-  publicWebhookBaseUrl: string
-  listenPort: number
-  hideArchivedConversations: boolean
-}
-
-export type ZApiPreparedIngressSnapshot = {
-  listenPort: number
-  localTunnelTarget: string
-}
-
-export type ZApiConversationKind = 'group' | 'private' | 'newsletter' | 'broadcast' | 'unknown'
-
-export type ZApiConversationSnapshot = {
-  id: number
-  conversationKind: ZApiConversationKind
-  displayName: string | null
-  lastMessageAt: number
-}
-
-export type ZApiConversationAvatarSnapshot =
-  | {
-      state: 'available'
-      mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
-      contentBase64: string
-    }
-  | { state: 'unavailable' }
-
-export type ZApiMessageSnapshot = {
-  id: number
-  conversationId: number
-  providerMessageId: string | null
-  senderName: string | null
-  direction: 'inbound' | 'outbound'
-  contentKind: 'text' | 'unsupported'
-  text: string | null
-  providerContentType: string | null
-  occurredAt: number
-  deliveryStatus: 'received' | 'pending' | 'sent' | 'unknown' | 'failed'
-}
-
-export type ZApiConversationPage = {
-  conversations: ZApiConversationSnapshot[]
-  nextOffset: number | null
-  archiveFilter: {
-    enabled: boolean
-    state: 'disabled' | 'applied' | 'failed'
-    error: CommunicationIntegrationRedactedError | null
-  }
-}
-
-export type ZApiMessagePage = {
-  messages: ZApiMessageSnapshot[]
-  nextOffset: number | null
-}
-
-export type ZApiConversationAttentionSnapshot = {
-  conversationId: number
-  unreadCount: number
-}
-
-export type ZApiAttentionSnapshot = {
-  provider: 'z-api'
-  totalUnread: number
-  conversations: ZApiConversationAttentionSnapshot[]
-}
-
-export type ZApiSendReplyResult = {
-  providerMessageId: string
-  deliveryStatus: 'sent'
-}
-
-export type ZApiCommunicationOperationResult<T = undefined> =
-  | {
-      ok: true
-      status: ZApiCommunicationIntegrationStatus
-      value: T
-    }
-  | {
-      ok: false
-      status: ZApiCommunicationIntegrationStatus
-      error: CommunicationIntegrationRedactedError
-    }
-
 export type SaveCommunicationIntegrationParams =
   | SaveDiscordCommunicationIntegrationParams
   | SaveSlackCommunicationIntegrationParams
-  | SaveZApiCommunicationIntegrationParams

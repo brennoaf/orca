@@ -141,7 +141,7 @@ const FloatingCommsActionSchema: z.ZodType<FloatingCommsAction> = z.discriminate
     .object({
       type: z.literal('open-settings'),
       ...FloatingCommsIdentityFields,
-      provider: z.enum(['discord', 'slack', 'z-api'])
+      provider: z.enum(['discord', 'slack'])
     })
     .strict()
 ])

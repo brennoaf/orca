@@ -88,7 +88,7 @@ const ActionSchema: z.ZodType<CommunicationsDockAction> = z.discriminatedUnion('
     .object({
       ...VersionedApp,
       type: z.literal('open-settings'),
-      provider: z.enum(['discord', 'slack', 'z-api'])
+      provider: z.enum(['discord', 'slack'])
     })
     .strict()
 ])

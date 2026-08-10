@@ -303,7 +303,7 @@ function FloatingCommsRoot(): React.JSX.Element {
             }
           })
           .catch((error: unknown) => reportSurfaceError('set overlay state', error))
-      },
+      }
     }),
     [discordIdentity, refresh, state]
   )

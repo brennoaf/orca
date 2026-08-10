@@ -28,9 +28,6 @@ import { readNotificationAuthorizationStatus } from './notification-authorizatio
 import { parsePaneKey } from '../../shared/stable-pane-id'
 import { setTrayAttention } from '../tray/system-tray'
 import { isMainWindowVisible } from '../window/main-window-visibility'
-import { onZApiInboundAttention } from '../messaging/z-api-attention-events'
-import { isZApiAttentionManagerVisible } from '../messaging/z-api-attention-visibility-state'
-import { dispatchZApiAttentionNotification } from './z-api-attention-notification-policy'
 
 const NOTIFICATION_COOLDOWN_MS = 5000
 const MAX_RECENT_NOTIFICATION_KEYS = 50
@@ -312,32 +309,6 @@ function reserveNotificationCooldown(
 export function registerNotificationHandlers(store: Store, runtime?: OrcaRuntimeService): void {
   const recentDesktopNotifications = new Map<string, number>()
   const recentMobileNotifications = new Map<string, number>()
-  onZApiInboundAttention((event) => {
-    const settings = store.getSettings().notifications
-    dispatchZApiAttentionNotification(event, {
-      enabled: () => settings.enabled,
-      visible: isZApiAttentionManagerVisible,
-      reserve: (conversationId) =>
-        reserveNotificationCooldown(
-          recentDesktopNotifications,
-          `z-api:${conversationId}`,
-          Date.now()
-        ),
-      supported: () => Notification.isSupported(),
-      attention: () => setTrayAttention(true),
-      deliver: () => {
-        const options = buildNotificationOptions({ source: 'communication-message' })
-        if (getEffectiveNotificationSoundId(settings) !== 'system') {
-          options.silent = true
-        } else if (process.platform === 'darwin') {
-          options.sound = 'default'
-        }
-        const notification = new Notification(options)
-        retainNotificationUntilRelease(notification)
-        notification.show()
-      }
-    })
-  })
   // Why: handler registration marks a fresh session; permission evidence from a previous one must not leak in.
   lastObservedDeliveryOutcome = null
   deliveryProbeInFlight = null

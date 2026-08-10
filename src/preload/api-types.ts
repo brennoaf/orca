@@ -65,9 +65,7 @@ import type {
   FloatingCommsSurfaceVisibility,
   FloatingCommsUpdateRequest
 } from '../shared/floating-comms-surface'
-import type {
-  CommunicationIntegrationStatus,
-} from '../shared/communication-integrations'
+import type { CommunicationIntegrationStatus } from '../shared/communication-integrations'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload

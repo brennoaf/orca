@@ -25,7 +25,6 @@ import {
   type CommunicationIntegrationTestResult
 } from './use-communication-integration-card-actions'
 import type { CommunicationIntegrationPendingOperation } from './CommunicationIntegrationDialogFields'
-import { ZApiCommunicationIntegrationCard } from './ZApiCommunicationIntegrationCard'
 
 type CardPresentation = {
   label: string
@@ -296,7 +295,6 @@ export function CommunicationIntegrationsSection(): React.JSX.Element {
   const { getStatus, loading, error } = useCommunicationIntegrationStatuses()
   const discordStatus = getStatus('discord')
   const slackStatus = getStatus('slack')
-  const zApiStatus = getStatus('z-api')
 
   return (
     <section className="space-y-3">
@@ -319,11 +317,6 @@ export function CommunicationIntegrationsSection(): React.JSX.Element {
         />
         <SlackCommunicationIntegrationCard
           status={slackStatus?.provider === 'slack' ? slackStatus : null}
-          loading={loading}
-          loadError={error}
-        />
-        <ZApiCommunicationIntegrationCard
-          status={zApiStatus?.provider === 'z-api' ? zApiStatus : null}
           loading={loading}
           loadError={error}
         />

@@ -21,20 +21,6 @@ import {
 } from './communication-integration-credential-file'
 import * as SlackStore from './slack-communication-credential-store'
 import { probeSlackCommunicationIntegration } from './slack-communication-probe'
-import * as ZApiStore from './z-api-communication-credential-store'
-import {
-  cancelZApiListeningValidation,
-  discardPreparedZApiIngress,
-  getZApiConversationAvatar,
-  getZApiCommunicationIntegrationStatus,
-  listZApiConversations,
-  listZApiMessages,
-  prepareZApiIngress,
-  removeZApiCommunicationIntegration,
-  saveAndConfigureZApi,
-  sendZApiReply,
-  startZApiListeningValidation
-} from './z-api-communication-integration'
 
 type ProviderStatus<P extends CommunicationProviderId> = Extract<
   CommunicationIntegrationStatus,
@@ -84,19 +70,15 @@ function storageFailureStatus(
 ): CommunicationIntegrationStatus {
   return provider === 'slack'
     ? SlackStore.emptySlackCommunicationStatus(error)
-    : provider === 'z-api'
-      ? ZApiStore.emptyZApiCommunicationStatus(error)
-      : DiscordStore.emptyDiscordCommunicationStatus(error)
+    : DiscordStore.emptyDiscordCommunicationStatus(error)
 }
 
-function status(
-  provider: Exclude<CommunicationProviderId, 'z-api'>
-): CommunicationIntegrationStatus {
+function status(provider: CommunicationProviderId): CommunicationIntegrationStatus {
   return provider === 'discord' ? discordStatus() : SlackStore.getSlackCommunicationStatus()
 }
 
 async function operation(
-  provider: Exclude<CommunicationProviderId, 'z-api'>,
+  provider: CommunicationProviderId,
   run: () => Promise<void> | void
 ): Promise<CommunicationIntegrationOperationResult> {
   try {
@@ -210,12 +192,6 @@ async function testSlack(): Promise<CommunicationIntegrationOperationResult> {
   })
 }
 
-const Z_API_TRANSACTION_REQUIRED: CommunicationIntegrationRedactedError = {
-  code: 'invalid_configuration',
-  message: 'Configure Z-API with its public webhook endpoint in one transaction.',
-  field: null
-}
-
 export const COMMUNICATION_INTEGRATION_REGISTRY = {
   discord: {
     provider: 'discord',
@@ -234,17 +210,6 @@ export const COMMUNICATION_INTEGRATION_REGISTRY = {
     save: saveSlack,
     clear: () => operation('slack', SlackStore.clearSlackCommunicationCredentials),
     test: testSlack
-  },
-  'z-api': {
-    provider: 'z-api',
-    getStatus: getZApiCommunicationIntegrationStatus,
-    save: saveAndConfigureZApi,
-    clear: removeZApiCommunicationIntegration,
-    test: async () => ({
-      ok: false as const,
-      status: await getZApiCommunicationIntegrationStatus(),
-      error: Z_API_TRANSACTION_REQUIRED
-    })
   }
 } satisfies Record<CommunicationProviderId, unknown>
 
@@ -252,11 +217,9 @@ export async function getCommunicationIntegrationStatuses(): Promise<
   CommunicationIntegrationStatus[]
 > {
   return Promise.all(
-    (['discord', 'slack', 'z-api'] as const).map(async (provider) => {
+    (['discord', 'slack'] as const).map(async (provider) => {
       try {
-        return provider === 'z-api'
-          ? await getZApiCommunicationIntegrationStatus()
-          : status(provider)
+        return status(provider)
       } catch (error) {
         const safeError = redactCommunicationIntegrationError(error)
         if (safeError && error instanceof CommunicationIntegrationCredentialFileError) {
@@ -275,11 +238,7 @@ export async function saveCommunicationIntegration(params: SaveCommunicationInte
   if (params.provider === 'slack') {
     return saveSlack(params)
   }
-  return {
-    ok: false as const,
-    status: await getZApiCommunicationIntegrationStatus(),
-    error: Z_API_TRANSACTION_REQUIRED
-  }
+  return saveSlack(params)
 }
 
 export function clearCommunicationIntegration(provider: CommunicationProviderId) {
@@ -288,18 +247,4 @@ export function clearCommunicationIntegration(provider: CommunicationProviderId)
 
 export function testCommunicationIntegration(provider: CommunicationProviderId) {
   return COMMUNICATION_INTEGRATION_REGISTRY[provider].test()
-}
-
-export {
-  cancelZApiListeningValidation,
-  discardPreparedZApiIngress,
-  getZApiConversationAvatar,
-  getZApiCommunicationIntegrationStatus,
-  listZApiConversations,
-  listZApiMessages,
-  prepareZApiIngress,
-  removeZApiCommunicationIntegration,
-  saveAndConfigureZApi,
-  sendZApiReply,
-  startZApiListeningValidation
 }
