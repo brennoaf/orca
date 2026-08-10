@@ -57,7 +57,8 @@ const status: ZApiCommunicationIntegrationStatus = {
   publicWebhookBaseUrl: 'https://hooks.example.test',
   publicIngressVerified: true,
   webhooksConfigured: true,
-  lastErrorCode: null
+  lastErrorCode: null,
+  hideArchivedConversations: false
 }
 
 const saveParams: SaveAndConfigureZApiParams = {
@@ -67,7 +68,8 @@ const saveParams: SaveAndConfigureZApiParams = {
   apiBaseUrl: 'https://api.z-api.io',
   endpointTrust: { kind: 'default' },
   publicWebhookBaseUrl: 'https://hooks.example.test',
-  listenPort: 43210
+  listenPort: 43210,
+  hideArchivedConversations: false
 }
 
 const attemptId = '11111111-1111-4111-8111-111111111111'

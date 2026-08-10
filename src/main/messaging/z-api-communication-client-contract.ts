@@ -22,6 +22,14 @@ export const zApiSendTextResponseSchema = z
 export const zApiChatMetadataSchema = z
   .object({ profileThumbnail: z.string().min(1).nullable() })
   .loose()
+export const zApiChatsSchema = z.array(
+  z
+    .object({
+      phone: z.string().min(1),
+      archived: z.union([z.boolean(), z.enum(['true', 'false'])])
+    })
+    .loose()
+)
 
 export type ZApiCommunicationClientParams = {
   baseUrl: string
@@ -71,4 +79,9 @@ export type ZApiSendTextResult = {
 
 export type ZApiChatMetadata = {
   profileThumbnail: string | null
+}
+
+export type ZApiChatArchiveState = {
+  address: string
+  archived: boolean
 }

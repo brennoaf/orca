@@ -213,7 +213,8 @@ export function getZApiCommunicationStatus(): ZApiCommunicationIntegrationStatus
       confirmedAt: null,
       error: null
     },
-    lastErrorCode: stored?.lastError?.code ?? null
+    lastErrorCode: stored?.lastError?.code ?? null,
+    hideArchivedConversations: false
   }
 }
 
@@ -256,6 +257,7 @@ export function emptyZApiCommunicationStatus(
       confirmedAt: null,
       error: null
     },
-    lastErrorCode: lastError?.code ?? null
+    lastErrorCode: lastError?.code ?? null,
+    hideArchivedConversations: false
   }
 }

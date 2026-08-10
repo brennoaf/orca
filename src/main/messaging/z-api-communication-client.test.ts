@@ -160,6 +160,47 @@ afterEach(() => {
 })
 
 describe('ZApiCommunicationClient', () => {
+  it('parses archived chat state without exposing unrelated chat fields', async () => {
+    const fixture = client([
+      {
+        body: [
+          { phone: 'chat-a', archived: true, unread: '9' },
+          { phone: 'chat-b', archived: 'false', messagesUnread: 4 }
+        ]
+      }
+    ])
+    await expect(fixture.client.listChatArchiveStates()).resolves.toEqual([
+      { address: 'chat-a', archived: true },
+      { address: 'chat-b', archived: false }
+    ])
+    expect(fixture.options[0].path).toContain('/chats?page=1&pageSize=100')
+  })
+
+  it('loads every page of archived chat state until the final short page', async () => {
+    const firstPage = Array.from({ length: 100 }, (_value, index) => ({
+      phone: `chat-${index}`,
+      archived: false
+    }))
+    const fixture = client([
+      { body: firstPage },
+      { body: [{ phone: 'chat-final', archived: true }] }
+    ])
+    const chats = await fixture.client.listChatArchiveStates()
+    expect(chats).toHaveLength(101)
+    expect(chats.at(-1)).toEqual({ address: 'chat-final', archived: true })
+    expect(fixture.options.map((option) => option.path)).toEqual([
+      expect.stringContaining('/chats?page=1&pageSize=100'),
+      expect.stringContaining('/chats?page=2&pageSize=100')
+    ])
+  })
+
+  it('rejects chat archive responses with unknown state', async () => {
+    const fixture = client([{ body: [{ phone: 'chat-a', archived: null }] }])
+    await expect(fixture.client.listChatArchiveStates()).rejects.toMatchObject({
+      code: 'invalid_response'
+    })
+  })
+
   it('loads chat metadata through the encoded conversation path', async () => {
     const fixture = client([
       { body: { profileThumbnail: 'https://cdn.example.com/avatar.jpg', ignored: true } }

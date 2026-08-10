@@ -149,7 +149,8 @@ function createZApiStatus(): ZApiCommunicationIntegrationStatus {
       confirmedAt: '2026-08-09T00:00:00.000Z',
       error: null
     },
-    lastErrorCode: null
+    lastErrorCode: null,
+    hideArchivedConversations: false
   }
 }
 

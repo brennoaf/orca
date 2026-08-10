@@ -28,6 +28,8 @@ import {
   zApiStatusFromRuntime
 } from './z-api-communication-runtime'
 import { ZApiTransactionError } from './z-api-transaction-service'
+import { getZApiArchiveStates, clearZApiArchiveStates } from './z-api-archive-state-service'
+import { redactCommunicationIntegrationError } from './communication-integration-credential-file'
 
 function resolveSecret(
   mutation: ZApiSecretMutation,
@@ -94,6 +96,7 @@ export async function saveAndConfigureZApi(
       endpointTrust: input.endpointTrust,
       publicWebhookBaseUrl: input.publicWebhookBaseUrl,
       listenPort: preparedIngress.listenPort,
+      hideArchivedConversations: input.hideArchivedConversations,
       preparedIngress
     })
     const configuration = currentZApiConfiguration(runtime)
@@ -101,6 +104,7 @@ export async function saveAndConfigureZApi(
       runtime.listeningValidation.clear(active.configurationId)
       runtime.avatarService.clearConfiguration(active.configurationId)
     }
+    clearZApiArchiveStates()
     clearZApiCommunicationCredentials()
     return undefined
   })
@@ -117,6 +121,7 @@ export async function removeZApiCommunicationIntegration(): Promise<
       runtime.listeningValidation.clearInstance(configuration.instanceId)
     }
     runtime.avatarService.clear()
+    clearZApiArchiveStates()
     clearZApiCommunicationCredentials()
     return undefined
   })
@@ -167,21 +172,74 @@ export async function listZApiConversations(args: {
   const runtime = await getZApiCommunicationRuntime()
   const configuration = currentZApiConfiguration(runtime)
   if (!configuration) {
-    return { conversations: [], nextOffset: null }
+    return {
+      conversations: [],
+      nextOffset: null,
+      archiveFilter: { enabled: false, state: 'disabled', error: null }
+    }
   }
-  const rows = runtime.store.listConversations(
-    args.limit + 1,
-    args.offset,
-    configuration.instanceId
-  )
+  const filterEnabled = configuration.hideArchivedConversations
+  let visibleRows: ReturnType<typeof runtime.store.listConversations>
+  let archiveFilter: ZApiConversationPage['archiveFilter'] = {
+    enabled: filterEnabled,
+    state: filterEnabled ? 'applied' : 'disabled',
+    error: null
+  }
+  if (filterEnabled) {
+    try {
+      const states = await getZApiArchiveStates(configuration)
+      const required = args.offset + args.limit + 1
+      const batchSize = 500
+      visibleRows = []
+      for (let sourceOffset = 0; visibleRows.length < required; sourceOffset += batchSize) {
+        const batch = runtime.store.listConversations(
+          batchSize,
+          sourceOffset,
+          configuration.instanceId
+        )
+        visibleRows.push(
+          ...batch.filter((conversation) => states.get(conversation.address) !== true)
+        )
+        if (batch.length < batchSize) {
+          break
+        }
+      }
+    } catch (error) {
+      visibleRows = runtime.store.listConversations(
+        args.limit + 1,
+        args.offset,
+        configuration.instanceId
+      )
+      archiveFilter = {
+        enabled: true,
+        state: 'failed',
+        error: redactCommunicationIntegrationError(error) ?? {
+          code: 'provider_unavailable',
+          message: 'Z-API archive state is unavailable.',
+          field: null
+        }
+      }
+    }
+  } else {
+    visibleRows = runtime.store.listConversations(
+      args.limit + 1,
+      args.offset,
+      configuration.instanceId
+    )
+  }
+  const pageRows =
+    filterEnabled && archiveFilter.state === 'applied'
+      ? visibleRows.slice(args.offset, args.offset + args.limit + 1)
+      : visibleRows
   return {
-    conversations: rows.slice(0, args.limit).map((conversation) => ({
+    conversations: pageRows.slice(0, args.limit).map((conversation) => ({
       id: conversation.id,
       conversationKind: conversation.conversationKind,
       displayName: conversation.displayName,
       lastMessageAt: conversation.lastMessageAt
     })),
-    nextOffset: rows.length > args.limit ? args.offset + args.limit : null
+    nextOffset: pageRows.length > args.limit ? args.offset + args.limit : null,
+    archiveFilter
   }
 }
 

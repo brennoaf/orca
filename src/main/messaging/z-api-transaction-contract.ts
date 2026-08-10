@@ -61,6 +61,7 @@ export type ZApiSaveAndConfigureParams = {
   endpointTrust: CommunicationEndpointTrust
   publicWebhookBaseUrl: string
   listenPort: number
+  hideArchivedConversations: boolean
   preparedIngress: ZApiPreparedIngress
 }
 
@@ -152,14 +153,16 @@ export function emptyZApiTransactionStatus(): ZApiTransactionStatus {
 }
 
 export function validZApiSecret(value: string): boolean {
-  return (
-    value.length > 0 &&
-    value.trim() === value &&
-    [...value].every((character) => {
-      const codePoint = character.codePointAt(0) ?? 0
-      return codePoint >= 32 && codePoint !== 127
-    })
-  )
+  if (value.length === 0 || value.trim() !== value) {
+    return false
+  }
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (codePoint < 32 || codePoint === 127) {
+      return false
+    }
+  }
+  return true
 }
 
 export function zApiFullWebhookUrl(configuration: ZApiTransactionConfiguration): string {

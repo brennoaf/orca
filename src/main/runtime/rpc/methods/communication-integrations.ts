@@ -87,7 +87,8 @@ const ZApiSaveAndConfigureParams = z
     apiBaseUrl: z.string().trim().min(1).max(2_048),
     endpointTrust: EndpointTrust,
     publicWebhookBaseUrl: z.string().trim().min(1).max(2_048),
-    listenPort: z.number().int().min(1).max(65_535)
+    listenPort: z.number().int().min(1).max(65_535),
+    hideArchivedConversations: z.boolean()
   })
   .strict()
 

@@ -17,6 +17,7 @@ import {
   zApiTrueResponseSchema,
   type ZApiCommunicationClientParams,
   type ZApiChatMetadata,
+  type ZApiChatArchiveState,
   type ZApiInstanceStatus,
   type ZApiInstanceWebhookState,
   type ZApiRestorableWebhookState,
@@ -24,6 +25,7 @@ import {
   type ZApiSendTextResult
 } from './z-api-communication-client-contract'
 import { restorableZApiWebhookState } from './z-api-webhook-state'
+import { listZApiChatArchiveStates } from './z-api-chat-archive-state'
 
 export class ZApiAmbiguousSendError extends CommunicationApiError {
   readonly deliveryAmbiguous = true
@@ -43,10 +45,11 @@ export class ZApiAmbiguousSendError extends CommunicationApiError {
 }
 
 function invalidPathField(value: string): boolean {
-  const hasControl = [...value].some((character) => {
+  let hasControl = false
+  for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0
-    return codePoint < 32 || codePoint === 127
-  })
+    hasControl ||= codePoint < 32 || codePoint === 127
+  }
   return value === '.' || value === '..' || /[\s/\\]/u.test(value) || hasControl
 }
 
@@ -197,6 +200,10 @@ export class ZApiCommunicationClient {
       throw invalidResponse()
     }
     return { profileThumbnail: parsed.data.profileThumbnail }
+  }
+
+  async listChatArchiveStates(): Promise<ZApiChatArchiveState[]> {
+    return listZApiChatArchiveStates(async (path) => (await this.request('GET', path)).body)
   }
 
   async updateEveryWebhooks(publicWebhookUrl: string): Promise<ZApiRestorableWebhookState> {

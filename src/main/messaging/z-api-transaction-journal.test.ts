@@ -47,7 +47,8 @@ function state(): ZApiTransactionJournalState {
         endpointTrust: { kind: 'default' },
         publicWebhookBaseUrl: 'https://hooks.example.com',
         secretPath: '/orca/z-api/secret-sensitive',
-        listenPort: 32123
+        listenPort: 32123,
+        hideArchivedConversations: false
       },
       rollbackWebhookState: {
         webhookUrl: 'https://previous.example.com/hook',
@@ -121,6 +122,29 @@ describe('ZApiTransactionJournal', () => {
     expect(mocks.writeSecureFile).toHaveBeenCalledOnce()
     expect(journal.read().pending?.configuration.configurationId).toBe(generatedId)
     expect(readFileSync(path, 'utf8')).not.toContain(generatedId ?? '')
+  })
+
+  it('defaults a legacy archive preference to false and persists the normalization', () => {
+    const legacy = state()
+    const configuration = legacy.pending?.configuration
+    if (!configuration) {
+      throw new Error('Missing test configuration.')
+    }
+    const { hideArchivedConversations: _preference, ...legacyConfiguration } = configuration
+    const payload = JSON.stringify({
+      ...legacy,
+      pending: { ...legacy.pending, configuration: legacyConfiguration }
+    })
+    const ciphertext = Buffer.from(
+      Buffer.from(payload, 'utf8').map((byte) => byte ^ 0x5a)
+    ).toString('base64')
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, format: 'electron-safe-storage-v1', ciphertext })
+    )
+    const journal = new ZApiTransactionJournal()
+    expect(journal.read().pending?.configuration.hideArchivedConversations).toBe(false)
+    expect(mocks.writeSecureFile).toHaveBeenCalledOnce()
   })
 
   it('fails closed on malformed and future journal payloads', () => {

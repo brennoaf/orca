@@ -225,7 +225,8 @@ export function zApiStatusFromRuntime(
     publicIngressVerified: serviceStatus.ingress.challengeVerified,
     webhooksConfigured: serviceStatus.ingress.webhooksVerified,
     listeningValidation,
-    lastErrorCode: serviceStatus.lastErrorCode
+    lastErrorCode: serviceStatus.lastErrorCode,
+    hideArchivedConversations: configuration?.hideArchivedConversations ?? false
   }
 }
 

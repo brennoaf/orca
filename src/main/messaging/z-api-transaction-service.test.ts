@@ -50,7 +50,8 @@ function configuration(): ZApiTransactionConfiguration {
     endpointTrust: { kind: 'default' },
     publicWebhookBaseUrl: 'https://hooks.example.com',
     secretPath: '/orca/z-api/secret-path',
-    listenPort: 32123
+    listenPort: 32123,
+    hideArchivedConversations: false
   }
 }
 
@@ -191,6 +192,7 @@ async function prepare(value: Fixture): Promise<ZApiSaveAndConfigureParams> {
     endpointTrust: { kind: 'default' },
     publicWebhookBaseUrl: 'https://hooks.example.com',
     listenPort: ingress.listenPort,
+    hideArchivedConversations: false,
     preparedIngress: ingress
   }
 }

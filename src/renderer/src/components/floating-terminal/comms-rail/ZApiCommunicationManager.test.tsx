@@ -47,7 +47,8 @@ const READY_STATUS: ZApiCommunicationIntegrationStatus = {
   publicWebhookBaseUrl: 'https://example.trycloudflare.com',
   publicIngressVerified: true,
   webhooksConfigured: true,
-  lastErrorCode: null
+  lastErrorCode: null,
+  hideArchivedConversations: false
 }
 
 function deferred<T>(): {
@@ -83,7 +84,8 @@ function createClient(): ZApiCommunicationManagerClient {
             lastMessageAt: Date.now()
           }
         ],
-        nextOffset: null
+        nextOffset: null,
+        archiveFilter: { enabled: false, state: 'disabled' as const, error: null }
       })
     ),
     listMessages: vi.fn(() => Promise.resolve({ messages: [], nextOffset: null })),

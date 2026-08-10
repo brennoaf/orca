@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   avatarGet: vi.fn<() => Promise<ZApiConversationAvatarSnapshot>>(async () => ({
     state: 'unavailable'
   })),
+  archiveStates: vi.fn<() => Promise<ReadonlyMap<string, boolean>>>(async () => new Map()),
+  archiveClear: vi.fn(),
   closeStore: vi.fn(),
   collectGarbage: vi.fn(),
   discardPreparedIngress: vi.fn(),
@@ -74,6 +76,11 @@ vi.mock('./message-store', () => ({
     listConversations = mocks.listConversations
     listRecentMessages = mocks.listRecentMessages
   }
+}))
+
+vi.mock('./z-api-archive-state-service', () => ({
+  getZApiArchiveStates: mocks.archiveStates,
+  clearZApiArchiveStates: mocks.archiveClear
 }))
 
 vi.mock('./z-api-communication-credential-store', () => ({
@@ -161,7 +168,8 @@ function activeJournal(): ZApiTransactionJournalState {
         endpointTrust: { kind: 'custom', authority: 'active.example.com' },
         publicWebhookBaseUrl: 'https://hook.example.com',
         secretPath: '/orca/z-api/secret',
-        listenPort: 4321
+        listenPort: 4321,
+        hideArchivedConversations: false
       },
       originalWebhookState: {
         webhookUrl: 'https://original.example.com/webhook',
@@ -191,6 +199,7 @@ describe('Z-API communication integration', () => {
     vi.resetModules()
     vi.clearAllMocks()
     mocks.legacy = null
+    mocks.archiveStates.mockResolvedValue(new Map())
     mocks.serviceStatus = {
       configured: false,
       verified: false,
@@ -375,7 +384,8 @@ describe('Z-API communication integration', () => {
         apiBaseUrl: 'https://active.example.com',
         endpointTrust: { kind: 'custom', authority: 'active.example.com' },
         publicWebhookBaseUrl: 'https://hook.example.com',
-        listenPort: 4321
+        listenPort: 4321,
+        hideArchivedConversations: false
       })
     ).resolves.toMatchObject({ ok: true })
     expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
@@ -401,7 +411,8 @@ describe('Z-API communication integration', () => {
         apiBaseUrl: 'https://active.example.com',
         endpointTrust: { kind: 'custom', authority: 'active.example.com' },
         publicWebhookBaseUrl: 'https://hook.example.com',
-        listenPort: 4321
+        listenPort: 4321,
+        hideArchivedConversations: false
       })
     ).resolves.toMatchObject({ ok: false })
     expect(mocks.listeningCancelPending).toHaveBeenCalledOnce()
@@ -470,7 +481,8 @@ describe('Z-API communication integration', () => {
       apiBaseUrl: 'https://active.example.com',
       endpointTrust: { kind: 'custom', authority: 'active.example.com' },
       publicWebhookBaseUrl: 'https://hook.example.com',
-      listenPort: 4321
+      listenPort: 4321,
+      hideArchivedConversations: false
     })
 
     expect(status.instanceId).toBe('active-instance')
@@ -489,6 +501,109 @@ describe('Z-API communication integration', () => {
       })
     )
     expect(mocks.clearLegacy).toHaveBeenCalledOnce()
+  })
+
+  it('filters only conversations explicitly reported as archived', async () => {
+    const state = activeJournal()
+    if (!state.active) {
+      throw new Error('active fixture missing')
+    }
+    state.active.configuration.hideArchivedConversations = true
+    mocks.journalRead.mockImplementation(() => state)
+    mocks.listConversations.mockReturnValue([
+      {
+        id: 1,
+        provider: 'z-api',
+        instanceId: 'active-instance',
+        address: 'chat-a',
+        conversationKind: 'private',
+        displayName: 'A',
+        lastMessageAt: 3
+      },
+      {
+        id: 2,
+        provider: 'z-api',
+        instanceId: 'active-instance',
+        address: 'chat-b',
+        conversationKind: 'private',
+        displayName: 'B',
+        lastMessageAt: 2
+      },
+      {
+        id: 3,
+        provider: 'z-api',
+        instanceId: 'active-instance',
+        address: 'chat-unknown',
+        conversationKind: 'private',
+        displayName: 'C',
+        lastMessageAt: 1
+      }
+    ])
+    mocks.archiveStates.mockResolvedValue(
+      new Map([
+        ['chat-a', true],
+        ['chat-b', false]
+      ])
+    )
+    const api = await integration()
+    const page = await api.listZApiConversations({ limit: 20, offset: 0 })
+    expect(page.conversations.map((conversation) => conversation.id)).toEqual([2, 3])
+    expect(page.archiveFilter).toEqual({ enabled: true, state: 'applied', error: null })
+  })
+
+  it('pages filtered conversations past one thousand stored rows', async () => {
+    const state = activeJournal()
+    if (!state.active) {
+      throw new Error('active fixture missing')
+    }
+    state.active.configuration.hideArchivedConversations = true
+    mocks.journalRead.mockImplementation(() => state)
+    const rows = Array.from({ length: 1101 }, (_value, index) => ({
+      id: index,
+      provider: 'z-api',
+      instanceId: 'active-instance',
+      address: `chat-${index}`,
+      conversationKind: 'private' as const,
+      displayName: `Chat ${index}`,
+      lastMessageAt: index
+    }))
+    mocks.listConversations.mockImplementation((limit: number, offset: number) =>
+      rows.slice(offset, offset + limit)
+    )
+    mocks.archiveStates.mockResolvedValue(new Map(rows.map((row) => [row.address, false])))
+    const api = await integration()
+    const page = await api.listZApiConversations({ limit: 20, offset: 1000 })
+    expect(page.conversations.map((conversation) => conversation.id)).toEqual(
+      Array.from({ length: 20 }, (_value, index) => 1000 + index)
+    )
+    expect(page.nextOffset).toBe(1020)
+    expect(mocks.listConversations.mock.calls.map((call) => call[1])).toEqual([0, 500, 1000])
+  })
+
+  it('keeps current conversations visible when archive refresh fails', async () => {
+    const state = activeJournal()
+    if (!state.active) {
+      throw new Error('active fixture missing')
+    }
+    state.active.configuration.hideArchivedConversations = true
+    mocks.journalRead.mockImplementation(() => state)
+    mocks.listConversations.mockReturnValue([
+      {
+        id: 1,
+        provider: 'z-api',
+        instanceId: 'active-instance',
+        address: 'chat-a',
+        conversationKind: 'private',
+        displayName: 'A',
+        lastMessageAt: 1
+      }
+    ])
+    mocks.archiveStates.mockRejectedValue(new Error('provider-private-response'))
+    const api = await integration()
+    const page = await api.listZApiConversations({ limit: 20, offset: 0 })
+    expect(page.conversations.map((conversation) => conversation.id)).toEqual([1])
+    expect(page.archiveFilter).toMatchObject({ enabled: true, state: 'failed' })
+    expect(JSON.stringify(page)).not.toContain('provider-private-response')
   })
 
   it('discards an uncommitted receiver before preparing another port', async () => {
@@ -523,7 +638,8 @@ describe('Z-API communication integration', () => {
       apiBaseUrl: 'https://api.z-api.io',
       endpointTrust: { kind: 'default' },
       publicWebhookBaseUrl: 'https://hook.example.com',
-      listenPort: 4321
+      listenPort: 4321,
+      hideArchivedConversations: false
     })
 
     expect(mocks.saveAndConfigure).toHaveBeenCalledWith(

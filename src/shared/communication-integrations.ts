@@ -126,6 +126,7 @@ export type ZApiCommunicationIntegrationStatus = {
   webhooksConfigured: boolean
   listeningValidation?: ZApiListeningValidationSnapshot
   lastErrorCode: CommunicationIntegrationErrorCode | null
+  hideArchivedConversations: boolean
 }
 
 type ZApiListeningValidationBase = {
@@ -230,6 +231,7 @@ export type SaveAndConfigureZApiParams = {
   endpointTrust: CommunicationEndpointTrust
   publicWebhookBaseUrl: string
   listenPort: number
+  hideArchivedConversations: boolean
 }
 
 export type ZApiPreparedIngressSnapshot = {
@@ -270,6 +272,11 @@ export type ZApiMessageSnapshot = {
 export type ZApiConversationPage = {
   conversations: ZApiConversationSnapshot[]
   nextOffset: number | null
+  archiveFilter: {
+    enabled: boolean
+    state: 'disabled' | 'applied' | 'failed'
+    error: CommunicationIntegrationRedactedError | null
+  }
 }
 
 export type ZApiMessagePage = {

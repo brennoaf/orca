@@ -41,7 +41,8 @@ function configuration(
     endpointTrust: params.endpointTrust,
     publicWebhookBaseUrl: normalizeCommunicationApiEndpoint(params.publicWebhookBaseUrl).baseUrl,
     secretPath: ingress.path,
-    listenPort: ingress.endpoint.port
+    listenPort: ingress.endpoint.port,
+    hideArchivedConversations: params.hideArchivedConversations
   }
 }
 

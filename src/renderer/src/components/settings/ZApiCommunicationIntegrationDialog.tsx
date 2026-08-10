@@ -8,9 +8,7 @@ import type {
   ZApiSecretMutation
 } from '../../../../shared/communication-integrations'
 import { DEFAULT_Z_API_BASE_URL } from '../../../../shared/communication-integrations'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { translate } from '@/i18n/i18n'
 import {
   CommunicationIntegrationDialogFrame,
@@ -22,6 +20,8 @@ import {
   type CommunicationIntegrationPendingOperation
 } from './CommunicationIntegrationDialogFields'
 import { parseZApiListenPort, ZApiIngressFields } from './ZApiIngressFields'
+import { ZApiArchivedConversationPreference } from './ZApiArchivedConversationPreference'
+import { ZApiWebhookTakeoverPreference } from './ZApiWebhookTakeoverPreference'
 import { useZApiListeningValidation } from './use-z-api-listening-validation'
 import {
   NOT_STARTED_Z_API_LISTENING_VALIDATION,
@@ -80,6 +80,7 @@ export function ZApiCommunicationIntegrationDialog({
   const [customPort, setCustomPort] = useState('')
   const [preparedIngress, setPreparedIngress] = useState<ZApiPreparedIngressSnapshot | null>(null)
   const [takeoverConfirmed, setTakeoverConfirmed] = useState(false)
+  const [hideArchivedConversations, setHideArchivedConversations] = useState(false)
   const [copied, setCopied] = useState(false)
   const [validationVisible, setValidationVisible] = useState(false)
 
@@ -131,6 +132,7 @@ export function ZApiCommunicationIntegrationDialog({
         : null
     )
     setTakeoverConfirmed(false)
+    setHideArchivedConversations(status.hideArchivedConversations)
     setCopied(false)
     hydratedOpenRef.current = true
   }, [open, status])
@@ -200,7 +202,8 @@ export function ZApiCommunicationIntegrationDialog({
       apiBaseUrl: baseUrl,
       endpointTrust,
       publicWebhookBaseUrl: publicWebhookBaseUrl.trim(),
-      listenPort: preparedIngress.listenPort
+      listenPort: preparedIngress.listenPort,
+      hideArchivedConversations
     })
   }
 
@@ -354,6 +357,11 @@ export function ZApiCommunicationIntegrationDialog({
             onCopy={() => void copyTarget()}
             onChangePort={() => void changePort()}
           />
+          <ZApiArchivedConversationPreference
+            checked={hideArchivedConversations}
+            disabled={busy}
+            onChange={setHideArchivedConversations}
+          />
           <CommunicationIntegrationField
             id={publicWebhookInputId}
             label={translate(
@@ -374,33 +382,12 @@ export function ZApiCommunicationIntegrationDialog({
               onChange={(event) => setPublicWebhookBaseUrl(event.target.value)}
             />
           </CommunicationIntegrationField>
-          <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
-            <div className="space-y-1">
-              <p className="text-xs font-medium">
-                {translate('communicationIntegrations.zApi.takeoverTitle', 'Webhook takeover')}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {translate(
-                  'communicationIntegrations.zApi.takeoverDescription',
-                  'Saving replaces every webhook URL for this instance and clears all receive filters. Orca restores the captured webhook configuration when you remove the integration.'
-                )}
-              </p>
-            </div>
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={takeoverInputId}
-                checked={takeoverConfirmed}
-                disabled={busy}
-                onCheckedChange={(checked) => setTakeoverConfirmed(checked === true)}
-              />
-              <Label htmlFor={takeoverInputId} className="text-xs leading-5">
-                {translate(
-                  'communicationIntegrations.zApi.takeoverConfirm',
-                  "I understand that Orca will take over this instance's webhooks."
-                )}
-              </Label>
-            </div>
-          </div>
+          <ZApiWebhookTakeoverPreference
+            id={takeoverInputId}
+            checked={takeoverConfirmed}
+            disabled={busy}
+            onChange={setTakeoverConfirmed}
+          />
           {technicallyConfigured &&
           (validation.state === 'not_started' || validation.state === 'cancelled') ? (
             <ZApiListeningValidationLaunch

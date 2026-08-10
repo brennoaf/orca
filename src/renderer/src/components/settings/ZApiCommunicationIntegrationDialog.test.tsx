@@ -75,6 +75,7 @@ function createStatus(
     publicIngressVerified: false,
     webhooksConfigured: false,
     lastErrorCode: null,
+    hideArchivedConversations: false,
     ...overrides
   }
 }
@@ -201,7 +202,8 @@ describe('ZApiCommunicationIntegrationDialog', () => {
       apiBaseUrl: DEFAULT_Z_API_BASE_URL,
       endpointTrust: { kind: 'default' },
       publicWebhookBaseUrl: 'https://hooks.example.test',
-      listenPort: 43210
+      listenPort: 43210,
+      hideArchivedConversations: false
     })
     expect(onStartListeningValidation).not.toHaveBeenCalled()
     expect(onOpenChange).not.toHaveBeenCalled()

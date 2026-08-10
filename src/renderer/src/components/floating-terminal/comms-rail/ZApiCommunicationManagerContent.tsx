@@ -251,7 +251,14 @@ export function ZApiCommunicationManagerContent({
         const page = await client.listConversations({ limit: CONVERSATION_PAGE_SIZE, offset: 0 })
         if (!disposed) {
           setConversations(page.conversations)
-          setError(null)
+          setError(
+            page.archiveFilter.state === 'failed'
+              ? translate(
+                  'communicationRail.zApi.archiveStateLoadFailed',
+                  'Archived chat status could not be refreshed. Showing current conversations.'
+                )
+              : null
+          )
         }
       } catch {
         if (!disposed) {

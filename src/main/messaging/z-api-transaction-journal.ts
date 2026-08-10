@@ -14,6 +14,7 @@ export type ZApiTransactionConfiguration = {
   publicWebhookBaseUrl: string
   secretPath: string
   listenPort: number
+  hideArchivedConversations: boolean
 }
 
 export type ZApiTransactionActive = {
@@ -89,6 +90,7 @@ function parseConfiguration(value: unknown): ParsedConfiguration | null {
   const publicWebhookBaseUrl = nonEmptyString(value.publicWebhookBaseUrl)
   const secretPath = nonEmptyString(value.secretPath)
   const listenPort = value.listenPort
+  const hideArchivedConversations = value.hideArchivedConversations === true
   if (
     !instanceId ||
     !/^[a-f0-9]{32}$/u.test(configurationId) ||
@@ -125,9 +127,10 @@ function parseConfiguration(value: unknown): ParsedConfiguration | null {
       endpointTrust,
       publicWebhookBaseUrl,
       secretPath,
-      listenPort: listenPort as number
+      listenPort: listenPort as number,
+      hideArchivedConversations
     },
-    migrated: storedConfigurationId === null
+    migrated: storedConfigurationId === null || typeof value.hideArchivedConversations !== 'boolean'
   }
 }
 

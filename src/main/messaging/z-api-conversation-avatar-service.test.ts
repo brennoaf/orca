@@ -17,6 +17,7 @@ function configuration(
     publicWebhookBaseUrl: 'https://hook.example.com',
     secretPath: '/secret/path',
     listenPort: 4321,
+    hideArchivedConversations: false,
     ...overrides
   }
 }

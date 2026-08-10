@@ -15116,7 +15116,8 @@
       "conversationsLoadFailed": "Could not load WhatsApp fast responses.",
       "tooltipLoading": "WhatsApp — loading",
       "tooltipReady": "WhatsApp — fast responses ready",
-      "tooltipUnavailable": "WhatsApp — setup required"
+      "tooltipUnavailable": "WhatsApp — setup required",
+      "archiveStateLoadFailed": "Archived chat status could not be refreshed. Showing current conversations."
     },
     "discord": {
       "notConnected": "Discord not connected",
@@ -15285,7 +15286,9 @@
         "notConfirmed": "Not confirmed",
         "awaitingNotice": "Send the WhatsApp validation code to confirm listening.",
         "requiredNotice": "Validate WhatsApp listening to finish setup."
-      }
+      },
+      "hideArchivedConversations": "Hide archived conversations from fast responses",
+      "hideArchivedConversationsDescription": "Archived chats remain available in WhatsApp Web and stored message history."
     },
     "search": {
       "discordTitle": "Discord Integration",

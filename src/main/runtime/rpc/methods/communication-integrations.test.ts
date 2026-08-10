@@ -167,7 +167,8 @@ describe('communication integration RPC methods', () => {
       apiBaseUrl: 'https://api.z-api.io',
       endpointTrust: { kind: 'default' },
       publicWebhookBaseUrl: 'https://webhook.example.com',
-      listenPort: 4321
+      listenPort: 4321,
+      hideArchivedConversations: false
     }
     expect(schema?.safeParse(input).success).toBe(true)
     expect(schema?.safeParse({ ...input, extra: true }).success).toBe(false)
@@ -231,7 +232,8 @@ describe('communication integration RPC methods', () => {
       apiBaseUrl: 'https://api.z-api.io',
       endpointTrust: { kind: 'default' },
       publicWebhookBaseUrl: 'https://webhook.example.com',
-      listenPort
+      listenPort,
+      hideArchivedConversations: false
     })
     await save.handler(input, {} as RpcContext)
 
