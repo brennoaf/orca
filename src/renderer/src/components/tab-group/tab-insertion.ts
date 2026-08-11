@@ -18,9 +18,11 @@ export type TabIndicatorEdge = {
   side: 'left' | 'right'
 }
 
-export function resolveTabInsertion(
+type TabInsertionData = Pick<TabDragItemData, 'groupId' | 'unifiedTabId' | 'visibleTabId'>
+
+export function resolveTabInsertion<T extends TabInsertionData>(
   event: DragMoveEvent | DragOverEvent | DragEndEvent,
-  isTabDragData: (value: unknown) => value is TabDragItemData,
+  isTabDragData: (value: unknown) => value is T,
   getDragCenter: (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
     x: number
     y: number

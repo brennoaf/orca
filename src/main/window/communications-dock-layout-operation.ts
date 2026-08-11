@@ -1,8 +1,10 @@
 import type {
   CommunicationsDockActivateLeafRequest,
   CommunicationsDockActivateTabRequest,
+  CommunicationsDockCreateTabRequest,
   CommunicationsDockLayout,
   CommunicationsDockMoveAppRequest,
+  CommunicationsDockMoveTabRequest,
   CommunicationsDockReorderTabRequest,
   CommunicationsDockSplitAppRequest,
   CommunicationsDockUpdateRatioRequest
@@ -10,21 +12,35 @@ import type {
 import {
   activateCommunicationsDockLeaf,
   activateCommunicationsDockTab,
+  createCommunicationsDockTab,
   moveCommunicationsDockApp,
+  moveCommunicationsDockTab,
   reorderCommunicationsDockTab,
   updateCommunicationsDockRatio
 } from './communications-dock-state'
 
+export type CommunicationsDockLayoutOperation =
+  | CommunicationsDockActivateLeafRequest
+  | CommunicationsDockActivateTabRequest
+  | CommunicationsDockMoveAppRequest
+  | CommunicationsDockReorderTabRequest
+  | CommunicationsDockSplitAppRequest
+  | CommunicationsDockUpdateRatioRequest
+  | { operation: 'move-tab'; request: CommunicationsDockMoveTabRequest }
+  | { operation: 'create-tab'; request: CommunicationsDockCreateTabRequest; tabId: string }
+
 export function applyCommunicationsDockLayoutOperation(
   layout: CommunicationsDockLayout,
-  request:
-    | CommunicationsDockActivateLeafRequest
-    | CommunicationsDockActivateTabRequest
-    | CommunicationsDockMoveAppRequest
-    | CommunicationsDockReorderTabRequest
-    | CommunicationsDockSplitAppRequest
-    | CommunicationsDockUpdateRatioRequest
+  request: CommunicationsDockLayoutOperation
 ): CommunicationsDockLayout {
+  if ('operation' in request) {
+    if (request.operation === 'move-tab') {
+      const { sourceTabId, targetTabId, targetAppId, side } = request.request
+      return moveCommunicationsDockTab(layout, sourceTabId, targetTabId, targetAppId, side)
+    }
+    const { sourceTabId, appId, index } = request.request
+    return createCommunicationsDockTab(layout, sourceTabId, appId, index, request.tabId)
+  }
   if ('targetTabId' in request) {
     return moveCommunicationsDockApp(
       layout,

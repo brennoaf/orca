@@ -38,6 +38,10 @@ import {
 } from './CommunicationManagerStatusContent'
 
 export { getCommunicationSettingsTarget } from './communication-manager-actions'
+export {
+  createCommunicationManagerSessionSnapshot,
+  createCommunicationManagerSessionState
+} from './communication-manager-sessions'
 
 export {
   CommunicationManagerRuntimeProvider,
@@ -393,12 +397,6 @@ export const COMMUNICATION_MANAGER_REGISTRY: Record<FloatingWorkspaceAppId, Comm
     slack: { Presentation: SlackPresentation },
     discord: { Presentation: DiscordPresentation }
   }
-
-export function createCommunicationManagerSessionState(
-  appId: FloatingWorkspaceAppId
-): FloatingCommsSessionState {
-  return appId === 'whatsapp-web' ? { appId, selectedConversationId: null, draft: '' } : { appId }
-}
 
 export function listEnabledCommunicationManagers(
   preferences: FloatingWorkspaceAppPreferences | undefined

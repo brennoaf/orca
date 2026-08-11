@@ -5,12 +5,15 @@ export type CommunicationsDockDragSide = 'left' | 'right' | 'up' | 'down'
 export type CommunicationsDockAppDragData = {
   type: 'communications-dock-app'
   appId: FloatingWorkspaceAppId
-  tabId: string
+  sourceTabId: string
 }
 
 export type CommunicationsDockTabDragData = {
   type: 'communications-dock-tab'
   tabId: string
+  groupId: string
+  unifiedTabId: string
+  visibleTabId: string
 }
 
 export type CommunicationsDockDragData =
@@ -26,6 +29,18 @@ export type CommunicationsDockLeafDropData = {
 export type CommunicationsDockTabDropData = {
   type: 'communications-dock-tab-target'
   tabId: string
+  groupId: string
+  unifiedTabId: string
+  visibleTabId: string
+}
+
+export type CommunicationsDockTabInsertionData =
+  | CommunicationsDockTabDragData
+  | CommunicationsDockTabDropData
+
+export type CommunicationsDockTabInsertionDropData = {
+  type: 'communications-dock-tab-insertion'
+  index: number
 }
 
 export function isCommunicationsDockDragData(value: unknown): value is CommunicationsDockDragData {
@@ -34,6 +49,28 @@ export function isCommunicationsDockDragData(value: unknown): value is Communica
   }
   const type = value.type
   return type === 'communications-dock-app' || type === 'communications-dock-tab'
+}
+
+export function isCommunicationsDockTabInsertionData(
+  value: unknown
+): value is CommunicationsDockTabInsertionData {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'type' in value &&
+    (value.type === 'communications-dock-tab' || value.type === 'communications-dock-tab-target')
+  )
+}
+
+export function isCommunicationsDockTabInsertionTargetData(
+  value: unknown
+): value is CommunicationsDockTabDropData {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'type' in value &&
+    value.type === 'communications-dock-tab-target'
+  )
 }
 
 export function isCommunicationsDockLeafDropData(
@@ -55,5 +92,16 @@ export function isCommunicationsDockTabDropData(
     typeof value === 'object' &&
     'type' in value &&
     value.type === 'communications-dock-tab-target'
+  )
+}
+
+export function isCommunicationsDockTabInsertionDropData(
+  value: unknown
+): value is CommunicationsDockTabInsertionDropData {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'type' in value &&
+    value.type === 'communications-dock-tab-insertion'
   )
 }

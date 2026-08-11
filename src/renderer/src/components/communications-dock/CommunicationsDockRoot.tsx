@@ -120,13 +120,10 @@ export function CommunicationsDockRoot({
         tabId: activeTab.id,
         activeLeafAppId: 'whatsapp-web' as const
       },
-      visible:
-        snapshot.visible &&
-        !snapshot.layout.collapsed &&
-        activeTab.activeLeafAppId === 'whatsapp-web',
+      visible: snapshot.visible && !snapshot.layout.collapsed && visibleApps.has('whatsapp-web'),
       collapsed: snapshot.layout.collapsed
     }),
-    [activeTab.activeLeafAppId, activeTab.id, snapshot]
+    [activeTab.id, snapshot, visibleApps]
   )
   const hideWhatsAppBeforeRun = useCallback(
     (
@@ -236,6 +233,16 @@ export function CommunicationsDockRoot({
         onMoveApp={(request) =>
           hideWhatsAppBeforeRun('move communication app', (current) =>
             window.api.floatingCommsDock.moveApp({ ...current, ...request })
+          )
+        }
+        onMoveTab={(request) =>
+          hideWhatsAppBeforeRun('move communication tab', (current) =>
+            window.api.floatingCommsDock.moveTab({ ...current, ...request })
+          )
+        }
+        onCreateTab={(request) =>
+          hideWhatsAppBeforeRun('create communication tab', (current) =>
+            window.api.floatingCommsDock.createTab({ ...current, ...request })
           )
         }
         onReorderTab={(tabId, index) =>

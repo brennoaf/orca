@@ -23,10 +23,14 @@ import { FLOATING_WORKSPACE_APP_ICONS } from '@/lib/floating-workspace-app-icons
 import { TabDragPointerSensor } from '@/components/tab-group/tab-drag-pointer-sensor'
 import { getDragPointer } from '@/components/tab-group/tab-drag-pointer'
 import { resolveDropZone } from '@/components/tab-group/tab-drop-zone'
+import { resolveTabInsertion } from '@/components/tab-group/tab-insertion'
 import TabPaneColumnSplitDragOverlay from '@/components/tab-group/TabPaneColumnSplitDragOverlay'
 import {
   isCommunicationsDockDragData,
   isCommunicationsDockLeafDropData,
+  isCommunicationsDockTabInsertionData,
+  isCommunicationsDockTabInsertionDropData,
+  isCommunicationsDockTabInsertionTargetData,
   isCommunicationsDockTabDropData,
   type CommunicationsDockDragData,
   type CommunicationsDockDragSide
@@ -67,29 +71,42 @@ export function getCommunicationsDockTabReorderIndex(
   return index < 0 ? null : index
 }
 
-function appLabel(appId: FloatingWorkspaceAppId): string {
-  return FLOATING_WORKSPACE_APPS.find((app) => app.id === appId)?.label ?? appId
+export function canReorderCommunicationsDockTab(sourceTabId: string, targetTabId: string): boolean {
+  return sourceTabId !== targetTabId
 }
 
-function draggedApp(
-  drag: CommunicationsDockDragData,
-  tabs: readonly CommunicationsDockTab[]
-): FloatingWorkspaceAppId | null {
-  if (drag.type === 'communications-dock-app') {
-    return drag.appId
-  }
-  const tab = tabs.find((candidate) => candidate.id === drag.tabId)
-  if (!tab) {
+export function getCommunicationsDockTabInsertionIndex(
+  tabs: readonly CommunicationsDockTab[],
+  sourceTabId: string,
+  targetIndex: number
+): number | null {
+  const sourceIndex = getCommunicationsDockTabReorderIndex(tabs, sourceTabId)
+  if (sourceIndex === null || targetIndex < 0 || targetIndex > tabs.length) {
     return null
   }
-  const apps = listCommunicationsDockApps(tab.layout)
-  return apps.length === 1 ? apps[0] : null
+  return sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+}
+
+export function resolveCommunicationsDockTabInsertion(
+  event: DragMoveEvent | DragEndEvent
+): { tabId: string; side: 'left' | 'right' } | null {
+  const insertion = resolveTabInsertion(event, isCommunicationsDockTabInsertionData, getDragPointer)
+  if (!insertion || !isCommunicationsDockTabInsertionTargetData(event.over?.data.current)) {
+    return null
+  }
+  return { tabId: insertion.visibleTabId, side: insertion.side }
+}
+
+function appLabel(appId: FloatingWorkspaceAppId): string {
+  return FLOATING_WORKSPACE_APPS.find((app) => app.id === appId)?.label ?? appId
 }
 
 export function CommunicationsDockDragLayer({
   tabs,
   children,
   onMoveApp,
+  onMoveTab,
+  onCreateTab,
   onReorderTab
 }: {
   tabs: readonly CommunicationsDockTab[]
@@ -99,6 +116,17 @@ export function CommunicationsDockDragLayer({
     targetTabId: string
     targetAppId: FloatingWorkspaceAppId
     side: CommunicationsDockDragSide
+  }) => void
+  onMoveTab: (request: {
+    sourceTabId: string
+    targetTabId: string
+    targetAppId: FloatingWorkspaceAppId
+    side: CommunicationsDockDragSide
+  }) => void
+  onCreateTab: (request: {
+    sourceTabId: string
+    appId: FloatingWorkspaceAppId
+    index: number
   }) => void
   onReorderTab: (tabId: string, index: number) => void
 }): React.JSX.Element {
@@ -117,9 +145,14 @@ export function CommunicationsDockDragLayer({
       return null
     }
     const drop = over.data.current
-    const appId = drag ? draggedApp(drag, tabs) : null
     const pointer = getDragPointer(event)
-    if (!appId || !pointer || !canDropCommunicationsDockApp(appId, drop.appId)) {
+    if (!drag || !pointer) {
+      return null
+    }
+    if (
+      drag.type === 'communications-dock-app' &&
+      !canDropCommunicationsDockApp(drag.appId, drop.appId)
+    ) {
       return null
     }
     const side = resolveCommunicationsDockDropSide(over.rect, pointer)
@@ -153,27 +186,60 @@ export function CommunicationsDockDragLayer({
     const over = event.over
     const tabDrop =
       over && isCommunicationsDockTabDropData(over.data.current) ? over.data.current : null
+    const insertionDrop =
+      over && isCommunicationsDockTabInsertionDropData(over.data.current) ? over.data.current : null
     const leaf = resolveHoveredLeaf(event)
-    if (drag?.type === 'communications-dock-tab' && tabDrop) {
-      const index = getCommunicationsDockTabReorderIndex(tabs, tabDrop.tabId)
-      if (index !== null && drag.tabId !== tabDrop.tabId) {
+    if (drag?.type === 'communications-dock-tab' && insertionDrop) {
+      const sourceIndex = getCommunicationsDockTabReorderIndex(tabs, drag.tabId)
+      const index = getCommunicationsDockTabInsertionIndex(tabs, drag.tabId, insertionDrop.index)
+      if (sourceIndex !== null && index !== null) {
+        if (sourceIndex !== index) {
+          onReorderTab(drag.tabId, index)
+        }
+      }
+    } else if (drag?.type === 'communications-dock-tab' && tabDrop) {
+      const insertion = resolveCommunicationsDockTabInsertion(event)
+      const rawIndex = insertion
+        ? getCommunicationsDockTabReorderIndex(tabs, insertion.tabId)
+        : getCommunicationsDockTabReorderIndex(tabs, tabDrop.tabId)
+      const index =
+        rawIndex === null
+          ? null
+          : getCommunicationsDockTabInsertionIndex(
+              tabs,
+              drag.tabId,
+              rawIndex + (insertion?.side === 'right' ? 1 : 0)
+            )
+      if (index !== null && canReorderCommunicationsDockTab(drag.tabId, tabDrop.tabId)) {
         onReorderTab(drag.tabId, index)
       }
     } else if (drag && leaf) {
-      const appId = draggedApp(drag, tabs)
-      if (appId) {
+      if (drag.type === 'communications-dock-app') {
         onMoveApp({
-          appId,
+          appId: drag.appId,
+          targetTabId: leaf.tabId,
+          targetAppId: leaf.appId,
+          side: leaf.side
+        })
+      } else if (drag.tabId !== leaf.tabId) {
+        onMoveTab({
+          sourceTabId: drag.tabId,
           targetTabId: leaf.tabId,
           targetAppId: leaf.appId,
           side: leaf.side
         })
       }
+    } else if (drag?.type === 'communications-dock-app' && insertionDrop) {
+      onCreateTab({
+        sourceTabId: drag.sourceTabId,
+        appId: drag.appId,
+        index: insertionDrop.index
+      })
     }
     clearDrag()
   }
 
-  const previewAppId = activeDrag ? draggedApp(activeDrag, tabs) : null
+  const previewAppId = activeDrag?.type === 'communications-dock-app' ? activeDrag.appId : null
   const PreviewIcon = previewAppId ? FLOATING_WORKSPACE_APP_ICONS[previewAppId] : null
   return (
     <DndContext

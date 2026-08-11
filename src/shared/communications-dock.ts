@@ -1,6 +1,9 @@
 import type { CommunicationProviderId } from './communication-integrations'
 import type { DiscordVoiceSnapshot } from './discord-voice'
-import type { FloatingCommsSessionState } from './floating-comms-surface'
+import type {
+  FloatingCommsSessionState,
+  FloatingCommsSurfaceIdentity
+} from './floating-comms-surface'
 import type { FloatingWorkspaceAppId } from './floating-workspace-apps'
 
 export const COMMUNICATIONS_DOCK_LAYOUT_VERSION = 1
@@ -55,6 +58,7 @@ export type CommunicationsDockSnapshot = CommunicationsDockIdentity & {
 export type CommunicationsDockPresence = {
   exists: boolean
   visible: boolean
+  location: 'panel' | 'dock'
   activeAppId?: FloatingWorkspaceAppId
 }
 
@@ -71,7 +75,9 @@ export type CommunicationsDockPresentation = {
 export type CommunicationsDockOpenRequest = { appId: FloatingWorkspaceAppId }
 export type CommunicationsDockDetachRequest = {
   appId: FloatingWorkspaceAppId
+  identity: FloatingCommsSurfaceIdentity
   sessionState: FloatingCommsSessionState
+  sessions?: Partial<Record<FloatingWorkspaceAppId, FloatingCommsSessionState>>
 }
 export type CommunicationsDockVersionedRequest = CommunicationsDockIdentity
 export type CommunicationsDockReadyRequest = { generation: number }
@@ -96,6 +102,17 @@ export type CommunicationsDockSplitAppRequest = CommunicationsDockIdentity & {
   targetTabId: string
   targetAppId: FloatingWorkspaceAppId
   side: 'left' | 'right' | 'up' | 'down'
+}
+export type CommunicationsDockMoveTabRequest = CommunicationsDockIdentity & {
+  sourceTabId: string
+  targetTabId: string
+  targetAppId: FloatingWorkspaceAppId
+  side: 'left' | 'right' | 'up' | 'down'
+}
+export type CommunicationsDockCreateTabRequest = CommunicationsDockIdentity & {
+  sourceTabId: string
+  appId: FloatingWorkspaceAppId
+  index: number
 }
 export type CommunicationsDockUpdateRatioRequest = CommunicationsDockIdentity & {
   tabId: string

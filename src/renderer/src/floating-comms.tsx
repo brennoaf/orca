@@ -330,56 +330,54 @@ function FloatingCommsRoot(): React.JSX.Element {
       : undefined
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
-      <TooltipProvider>
-        <Manager
-          isPopoverOpen={state.visible}
-          initialSessionState={state.sessionState}
-          whatsappHost={whatsappHost}
-          onSessionStateChange={(sessionState) => {
-            latestSessionRef.current = sessionState
-          }}
-        >
-          {(presentation) => (
-            <div
-              ref={surfaceRef}
-              className="scrollbar-sleek max-h-[420px] overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
-            >
-              <CommunicationManagerSurfaceContent
-                app={app}
-                content={presentation.content}
-                detached={state.mode === 'detached'}
-                onOpenApp={() => {
-                  const identity = surfaceIdentityOf(state)
-                  const hide = whatsappHost
-                    ? window.api.whatsappFastResponse.hide(whatsappHost.identity)
-                    : Promise.resolve()
-                  void hide
-                    .then(() => window.api.floatingComms.action({ type: 'open-app', ...identity }))
-                    .catch((error: unknown) => reportSurfaceError('open app', error))
-                }}
-                onToggleDetached={() => {
-                  const sessionState = latestSessionRef.current ?? presentation.sessionState
-                  const operation =
-                    state.mode === 'detached'
-                      ? window.api.floatingComms.minimizeDetached
-                      : window.api.floatingComms.detach
-                  void (async () => {
-                    if (whatsappHost) {
-                      await window.api.whatsappFastResponse.hide(whatsappHost.identity)
-                    }
-                    await operation({ ...surfaceIdentityOf(state), sessionState })
-                  })().catch((error: unknown) =>
-                    reportSurfaceError(
-                      state.mode === 'detached' ? 'return to panel' : 'detach',
-                      error
-                    )
+      <Manager
+        isPopoverOpen={state.visible}
+        initialSessionState={state.sessionState}
+        whatsappHost={whatsappHost}
+        onSessionStateChange={(sessionState) => {
+          latestSessionRef.current = sessionState
+        }}
+      >
+        {(presentation) => (
+          <div
+            ref={surfaceRef}
+            className="scrollbar-sleek max-h-[420px] overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
+          >
+            <CommunicationManagerSurfaceContent
+              app={app}
+              content={presentation.content}
+              detached={state.mode === 'detached'}
+              onOpenApp={() => {
+                const identity = surfaceIdentityOf(state)
+                const hide = whatsappHost
+                  ? window.api.whatsappFastResponse.hide(whatsappHost.identity)
+                  : Promise.resolve()
+                void hide
+                  .then(() => window.api.floatingComms.action({ type: 'open-app', ...identity }))
+                  .catch((error: unknown) => reportSurfaceError('open app', error))
+              }}
+              onToggleDetached={() => {
+                const sessionState = latestSessionRef.current ?? presentation.sessionState
+                const operation =
+                  state.mode === 'detached'
+                    ? window.api.floatingComms.minimizeDetached
+                    : window.api.floatingComms.detach
+                void (async () => {
+                  if (whatsappHost) {
+                    await window.api.whatsappFastResponse.hide(whatsappHost.identity)
+                  }
+                  await operation({ ...surfaceIdentityOf(state), sessionState })
+                })().catch((error: unknown) =>
+                  reportSurfaceError(
+                    state.mode === 'detached' ? 'return to panel' : 'detach',
+                    error
                   )
-                }}
-              />
-            </div>
-          )}
-        </Manager>
-      </TooltipProvider>
+                )
+              }}
+            />
+          </div>
+        )}
+      </Manager>
     </CommunicationManagerRuntimeProvider>
   )
 }
@@ -399,8 +397,10 @@ if (!root) {
 createRoot(root).render(
   <StrictMode>
     <I18nProvider>
-      <FloatingCommsAppearanceSync />
-      <FloatingCommsEntry reportError={reportSurfaceError} surface={<FloatingCommsRoot />} />
+      <TooltipProvider>
+        <FloatingCommsAppearanceSync />
+        <FloatingCommsEntry reportError={reportSurfaceError} surface={<FloatingCommsRoot />} />
+      </TooltipProvider>
     </I18nProvider>
   </StrictMode>
 )

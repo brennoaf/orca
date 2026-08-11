@@ -3,8 +3,6 @@ import { z } from 'zod'
 import type {
   CommunicationsDockAction,
   CommunicationsDockDiscordCommand,
-  CommunicationsDockMoveAppRequest,
-  CommunicationsDockSplitAppRequest,
   CommunicationsDockUpdateSessionRequest
 } from '../../shared/communications-dock'
 import {
@@ -13,63 +11,51 @@ import {
   COMMUNICATIONS_DOCK_NAVBAR_MAX_HEIGHT,
   COMMUNICATIONS_DOCK_NAVBAR_MIN_HEIGHT
 } from '../../shared/communications-dock'
-import { FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH } from '../../shared/floating-comms-surface'
-import {
-  FLOATING_WORKSPACE_APPS,
-  type FloatingWorkspaceAppId
-} from '../../shared/floating-workspace-apps'
 import { getCommunicationIntegrationStatuses } from '../messaging/communication-integration-registry'
-import {
-  getDiscordVoiceSnapshot,
-  leaveDiscordVoiceCall,
-  reconnectDiscordVoiceService,
-  setDiscordVoiceSelfDeaf,
-  setDiscordVoiceSelfMute
-} from '../messaging/discord-voice-service'
+import { getDiscordVoiceSnapshot } from '../messaging/discord-voice-service'
 import { communicationsDockController } from '../window/communications-dock-controller'
-import {
-  closeDiscordVoiceWindow,
-  createOrFocusDiscordVoiceWindow
-} from '../window/discord-voice-window'
+import { floatingCommsSurfaceController } from '../window/floating-comms-surface-controller'
 import { isTrustedUIRenderer } from './ui'
+import { runCommunicationsDockDiscordCommand } from './communications-dock-discord-command'
+import {
+  communicationsDockSchemas,
+  communicationsDockSessionSchema,
+  hasMatchingCommunicationsDockSessions
+} from './communications-dock-schemas'
 
-const Positive = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-const AppId = z.custom<FloatingWorkspaceAppId>(
-  (value) => typeof value === 'string' && FLOATING_WORKSPACE_APPS.some((app) => app.id === value)
-)
-const Identity = { generation: Positive, revision: Positive }
+const {
+  appId: AppId,
+  attachedSurfaceIdentity: AttachedSurfaceIdentity,
+  createTab: CreateTabSchema,
+  identity: Identity,
+  move: MoveSchema,
+  moveTab: MoveTabSchema,
+  positive: Positive,
+  tabId: TabId,
+  versionedApp: VersionedApp
+} = communicationsDockSchemas
 const IdentitySchema = z.object(Identity).strict()
 const AppSchema = z.object({ appId: AppId }).strict()
-const VersionedApp = { ...Identity, appId: AppId }
-const TabId = z.string().min(1).max(128)
-const Side = z.enum(['left', 'right', 'up', 'down'])
-const MoveSchema: z.ZodType<CommunicationsDockMoveAppRequest | CommunicationsDockSplitAppRequest> =
-  z
-    .object({
-      ...VersionedApp,
-      targetTabId: TabId,
-      targetAppId: AppId,
-      side: Side
-    })
-    .strict()
-const SessionSchema = z.discriminatedUnion('appId', [
-  z
-    .object({
-      appId: z.literal('whatsapp-web'),
-      selectedConversationId: z.number().finite().nullable(),
-      draft: z.string().max(FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH)
-    })
-    .strict(),
-  z.object({ appId: z.literal('slack') }).strict(),
-  z.object({ appId: z.literal('discord') }).strict()
-])
+const SessionSchema = communicationsDockSessionSchema
+const SessionsSchema = z.record(AppId, SessionSchema)
 const SessionRequestSchema: z.ZodType<CommunicationsDockUpdateSessionRequest> = z
   .object({
     ...Identity,
     sessionState: SessionSchema
   })
   .strict()
-const DetachSchema = z.object({ appId: AppId, sessionState: SessionSchema }).strict()
+const DetachSchema = z
+  .object({
+    appId: AppId,
+    identity: AttachedSurfaceIdentity,
+    sessionState: SessionSchema,
+    sessions: SessionsSchema.optional()
+  })
+  .strict()
+  .refine(
+    (request) =>
+      request.appId === request.identity.appId && request.appId === request.sessionState.appId
+  )
 const DiscordIdentity = { ...Identity, appId: z.literal('discord') }
 const DiscordSchema: z.ZodType<CommunicationsDockDiscordCommand> = z.discriminatedUnion('method', [
   z.object({ ...DiscordIdentity, method: z.literal('reconnect') }).strict(),
@@ -95,31 +81,15 @@ const ActionSchema: z.ZodType<CommunicationsDockAction> = z.discriminatedUnion('
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, error: string): T {
   const result = schema.safeParse(value)
-  if (!result.success) {
-    throw new Error(error)
+  if (result.success) {
+    return result.data
   }
-  return result.data
+  throw new Error(error)
 }
 
 function trusted(sender: Electron.WebContents): void {
   if (!isTrustedUIRenderer(sender)) {
     throw new Error('communications_dock_owner_denied')
-  }
-}
-
-async function runDiscord(command: CommunicationsDockDiscordCommand): Promise<void> {
-  if (command.method === 'reconnect') {
-    reconnectDiscordVoiceService()
-  } else if (command.method === 'set-self-mute') {
-    await setDiscordVoiceSelfMute(command.muted)
-  } else if (command.method === 'set-self-deaf') {
-    await setDiscordVoiceSelfDeaf(command.deafened)
-  } else if (command.method === 'leave-call') {
-    await leaveDiscordVoiceCall()
-  } else if (command.open) {
-    createOrFocusDiscordVoiceWindow()
-  } else {
-    closeDiscordVoiceWindow()
   }
 }
 
@@ -133,10 +103,14 @@ export function registerCommunicationsDockHandlers(): void {
   ipcMain.handle('floatingCommsDock:detach', (event, value: unknown) => {
     trusted(event.sender)
     const request = parse(DetachSchema, value, 'communications_dock_detach_denied')
-    if (request.appId !== request.sessionState.appId) {
-      throw new Error('communications_dock_session_app_mismatch')
+    if (!hasMatchingCommunicationsDockSessions(request.sessions)) {
+      throw new Error('communications_dock_sessions_mismatch')
     }
-    return communicationsDockController.openOrFocus(request.appId, request.sessionState)
+    const sessionState = floatingCommsSurfaceController.takeAttachedForDock({
+      ...request.identity,
+      sessionState: request.sessionState
+    })
+    return communicationsDockController.openOrFocus(request.appId, sessionState, request.sessions)
   })
   ipcMain.handle('floatingCommsDock:ready', (event, value: unknown) => {
     const request = parse(
@@ -189,6 +163,18 @@ export function registerCommunicationsDockHandlers(): void {
     communicationsDockController.layoutCommands.moveApp(
       event.sender,
       parse(MoveSchema, value, 'communications_dock_split_denied')
+    )
+  )
+  ipcMain.handle('floatingCommsDock:moveTab', (event, value: unknown) =>
+    communicationsDockController.layoutCommands.moveTab(
+      event.sender,
+      parse(MoveTabSchema, value, 'communications_dock_move_tab_denied')
+    )
+  )
+  ipcMain.handle('floatingCommsDock:createTab', (event, value: unknown) =>
+    communicationsDockController.layoutCommands.createTab(
+      event.sender,
+      parse(CreateTabSchema, value, 'communications_dock_create_tab_denied')
     )
   )
   ipcMain.handle('floatingCommsDock:reorderTab', (event, value: unknown) =>
@@ -280,7 +266,7 @@ export function registerCommunicationsDockHandlers(): void {
     if (!communicationsDockController.isSender(event.sender, command)) {
       throw new Error('communications_dock_stale')
     }
-    await runDiscord(command)
+    await runCommunicationsDockDiscordCommand(command)
     return getDiscordVoiceSnapshot()
   })
   ipcMain.handle('floatingCommsDock:getDiscordState', (event, value: unknown) => {

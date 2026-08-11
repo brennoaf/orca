@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type {
+  FloatingCommsAction,
   FloatingCommsSessionState,
   FloatingCommsSurfaceChanged,
   FloatingCommsSurfaceIdentity
@@ -8,10 +9,12 @@ import type {
   FloatingWorkspaceApp,
   FloatingWorkspaceAppId
 } from '../../../../../shared/floating-workspace-apps'
+import type { CommunicationsDockAction } from '../../../../../shared/communications-dock'
 import { useAppStore } from '@/store'
 import { getCommunicationSettingsTarget } from './communication-managers'
 
 type CurrentRef<T> = { current: T }
+type FloatingCommsPresentationAction = FloatingCommsAction | CommunicationsDockAction
 
 export function reportFloatingCommsError(operation: string, error: unknown): void {
   console.error(`[floating-comms] ${operation} failed:`, error)
@@ -176,11 +179,7 @@ export function useFloatingCommsPresentations({
       })
       .catch((error: unknown) => reportFloatingCommsError('list presentations', error))
     const offChanged = surface.onSurfaceChanged(applySurfaceChanged)
-    const offAction = surface.onAction((action) => {
-      const current = presentationsRef.current.get(action.appId)
-      if (!current || !sameFloatingCommsIdentity(current, action)) {
-        return
-      }
+    const dispatchAction = (action: FloatingCommsPresentationAction): void => {
       if (action.type === 'open-app') {
         const app = entriesRef.current.find((entry) => entry.app.id === action.appId)?.app
         if (app) {
@@ -191,11 +190,20 @@ export function useFloatingCommsPresentations({
         store.openSettingsTarget(getCommunicationSettingsTarget(action.provider))
         store.openSettingsPage()
       }
+    }
+    const offAction = surface.onAction((action) => {
+      const current = presentationsRef.current.get(action.appId)
+      if (!current || !sameFloatingCommsIdentity(current, action)) {
+        return
+      }
+      dispatchAction(action)
     })
+    const offDockAction = window.api.floatingCommsDock.onAction(dispatchAction)
     return () => {
       disposed = true
       offChanged()
       offAction()
+      offDockAction()
     }
   }, [applySurfaceChanged])
 

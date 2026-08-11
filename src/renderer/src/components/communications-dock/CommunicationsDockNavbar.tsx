@@ -14,7 +14,8 @@ import { cn } from '@/lib/utils'
 import type {
   CommunicationsDockAppDragData,
   CommunicationsDockTabDragData,
-  CommunicationsDockTabDropData
+  CommunicationsDockTabDropData,
+  CommunicationsDockTabInsertionDropData
 } from './communications-dock-drag-data'
 
 function appLabel(appId: FloatingWorkspaceAppId): string {
@@ -40,11 +41,17 @@ function DockTab({
   const label = apps.map(appLabel).join(', ')
   const tabDragData: CommunicationsDockTabDragData = {
     type: 'communications-dock-tab',
-    tabId: tab.id
+    tabId: tab.id,
+    groupId: tab.id,
+    unifiedTabId: tab.id,
+    visibleTabId: tab.id
   }
   const tabDropData: CommunicationsDockTabDropData = {
     type: 'communications-dock-tab-target',
-    tabId: tab.id
+    tabId: tab.id,
+    groupId: tab.id,
+    unifiedTabId: tab.id,
+    visibleTabId: tab.id
   }
   const draggable = useDraggable({ id: `communications-dock-tab:${tab.id}`, data: tabDragData })
   const droppable = useDroppable({
@@ -151,7 +158,11 @@ function DockTabAppSegment({
   onActivate: () => void
   children: React.ReactNode
 }): React.JSX.Element {
-  const data: CommunicationsDockAppDragData = { type: 'communications-dock-app', appId, tabId }
+  const data: CommunicationsDockAppDragData = {
+    type: 'communications-dock-app',
+    appId,
+    sourceTabId: tabId
+  }
   const draggable = useDraggable({ id: `communications-dock-navbar-app:${appId}`, data })
   return (
     <span
@@ -174,6 +185,24 @@ function DockTabAppSegment({
     >
       {children}
     </span>
+  )
+}
+
+function DockTabInsertion({ index }: { index: number }): React.JSX.Element {
+  const data: CommunicationsDockTabInsertionDropData = {
+    type: 'communications-dock-tab-insertion',
+    index
+  }
+  const droppable = useDroppable({
+    id: `communications-dock-tab-insertion:${index}`,
+    data
+  })
+  return (
+    <div
+      ref={droppable.setNodeRef}
+      className={cn('h-7 w-1 shrink-0 rounded-sm', droppable.isOver && 'bg-ring')}
+      data-communications-dock-tab-insertion={index}
+    />
   )
 }
 
@@ -210,22 +239,25 @@ export function CommunicationsDockNavbar({
       aria-label={translate('communicationsDock.tabs', 'Communication layouts')}
       className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1"
     >
-      {tabs.map((tab) => (
-        <DockTab
-          key={tab.id}
-          tab={tab}
-          selected={tab.id === activeTabId}
-          roving={tab.id === rovingTabId}
-          onSelect={(tabId) => {
-            setRovingTabId(tabId)
-            onActivateTab(tabId)
-          }}
-          onActivateLeaf={(tabId, appId) => {
-            setRovingTabId(tabId)
-            onActivateLeaf(tabId, appId)
-          }}
-          onRovingMove={moveRoving}
-        />
+      <DockTabInsertion index={0} />
+      {tabs.map((tab, index) => (
+        <div key={tab.id} className="flex shrink-0 items-center">
+          <DockTab
+            tab={tab}
+            selected={tab.id === activeTabId}
+            roving={tab.id === rovingTabId}
+            onSelect={(tabId) => {
+              setRovingTabId(tabId)
+              onActivateTab(tabId)
+            }}
+            onActivateLeaf={(tabId, appId) => {
+              setRovingTabId(tabId)
+              onActivateLeaf(tabId, appId)
+            }}
+            onRovingMove={moveRoving}
+          />
+          <DockTabInsertion index={index + 1} />
+        </div>
       ))}
     </div>
   )

@@ -16,6 +16,7 @@ import type {
 import { Popover } from '@/components/ui/popover'
 import { useAppStore } from '@/store'
 import {
+  createCommunicationManagerSessionSnapshot,
   createCommunicationManagerSessionState,
   listEnabledCommunicationManagers
 } from './communication-managers'
@@ -168,7 +169,7 @@ export function FloatingCommsRail({
           pendingSessions.set(appId as FloatingWorkspaceAppId, sessionState)
         }
       }
-      setDockPresence({ exists: true, visible: false, activeAppId: event.appId })
+      setDockPresence({ exists: true, visible: false, location: 'panel', activeAppId: event.appId })
       setReattachAppId(event.appId)
     })
     void window.api.floatingCommsDock
@@ -314,7 +315,7 @@ export function FloatingCommsRail({
         {entries.map(({ app, manager }) => {
           const presentation = presentations.get(app.id)
           const legacyDetached = presentation?.mode === 'detached'
-          const docked = dockPresence?.exists === true
+          const docked = dockPresence?.location === 'dock'
           const detached = docked || legacyDetached
           const attached = attachedIdentity?.appId === app.id
           const domAttached = attached && attachedIdentity.mode === 'attached-dom'
@@ -351,6 +352,7 @@ export function FloatingCommsRail({
                         setDockPresence({
                           exists: true,
                           visible: snapshot.visible,
+                          location: 'dock',
                           activeAppId: app.id
                         })
                       }
@@ -372,23 +374,28 @@ export function FloatingCommsRail({
                 openAttachedApp(app.id)
               }}
               onDetach={(sessionState) => {
-                if (!attachedIdentity || attachedIdentity.mode !== 'attached-dom') {
+                if (
+                  !attachedIdentity ||
+                  attachedIdentity.appId !== app.id ||
+                  attachedIdentity.mode !== 'attached-dom'
+                ) {
                   return
                 }
                 pendingSessions.set(app.id, sessionState)
+                const sessions = createCommunicationManagerSessionSnapshot(entries, pendingSessions)
                 const presenceSequence = presenceSequenceRef.current
                 void window.api.floatingCommsDock
-                  .detach({ appId: app.id, sessionState })
+                  .detach({ appId: app.id, identity: attachedIdentity, sessionState, sessions })
                   .then((snapshot) => {
                     if (presenceSequenceRef.current === presenceSequence) {
                       presenceSequenceRef.current += 1
                       setDockPresence({
                         exists: true,
                         visible: snapshot.visible,
+                        location: 'dock',
                         activeAppId: app.id
                       })
                     }
-                    closeAttached(true)
                   })
                   .catch((error: unknown) => reportFloatingCommsError('detach', error))
               }}

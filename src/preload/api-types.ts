@@ -21,11 +21,13 @@ import type {
   CommunicationsDockAction,
   CommunicationsDockActivateLeafRequest,
   CommunicationsDockActivateTabRequest,
+  CommunicationsDockCreateTabRequest,
   CommunicationsDockDiscordCommand,
   CommunicationsDockDiscordStateRequest,
   CommunicationsDockDetachRequest,
   CommunicationsDockIdentity,
   CommunicationsDockMoveAppRequest,
+  CommunicationsDockMoveTabRequest,
   CommunicationsDockNavbarHeightRequest,
   CommunicationsDockOpenRequest,
   CommunicationsDockPresence,
@@ -1283,6 +1285,8 @@ export type PreloadApi = {
     ) => Promise<CommunicationsDockSnapshot>
     moveApp: (request: CommunicationsDockMoveAppRequest) => Promise<CommunicationsDockSnapshot>
     splitApp: (request: CommunicationsDockSplitAppRequest) => Promise<CommunicationsDockSnapshot>
+    moveTab: (request: CommunicationsDockMoveTabRequest) => Promise<CommunicationsDockSnapshot>
+    createTab: (request: CommunicationsDockCreateTabRequest) => Promise<CommunicationsDockSnapshot>
     reorderTab: (
       request: CommunicationsDockReorderTabRequest
     ) => Promise<CommunicationsDockSnapshot>

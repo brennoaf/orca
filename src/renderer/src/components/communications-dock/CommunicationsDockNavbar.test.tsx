@@ -48,6 +48,7 @@ describe('CommunicationsDockNavbar', () => {
     ])
     fireEvent.click(screen.getByLabelText('WhatsApp Web'))
     expect(activateLeaf).toHaveBeenCalledWith('grouped', 'whatsapp-web')
+    expect(document.querySelectorAll('[data-communications-dock-tab-insertion]')).toHaveLength(2)
   })
 
   it('moves roving focus across layout tabs without activating a collapsed body', () => {

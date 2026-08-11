@@ -34,17 +34,23 @@ function senderStub(destroyed = false): WebContents {
 
 describe('communications dock presence', () => {
   it('does not disclose a missing or destroyed dock', () => {
-    expect(communicationsDockPresence(null, layout)).toEqual({ exists: false, visible: false })
-    expect(communicationsDockPresence(windowStub({ destroyed: true }), layout)).toEqual({
+    expect(communicationsDockPresence(null, layout, 'panel')).toEqual({
       exists: false,
-      visible: false
+      visible: false,
+      location: 'panel'
+    })
+    expect(communicationsDockPresence(windowStub({ destroyed: true }), layout, 'panel')).toEqual({
+      exists: false,
+      visible: false,
+      location: 'panel'
     })
   })
 
   it('reports only active app and visibility for a live dock', () => {
-    expect(communicationsDockPresence(windowStub({ visible: true }), layout)).toEqual({
+    expect(communicationsDockPresence(windowStub({ visible: true }), layout, 'dock')).toEqual({
       exists: true,
       visible: true,
+      location: 'dock',
       activeAppId: 'whatsapp-web'
     })
   })

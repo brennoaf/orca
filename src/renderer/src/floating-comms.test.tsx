@@ -2,6 +2,7 @@
 
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CommunicationsDockSnapshot } from '../../shared/communications-dock'
 import type {
   FloatingCommsSessionState,
   FloatingCommsSurfaceChanged,
@@ -53,14 +54,21 @@ const mocks = vi.hoisted(() => ({
   visibilityChanged: null as ((visibility: FloatingCommsSurfaceVisibility) => void) | null,
   sessionChange: null as ((sessionState: FloatingCommsSessionState) => void) | null,
   resizeObserverCount: 0,
-  offSettingsChanged: vi.fn()
+  offSettingsChanged: vi.fn(),
+  dockGetSnapshot: vi.fn(),
+  dockReady: vi.fn(),
+  dockAck: vi.fn(() => Promise.resolve()),
+  dockSetNavbarHeight: vi.fn()
 }))
 
 vi.mock('./components/floating-terminal/comms-rail/communication-managers', () => ({
   COMMUNICATION_MANAGER_REGISTRY: {
     discord: { Presentation: MockPresentation },
+    slack: { Presentation: MockPresentation },
     'whatsapp-web': { Presentation: MockPresentation }
   },
+  createCommunicationManagerSessionState: (appId: FloatingCommsSurfaceIdentity['appId']) =>
+    appId === 'whatsapp-web' ? { appId, selectedConversationId: null, draft: '' } : { appId },
   CommunicationManagerRuntimeProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
@@ -88,13 +96,6 @@ function MockPresentation({
     sessionState: initialSessionState ?? { appId: 'discord' }
   })
 }
-
-vi.mock('./components/ui/tooltip', () => ({
-  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-  Tooltip: ({ children }: { children: React.ReactNode }) => children,
-  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
-  TooltipContent: ({ children }: { children: React.ReactNode }) => children
-}))
 
 vi.mock('./i18n/I18nProvider', () => ({
   I18nProvider: ({ children }: { children: React.ReactNode }) => children
@@ -156,6 +157,27 @@ describe('floating communications renderer root', () => {
             mocks.visibilityChanged = callback
             return vi.fn()
           })
+        },
+        floatingCommsDock: {
+          getSnapshot: mocks.dockGetSnapshot,
+          ready: mocks.dockReady,
+          ack: mocks.dockAck,
+          setNavbarHeight: mocks.dockSetNavbarHeight,
+          onSnapshotChanged: vi.fn(() => vi.fn()),
+          getIntegrationStatuses: vi.fn(() => Promise.resolve([])),
+          getDiscordState: vi.fn(),
+          discordCommand: vi.fn(),
+          activateTab: vi.fn(),
+          activateLeaf: vi.fn(),
+          moveApp: vi.fn(),
+          moveTab: vi.fn(),
+          createTab: vi.fn(),
+          reorderTab: vi.fn(),
+          updateRatio: vi.fn(),
+          setCollapsed: vi.fn(),
+          updateSession: vi.fn(),
+          reattachDock: vi.fn(),
+          action: vi.fn()
         }
       }
     })
@@ -167,6 +189,40 @@ describe('floating communications renderer root', () => {
     mocks.visibilityChanged = null
     mocks.sessionChange = null
     mocks.resizeObserverCount = 0
+    mocks.dockGetSnapshot.mockRejectedValue(new Error('not a dock renderer'))
+    mocks.dockReady.mockReset()
+    mocks.dockAck.mockClear()
+    mocks.dockSetNavbarHeight.mockReset()
+  })
+
+  it('boots the communications dock with its tooltip-backed navbar', async () => {
+    const snapshot: CommunicationsDockSnapshot = {
+      generation: 1,
+      revision: 1,
+      visible: false,
+      sessions: { slack: { appId: 'slack' } },
+      layout: {
+        version: 1,
+        bounds: { x: 0, y: 0, width: 420, height: 640 },
+        tabs: [
+          {
+            id: 'slack',
+            layout: { type: 'leaf', appId: 'slack' },
+            activeLeafAppId: 'slack'
+          }
+        ],
+        activeTabId: 'slack',
+        collapsed: false
+      }
+    }
+    mocks.dockGetSnapshot.mockResolvedValue(snapshot)
+    mocks.dockReady.mockResolvedValue(snapshot)
+    mocks.dockSetNavbarHeight.mockResolvedValue(snapshot)
+    await act(async () => {
+      await import('./floating-comms')
+    })
+    await vi.waitFor(() => expect(document.querySelector('[role="tablist"]')).toBeTruthy())
+    expect(document.querySelector('[role="tab"][aria-label="Slack"]')).toBeTruthy()
   })
 
   it('renders a draggable detached header and minimizes back to the panel', async () => {

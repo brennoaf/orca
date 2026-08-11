@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { app } from 'electron'
 import type { WebContents } from 'electron'
 import type {
@@ -43,26 +44,29 @@ import {
   defaultCommunicationsDockSession,
   type CommunicationsDockHost
 } from './communications-dock-host'
+import { FloatingCommsSessionRegistry } from './floating-comms-session-registry'
+import { returnCommunicationsDockSessions } from './communications-dock-return'
 
 export class CommunicationsDockController extends CommunicationsDockWindowState {
   private store: CommunicationsDockLayoutStore | null = null
-  private sessions: Partial<Record<FloatingWorkspaceAppId, FloatingCommsSessionState>> = {}
+  private readonly sessions = new FloatingCommsSessionRegistry()
   private collapse: CommunicationsDockCollapseController | null = null
   readonly layoutCommands = createCommunicationsDockLayoutCommands({
-    run: (sender, request) => this.runLayoutCommand(sender, request)
+    run: (sender, request) => this.runLayoutCommand(sender, request),
+    createTabId: () => `communications-${randomUUID()}`
   })
   constructor(private readonly host: CommunicationsDockHost) {
     super()
   }
   openOrFocus(
     appId: FloatingWorkspaceAppId,
-    sessionState?: FloatingCommsSessionState
+    sessionState?: FloatingCommsSessionState,
+    sessionStates?: Partial<Record<FloatingWorkspaceAppId, FloatingCommsSessionState>>
   ): CommunicationsDockSnapshot {
-    if (sessionState) {
-      this.sessions[appId] = sessionState
-    } else {
-      this.sessions[appId] ??= defaultCommunicationsDockSession(appId)
-    }
+    const nextSessions = { ...this.sessions.getSessions(), ...sessionStates }
+    nextSessions[appId] =
+      sessionState ?? nextSessions[appId] ?? defaultCommunicationsDockSession(appId)
+    this.sessions.enterDock(appId, nextSessions)
     this.setLayout(focusCommunicationsDockApp(this.layout().get(), appId))
     this.desiredVisible = true
     this.ensureWindow()
@@ -96,7 +100,11 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
     return this.snapshot()
   }
   getPresence() {
-    return communicationsDockPresence(this.window, this.store?.get() ?? null)
+    return communicationsDockPresence(
+      this.window,
+      this.store?.get() ?? null,
+      this.sessions.getLocation()
+    )
   }
   isAppFocusedVisible(sender: WebContents | null, appId: FloatingWorkspaceAppId): boolean {
     return isCommunicationsDockAppFocusedVisible({
@@ -134,24 +142,12 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
     request: CommunicationsDockUpdateSessionRequest
   ): CommunicationsDockSnapshot {
     this.requireCurrentSender(sender, request)
-    this.sessions[request.sessionState.appId] = request.sessionState
+    this.sessions.update(request.sessionState)
     return this.publish()
   }
   reattach(sender: WebContents, identity: CommunicationsDockIdentity): void {
     this.requireCurrentSender(sender, identity)
-    const layout = this.layout().get()
-    const tab = layout.tabs.find((entry) => entry.id === layout.activeTabId) ?? layout.tabs[0]
-    this.desiredVisible = false
-    this.window?.hide()
-    this.bumpRevision()
-    this.host.reattach(tab.activeLeafAppId, { ...this.sessions })
-    this.emitSnapshot()
-  }
-  hide(): void {
-    this.desiredVisible = false
-    this.window?.hide()
-    this.bumpRevision()
-    this.emitSnapshot()
+    this.returnToPanel()
   }
   isSender(sender: WebContents, identity?: CommunicationsDockIdentity): boolean {
     return isCommunicationsDockSender({
@@ -197,7 +193,7 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
         }
       },
       crashed: () => this.handleCrash(generation),
-      hideRequested: () => this.hide(),
+      hideRequested: () => this.returnToPanel(),
       loaded: () => {
         if (generation === this.generation) {
           this.loaded = true
@@ -241,7 +237,7 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
     sender: WebContents,
     request: CommunicationsDockLayoutCommand
   ): CommunicationsDockSnapshot {
-    this.requireCurrentSender(sender, request)
+    this.requireCurrentSender(sender, 'operation' in request ? request.request : request)
     this.setLayout(applyCommunicationsDockLayoutOperation(this.layout().get(), request))
     return this.publish()
   }
@@ -256,9 +252,18 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
       generation: this.generation,
       revision: this.revision,
       layout: this.layout().get(),
-      sessions: { ...this.sessions },
+      sessions: this.sessions.getSessions(),
       visible: Boolean(this.window && !this.window.isDestroyed() && this.window.isVisible())
     })
+  }
+  private returnToPanel(): void {
+    if (!returnCommunicationsDockSessions(this.sessions, this.host)) {
+      return
+    }
+    this.desiredVisible = false
+    this.window?.hide()
+    this.bumpRevision()
+    this.emitSnapshot()
   }
   private requireWindowSender(sender: WebContents): void {
     this.requireSender(sender, undefined, 'communications_dock_sender_denied')

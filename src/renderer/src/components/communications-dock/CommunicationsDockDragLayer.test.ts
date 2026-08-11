@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { CommunicationsDockTab } from '../../../../shared/communications-dock'
 import {
   canDropCommunicationsDockApp,
+  canReorderCommunicationsDockTab,
+  getCommunicationsDockTabInsertionIndex,
   getCommunicationsDockTabReorderIndex,
+  resolveCommunicationsDockTabInsertion,
   resolveCommunicationsDockDropSide
 } from './CommunicationsDockDragLayer'
 
@@ -28,5 +31,42 @@ describe('communications dock drag targets', () => {
     expect(canDropCommunicationsDockApp('slack', 'discord')).toBe(true)
     expect(getCommunicationsDockTabReorderIndex(tabs, 'two')).toBe(1)
     expect(getCommunicationsDockTabReorderIndex(tabs, 'missing')).toBeNull()
+    expect(getCommunicationsDockTabInsertionIndex(tabs, 'one', 2)).toBe(1)
+    expect(getCommunicationsDockTabInsertionIndex(tabs, 'two', 0)).toBe(0)
+    expect(getCommunicationsDockTabInsertionIndex(tabs, 'one', 3)).toBeNull()
+    expect(canReorderCommunicationsDockTab('one', 'one')).toBe(false)
+    expect(canReorderCommunicationsDockTab('one', 'two')).toBe(true)
+  })
+
+  it('resolves a grouped tab insertion from the pointer side', () => {
+    const event = {
+      active: {
+        data: {
+          current: {
+            type: 'communications-dock-tab',
+            tabId: 'source',
+            groupId: 'source',
+            unifiedTabId: 'source',
+            visibleTabId: 'source'
+          }
+        }
+      },
+      over: {
+        data: {
+          current: {
+            type: 'communications-dock-tab-target',
+            tabId: 'target',
+            groupId: 'target',
+            unifiedTabId: 'target',
+            visibleTabId: 'target'
+          }
+        },
+        rect: { left: 100, top: 0, width: 80, height: 24 }
+      },
+      activatorEvent: { clientX: 150, clientY: 12 },
+      delta: { x: 0, y: 0 }
+    } as unknown as Parameters<typeof resolveCommunicationsDockTabInsertion>[0]
+
+    expect(resolveCommunicationsDockTabInsertion(event)).toEqual({ tabId: 'target', side: 'right' })
   })
 })

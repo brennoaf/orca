@@ -145,7 +145,7 @@ describe('FloatingCommsRail', () => {
   let offReattached: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    initialPresence = { exists: false, visible: false }
+    initialPresence = { exists: false, visible: false, location: 'panel' }
     initialPresentations = []
     offPresence = vi.fn()
     offReattached = vi.fn()
@@ -199,7 +199,8 @@ describe('FloatingCommsRail', () => {
             presenceChanged = callback
             return offPresence
           }),
-          onReattached: vi.fn(() => offReattached)
+          onReattached: vi.fn(() => offReattached),
+          onAction: vi.fn(() => vi.fn())
         }
       }
     })
@@ -253,12 +254,19 @@ describe('FloatingCommsRail', () => {
     await act(async () => detachButton.click())
     expect(window.api.floatingCommsDock.detach).toHaveBeenCalledWith({
       appId: 'slack',
-      sessionState: { appId: 'slack' }
+      identity: identity('slack', 1, 'attached-dom'),
+      sessionState: { appId: 'slack' },
+      sessions: {
+        'whatsapp-web': { appId: 'whatsapp-web', selectedConversationId: null, draft: '' },
+        slack: { appId: 'slack' },
+        discord: { appId: 'discord' }
+      }
     })
+    expect(window.api.floatingComms.closeAttached).not.toHaveBeenCalled()
   })
 
   it('hydrates a visible dock and activates a different app without opening attached', async () => {
-    initialPresence = { exists: true, visible: true, activeAppId: 'slack' }
+    initialPresence = { exists: true, visible: true, location: 'dock', activeAppId: 'slack' }
     const container = mount()
     await act(async () => await Promise.resolve())
     const discord = button(container, 'Discord')
@@ -272,7 +280,7 @@ describe('FloatingCommsRail', () => {
   })
 
   it('hydrates a hidden dock as focusable without opening attached', async () => {
-    initialPresence = { exists: true, visible: false, activeAppId: 'slack' }
+    initialPresence = { exists: true, visible: false, location: 'dock', activeAppId: 'slack' }
     const container = mount()
     await act(async () => await Promise.resolve())
     const slack = button(container, 'Slack')
@@ -306,8 +314,10 @@ describe('FloatingCommsRail', () => {
       })
     )
     const container = mount()
-    act(() => presenceChanged?.({ exists: true, visible: false, activeAppId: 'discord' }))
-    await act(async () => resolvePresence({ exists: false, visible: false }))
+    act(() =>
+      presenceChanged?.({ exists: true, visible: false, location: 'dock', activeAppId: 'discord' })
+    )
+    await act(async () => resolvePresence({ exists: false, visible: false, location: 'panel' }))
     await act(async () => button(container, 'Discord').click())
     expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'discord' })
     expect(window.api.floatingComms.open).not.toHaveBeenCalled()
@@ -323,8 +333,12 @@ describe('FloatingCommsRail', () => {
     const container = mount()
     act(() => root?.unmount())
     root = null
-    act(() => presenceChanged?.({ exists: true, visible: true, activeAppId: 'slack' }))
-    await act(async () => resolvePresence({ exists: true, visible: true, activeAppId: 'slack' }))
+    act(() =>
+      presenceChanged?.({ exists: true, visible: true, location: 'dock', activeAppId: 'slack' })
+    )
+    await act(async () =>
+      resolvePresence({ exists: true, visible: true, location: 'dock', activeAppId: 'slack' })
+    )
     expect(offPresence).toHaveBeenCalledOnce()
     expect(offReattached).toHaveBeenCalledOnce()
     expect(container.childElementCount).toBe(0)

@@ -1,27 +1,27 @@
 import {
-  clampCommunicationsDockRatio,
   listCommunicationsDockApps,
   type CommunicationsDockLayout,
   type CommunicationsDockLayoutNode
 } from '../../shared/communications-dock'
 import type { FloatingWorkspaceAppId } from '../../shared/floating-workspace-apps'
+import { updateSplitRatioAtPath } from '../../shared/split-layout-tree'
+import {
+  communicationsDockRatioRange,
+  communicationsDockTreeAdapter,
+  insertCommunicationsDockNode,
+  removeCommunicationsDockApp
+} from './communications-dock-layout-tree'
+
+export {
+  createCommunicationsDockTab,
+  moveCommunicationsDockTab
+} from './communications-dock-tab-state'
 
 function removeApp(
   node: CommunicationsDockLayoutNode,
   appId: FloatingWorkspaceAppId
 ): CommunicationsDockLayoutNode | null {
-  if (node.type === 'leaf') {
-    return node.appId === appId ? null : node
-  }
-  const first = removeApp(node.first, appId)
-  const second = removeApp(node.second, appId)
-  if (!first) {
-    return second
-  }
-  if (!second) {
-    return first
-  }
-  return { ...node, first, second }
+  return removeCommunicationsDockApp(node, appId)
 }
 
 function insertAt(
@@ -30,26 +30,7 @@ function insertAt(
   appId: FloatingWorkspaceAppId,
   side: 'left' | 'right' | 'up' | 'down'
 ): CommunicationsDockLayoutNode | null {
-  if (node.type === 'leaf') {
-    if (node.appId !== targetAppId) {
-      return null
-    }
-    const moving: CommunicationsDockLayoutNode = { type: 'leaf', appId }
-    const direction = side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
-    return {
-      type: 'split',
-      direction,
-      ratio: 0.5,
-      first: side === 'left' || side === 'up' ? moving : node,
-      second: side === 'left' || side === 'up' ? node : moving
-    }
-  }
-  const first = insertAt(node.first, targetAppId, appId, side)
-  if (first) {
-    return { ...node, first }
-  }
-  const second = insertAt(node.second, targetAppId, appId, side)
-  return second ? { ...node, second } : null
+  return insertCommunicationsDockNode(node, targetAppId, { type: 'leaf', appId }, side)
 }
 
 export function activateCommunicationsDockTab(
@@ -150,24 +131,6 @@ export function reorderCommunicationsDockTab(
   return { ...layout, tabs }
 }
 
-function updateRatioAtPath(
-  node: CommunicationsDockLayoutNode,
-  path: readonly ('first' | 'second')[],
-  ratio: number
-): CommunicationsDockLayoutNode {
-  if (path.length === 0) {
-    if (node.type !== 'split') {
-      throw new Error('communications_dock_ratio_leaf')
-    }
-    return { ...node, ratio: clampCommunicationsDockRatio(ratio) }
-  }
-  if (node.type !== 'split') {
-    throw new Error('communications_dock_ratio_path_invalid')
-  }
-  const [head, ...tail] = path
-  return { ...node, [head]: updateRatioAtPath(node[head], tail, ratio) }
-}
-
 export function updateCommunicationsDockRatio(
   layout: CommunicationsDockLayout,
   tabId: string,
@@ -178,10 +141,26 @@ export function updateCommunicationsDockRatio(
   if (!found) {
     throw new Error('communications_dock_tab_missing')
   }
+  const tab = layout.tabs.find((entry) => entry.id === tabId)
+  if (!tab) {
+    throw new Error('communications_dock_tab_missing')
+  }
+  const nextLayout = updateSplitRatioAtPath(
+    tab.layout,
+    path,
+    ratio,
+    communicationsDockTreeAdapter(),
+    communicationsDockRatioRange()
+  )
+  if (!nextLayout) {
+    throw new Error(
+      path.length === 0
+        ? 'communications_dock_ratio_leaf'
+        : 'communications_dock_ratio_path_invalid'
+    )
+  }
   return {
     ...layout,
-    tabs: layout.tabs.map((tab) =>
-      tab.id === tabId ? { ...tab, layout: updateRatioAtPath(tab.layout, path, ratio) } : tab
-    )
+    tabs: layout.tabs.map((tab) => (tab.id === tabId ? { ...tab, layout: nextLayout } : tab))
   }
 }

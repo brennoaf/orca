@@ -30,7 +30,11 @@ export function CommunicationsDockLeaf({
     throw new Error('communications_dock_app_invalid')
   }
   const Icon = FLOATING_WORKSPACE_APP_ICONS[appId]
-  const dragData: CommunicationsDockAppDragData = { type: 'communications-dock-app', appId, tabId }
+  const dragData: CommunicationsDockAppDragData = {
+    type: 'communications-dock-app',
+    appId,
+    sourceTabId: tabId
+  }
   const dropData: CommunicationsDockLeafDropData = {
     type: 'communications-dock-leaf',
     appId,

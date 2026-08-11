@@ -128,4 +128,58 @@ describe('communications dock controller lifecycle', () => {
     expect(createdDock.window.show).toHaveBeenCalledTimes(2)
     expect(createdDock.window.focus).toHaveBeenCalledTimes(2)
   })
+
+  it('returns every dock session when reattached and keeps the warm window in panel location', async () => {
+    const { CommunicationsDockController } = await import('./communications-dock-controller')
+    const reattach = vi.fn()
+    const controller = new CommunicationsDockController({ action: vi.fn(), reattach })
+    controller.openOrFocus(
+      'whatsapp-web',
+      { appId: 'whatsapp-web', selectedConversationId: 4, draft: 'draft' },
+      {
+        slack: { appId: 'slack' },
+        discord: { appId: 'discord' }
+      }
+    )
+    const createdDock = created[0]
+    createdDock.lifecycle.loaded()
+    controller.readyForSender(createdDock.window.webContents as unknown as WebContents, 1)
+    controller.reattach(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 1
+    })
+    expect(reattach).toHaveBeenCalledWith('whatsapp-web', {
+      'whatsapp-web': { appId: 'whatsapp-web', selectedConversationId: 4, draft: 'draft' },
+      slack: { appId: 'slack' },
+      discord: { appId: 'discord' }
+    })
+    expect(controller.getPresence()).toEqual({
+      exists: true,
+      visible: false,
+      location: 'panel',
+      activeAppId: 'whatsapp-web'
+    })
+    controller.openOrFocus('whatsapp-web')
+    expect(created).toHaveLength(1)
+  })
+
+  it('treats native close as reattach while collapse leaves the dock detached', async () => {
+    const { CommunicationsDockController } = await import('./communications-dock-controller')
+    const reattach = vi.fn()
+    const controller = new CommunicationsDockController({ action: vi.fn(), reattach })
+    controller.openOrFocus('whatsapp-web')
+    const createdDock = created[0]
+    createdDock.lifecycle.loaded()
+    controller.readyForSender(createdDock.window.webContents as unknown as WebContents, 1)
+    controller.setCollapsed(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 1,
+      collapsed: true
+    })
+    expect(reattach).not.toHaveBeenCalled()
+    expect(controller.getPresence().location).toBe('dock')
+    createdDock.lifecycle.hideRequested()
+    expect(reattach).toHaveBeenCalledOnce()
+    expect(controller.getPresence().location).toBe('panel')
+  })
 })

@@ -9,11 +9,13 @@ import type {
   CommunicationsDockAction,
   CommunicationsDockActivateLeafRequest,
   CommunicationsDockActivateTabRequest,
+  CommunicationsDockCreateTabRequest,
   CommunicationsDockDiscordCommand,
   CommunicationsDockDiscordStateRequest,
   CommunicationsDockDetachRequest,
   CommunicationsDockIdentity,
   CommunicationsDockMoveAppRequest,
+  CommunicationsDockMoveTabRequest,
   CommunicationsDockNavbarHeightRequest,
   CommunicationsDockOpenRequest,
   CommunicationsDockPresence,
@@ -2470,6 +2472,10 @@ const api = {
       ipcRenderer.invoke('floatingCommsDock:moveApp', request),
     splitApp: (request: CommunicationsDockSplitAppRequest): Promise<CommunicationsDockSnapshot> =>
       ipcRenderer.invoke('floatingCommsDock:splitApp', request),
+    moveTab: (request: CommunicationsDockMoveTabRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:moveTab', request),
+    createTab: (request: CommunicationsDockCreateTabRequest): Promise<CommunicationsDockSnapshot> =>
+      ipcRenderer.invoke('floatingCommsDock:createTab', request),
     reorderTab: (
       request: CommunicationsDockReorderTabRequest
     ): Promise<CommunicationsDockSnapshot> =>

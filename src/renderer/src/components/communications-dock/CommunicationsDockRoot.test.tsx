@@ -9,14 +9,17 @@ import { CommunicationsDockRoot } from './CommunicationsDockRoot'
 
 const managerLifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }))
 const sessionCallbacks = new Map<string, (sessionState: FloatingCommsSessionState) => void>()
+const whatsappHostVisibility = vi.hoisted(() => ({ value: false }))
 
 function MockPresentation({
   initialSessionState,
   onSessionStateChange,
+  whatsappHost,
   children
 }: {
   initialSessionState?: FloatingCommsSessionState
   onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
+  whatsappHost?: { visible: boolean }
   children: (presentation: {
     status: { kind: 'idle' }
     tooltip: string
@@ -27,6 +30,9 @@ function MockPresentation({
   const sessionState = initialSessionState ?? { appId: 'discord' }
   const appIdRef = useRef(sessionState.appId)
   const callbackRef = useRef(onSessionStateChange)
+  if (sessionState.appId === 'whatsapp-web') {
+    whatsappHostVisibility.value = whatsappHost?.visible ?? false
+  }
   callbackRef.current = onSessionStateChange
   useEffect(() => {
     const appId = appIdRef.current
@@ -137,6 +143,7 @@ describe('CommunicationsDockRoot', () => {
     managerLifecycle.mounts = 0
     managerLifecycle.unmounts = 0
     sessionCallbacks.clear()
+    whatsappHostVisibility.value = false
     vi.clearAllMocks()
     vi.stubGlobal(
       'ResizeObserver',
@@ -208,5 +215,19 @@ describe('CommunicationsDockRoot', () => {
         })
       )
     )
+  })
+
+  it('keeps WhatsApp visible when another leaf is active in the same tab', async () => {
+    current = createSnapshot()
+    current = {
+      ...current,
+      layout: {
+        ...current.layout,
+        tabs: current.layout.tabs.map((tab) => ({ ...tab, activeLeafAppId: 'slack' }))
+      }
+    }
+    render(<CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} />)
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+    expect(whatsappHostVisibility.value).toBe(true)
   })
 })
