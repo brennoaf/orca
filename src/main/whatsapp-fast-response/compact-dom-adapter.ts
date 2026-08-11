@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 
-export type CompactWhatsAppMode = 'qr' | 'list' | 'conversation' | 'unsupported'
+export type CompactWhatsAppMode = 'loading' | 'qr' | 'list' | 'conversation'
 
 export type CompactWhatsAppStructure = {
   chatList: boolean
@@ -10,29 +10,39 @@ export type CompactWhatsAppStructure = {
   composer: boolean
   qrLogo: boolean
   qrCanvas: boolean
+  qrReference: boolean
   manualList: boolean
 }
 
 const ADAPTER_ATTRIBUTE = 'data-orca-whatsapp-fast-response'
 const ADAPTER_VERSION = '1'
+const LEGACY_UNSUPPORTED_ID = 'orca-wa-fast-response-unsupported'
 
 export const compactWhatsAppCss = `
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] body{min-width:0!important;overflow:hidden!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body{display:grid!important;min-height:100%!important;place-items:center!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body>*{max-width:100%!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chat-list"]{min-width:0!important;width:100%!important;max-width:100%!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body [data-orca-whatsapp-qr-visible]{max-width:100%!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body *:not([data-orca-whatsapp-qr-visible]){display:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"]>div{min-width:0!important;width:100%!important;max-width:100%!important;overflow:hidden!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"]>div{transform:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="wa-web-main-screen"]>div>div:has(>#side),html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="wa-web-main-screen"]>div>div:has(>#main){flex:0 0 100%!important;width:100%!important;max-width:100%!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chatlist-header"]{display:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side{display:flex!important;flex:1 1 auto!important;flex-direction:column!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{flex:1 1 auto!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side [role="tablist"]{display:none!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #main{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #main{min-width:0!important;width:100%!important;max-width:100%!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chatlist-header"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="search-container"]{display:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #main{display:flex!important;flex:1 1 auto!important;min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chatlist-header"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #side [role="tablist"]{display:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #pane-side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chat-list-search-container"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="search-container"]{display:none!important}
 #orca-wa-fast-response-back{position:fixed;z-index:2147483647;top:8px;left:8px;border:0;border-radius:8px;padding:6px 8px;background:#111b21;color:#fff;font:inherit;cursor:pointer}
-#orca-wa-fast-response-unsupported{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:16px;background:#111b21;color:#fff;font:14px sans-serif;text-align:center}
 `
 
 export function compactWhatsAppModeFor(value: CompactWhatsAppStructure): CompactWhatsAppMode {
   if (value.chatList && value.chatlistHeader && value.search) {
     return value.manualList || !value.main || !value.composer ? 'list' : 'conversation'
   }
-  return value.qrLogo && value.qrCanvas ? 'qr' : 'unsupported'
+  return value.qrLogo && (value.qrCanvas || value.qrReference) ? 'qr' : 'loading'
 }
 
 export function buildCompactWhatsAppScript(): string {
@@ -41,28 +51,59 @@ export function buildCompactWhatsAppScript(): string {
     const version = ${JSON.stringify(ADAPTER_VERSION)};
     const root = document.documentElement;
     const id = 'orca-wa-fast-response-back';
-    const unsupportedId = 'orca-wa-fast-response-unsupported';
+    const legacyUnsupportedId = ${JSON.stringify(LEGACY_UNSUPPORTED_ID)};
     let manualList = false;
     let manualListMain = '';
+    let qrContainer = null;
     const node = (selector) => document.querySelector(selector);
     const mainComposer = () => node('#main [contenteditable="true"]');
+    const search = () => node('[data-testid="search-container"],[data-testid="chat-list-search-container"]');
+    const qrSource = () => node('canvas,[data-ref]');
+    const clearQr = () => {
+      document.querySelectorAll('[data-orca-whatsapp-qr-visible]').forEach((element) => element.removeAttribute('data-orca-whatsapp-qr-visible'));
+      qrContainer = null;
+    };
+    const removeOwn = () => {
+      document.querySelectorAll('#' + id).forEach((element) => element.remove());
+      document.querySelectorAll('#' + legacyUnsupportedId).forEach((element) => element.remove());
+      clearQr();
+      root.removeAttribute(attribute);
+      root.removeAttribute('data-orca-whatsapp-mode');
+    };
+    const isOwnNode = (value) => value.nodeType === 1 && value.id === id;
+    const isOwnMutation = (record) => {
+      if (record.type !== 'childList') return false;
+      const changed = [...record.addedNodes, ...record.removedNodes];
+      return changed.length > 0 && changed.every(isOwnNode);
+    };
+    const isolateQr = () => {
+      const container = qrSource()?.parentElement;
+      if (!container || container === qrContainer) return;
+      clearQr();
+      document.body.querySelectorAll('*').forEach((element) => {
+        if (element === container || element.contains(container) || container.contains(element)) element.setAttribute('data-orca-whatsapp-qr-visible', '');
+      });
+      qrContainer = container;
+    };
     const mainSignature = () => {
       const main = node('#main');
       return main ? main.childElementCount + ':' + main.querySelectorAll('[contenteditable="true"]').length : '';
     };
-    const mode = () => {
+    const recognizedMode = () => {
       const list = node('[data-testid="chat-list"]');
       const header = node('[data-testid="chatlist-header"]');
-      const search = node('[data-testid="search-container"]');
+      const searchContainer = search();
       if (manualList && mainSignature() !== manualListMain && mainComposer()) manualList = false;
-      if (list && header && search) return manualList ? 'list' : (node('#main') && mainComposer() ? 'conversation' : 'list');
-      if (node('[data-testid="wa-logo"]') && node('canvas')) return 'qr';
-      return 'unsupported';
+      if (list && header && searchContainer) return manualList ? 'list' : (node('#main') && mainComposer() ? 'conversation' : 'list');
+      if ((node('[data-testid="wa-logo"],[data-testid="wa-wordmark"]')) && qrSource()) return 'qr';
+      return null;
     };
     const render = () => {
-      const current = mode();
+      const recognized = recognizedMode();
+      const current = recognized ?? 'loading';
       root.setAttribute(attribute, version);
       root.setAttribute('data-orca-whatsapp-mode', current);
+      if (current === 'qr') isolateQr(); else clearQr();
       let back = document.getElementById(id);
       if (current === 'conversation' && !back) {
         back = document.createElement('button');
@@ -74,17 +115,9 @@ export function buildCompactWhatsAppScript(): string {
         document.body.append(back);
       }
       if (back) back.hidden = current !== 'conversation';
-      let unsupported = document.getElementById(unsupportedId);
-      if (current === 'unsupported' && !unsupported) {
-        unsupported = document.createElement('div');
-        unsupported.id = unsupportedId;
-        unsupported.setAttribute('role', 'status');
-        unsupported.textContent = 'WhatsApp Web layout is not supported here. Open full view.';
-        document.body.append(unsupported);
-      }
-      if (unsupported) unsupported.hidden = current !== 'unsupported';
       return current;
     };
+    const onReadyStateChange = () => render();
     const releaseList = (target) => {
       if (node('[data-testid="chat-list"]')?.contains(target)) {
         manualList = false;
@@ -96,15 +129,22 @@ export function buildCompactWhatsAppScript(): string {
       if (event.key === 'Enter' || event.key === ' ') releaseList(event.target);
     };
     window.__orcaWhatsAppFastResponseCleanup?.();
+    removeOwn();
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeydown, true);
     window.__orcaWhatsAppFastResponseObserver?.disconnect();
-    window.__orcaWhatsAppFastResponseObserver = new MutationObserver(render);
+    window.__orcaWhatsAppFastResponseObserver = new MutationObserver((records) => {
+      if (records.length > 0 && records.every(isOwnMutation)) return;
+      render();
+    });
     window.__orcaWhatsAppFastResponseObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-testid'] });
+    document.addEventListener('readystatechange', onReadyStateChange);
     window.__orcaWhatsAppFastResponseCleanup = () => {
       window.__orcaWhatsAppFastResponseObserver?.disconnect();
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('keydown', onKeydown, true);
+      document.removeEventListener('readystatechange', onReadyStateChange);
+      removeOwn();
     };
     return render();
   })()`
@@ -113,22 +153,36 @@ export function buildCompactWhatsAppScript(): string {
 export async function applyCompactWhatsAppAdapter(
   webContents: Pick<
     WebContents,
-    'executeJavaScript' | 'executeJavaScriptInIsolatedWorld' | 'insertCSS' | 'removeInsertedCSS'
+    'executeJavaScriptInIsolatedWorld' | 'insertCSS' | 'removeInsertedCSS'
   >,
-  previousCssKey: string | null
-): Promise<{ cssKey: string; mode: CompactWhatsAppMode }> {
+  previousCssKey: string | null,
+  isCurrent: () => boolean = () => true
+): Promise<{ cssKey: string; mode: CompactWhatsAppMode } | null> {
   if (previousCssKey) {
     await webContents.removeInsertedCSS(previousCssKey).catch(() => {})
   }
   const cssKey = await webContents.insertCSS(compactWhatsAppCss)
-  const script = buildCompactWhatsAppScript()
-  const mode = await webContents.executeJavaScriptInIsolatedWorld(999, [{ code: script }], false)
-  if (!isCompactWhatsAppMode(mode)) {
-    throw new Error('whatsapp_fast_response_adapter_invalid')
+  if (!isCurrent()) {
+    await webContents.removeInsertedCSS(cssKey).catch(() => {})
+    return null
   }
-  return { cssKey, mode }
+  try {
+    const script = buildCompactWhatsAppScript()
+    const mode = await webContents.executeJavaScriptInIsolatedWorld(999, [{ code: script }], false)
+    if (!isCompactWhatsAppMode(mode)) {
+      throw new Error('whatsapp_fast_response_adapter_invalid')
+    }
+    if (!isCurrent()) {
+      await webContents.removeInsertedCSS(cssKey).catch(() => {})
+      return null
+    }
+    return { cssKey, mode }
+  } catch (error) {
+    await webContents.removeInsertedCSS(cssKey).catch(() => {})
+    throw error
+  }
 }
 
 export function isCompactWhatsAppMode(value: unknown): value is CompactWhatsAppMode {
-  return value === 'qr' || value === 'list' || value === 'conversation' || value === 'unsupported'
+  return value === 'loading' || value === 'qr' || value === 'list' || value === 'conversation'
 }

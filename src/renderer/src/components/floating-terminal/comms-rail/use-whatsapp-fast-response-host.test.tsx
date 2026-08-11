@@ -110,6 +110,18 @@ describe('useWhatsAppFastResponseHost', () => {
     expect(api.hide).toHaveBeenCalledWith(binding.identity)
   })
 
+  it('applies an immediately resolved initial snapshot before passive subscriptions settle', async () => {
+    api.attach.mockResolvedValueOnce({ ...snapshot, loaded: true })
+    const element = document.createElement('div')
+    vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => rect)
+    const binding = dockBinding()
+    const view = renderHook(() => useWhatsAppFastResponseHost({ binding, element }))
+    await act(async () => undefined)
+    expect(view.result.current).toEqual({ kind: 'ready' })
+    expect(api.onStateChanged).toHaveBeenCalledOnce()
+    view.unmount()
+  })
+
   it('ignores a stale attach result and hides that stale owner', async () => {
     let resolveFirst: ((value: WhatsAppFastResponseSnapshot) => void) | null = null
     api.attach.mockImplementationOnce(
@@ -153,6 +165,29 @@ describe('useWhatsAppFastResponseHost', () => {
     view.unmount()
   })
 
+  it('recovers from a current ready event while a crashed owner is reattaching', async () => {
+    api.attach.mockResolvedValueOnce(snapshot).mockImplementationOnce(() => new Promise(() => {}))
+    const element = document.createElement('div')
+    vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => rect)
+    const binding = dockBinding()
+    const view = renderHook(() => useWhatsAppFastResponseHost({ binding, element }))
+    await act(async () => undefined)
+
+    await act(async () => {
+      stateChanged?.({ identity: binding.identity, state: 'crashed', recoverable: true })
+    })
+    expect(view.result.current).toEqual({ kind: 'crashed', recoverable: true })
+
+    act(() =>
+      stateChanged?.({ identity: dockBinding(2).identity, state: 'ready', recoverable: false })
+    )
+    expect(view.result.current).toEqual({ kind: 'crashed', recoverable: true })
+
+    act(() => stateChanged?.({ identity: binding.identity, state: 'ready', recoverable: false }))
+    expect(view.result.current).toEqual({ kind: 'ready' })
+    view.unmount()
+  })
+
   it('does not retry stale, nonrecoverable or unmounted crashes', async () => {
     const element = document.createElement('div')
     vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => rect)
@@ -179,5 +214,35 @@ describe('useWhatsAppFastResponseHost', () => {
       unmounted.unmount()
     })
     expect(api.attach).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not poison current state when hide rejects after a visibility change', async () => {
+    api.hide.mockRejectedValueOnce(new Error('sender denied'))
+    const element = document.createElement('div')
+    vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => rect)
+    const view = renderHook(({ binding }) => useWhatsAppFastResponseHost({ binding, element }), {
+      initialProps: { binding: dockBinding(1, true) }
+    })
+    await act(async () => undefined)
+    view.rerender({ binding: dockBinding(1, false) })
+    await act(async () => undefined)
+    expect(view.result.current.kind).not.toBe('error')
+    view.unmount()
+  })
+
+  it('reports a current show rejection for the active owner', async () => {
+    api.show.mockRejectedValueOnce(new Error('sender denied'))
+    const element = document.createElement('div')
+    vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() => rect)
+    const view = renderHook(({ binding }) => useWhatsAppFastResponseHost({ binding, element }), {
+      initialProps: { binding: dockBinding(1, true) }
+    })
+    await act(async () => undefined)
+    view.rerender({ binding: dockBinding(1, false) })
+    await act(async () => undefined)
+    view.rerender({ binding: dockBinding(1, true) })
+    await act(async () => undefined)
+    expect(view.result.current).toEqual({ kind: 'error', recoverable: true })
+    view.unmount()
   })
 })

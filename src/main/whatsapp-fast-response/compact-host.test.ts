@@ -159,6 +159,37 @@ describe('WhatsAppFastResponseHost', () => {
       host.update(sender as never, { ...request, rectCss: { x: -1, y: 30, width: 10, height: 10 } })
     ).toThrow('whatsapp_fast_response_rect_denied')
   })
+  it('updates fractional one-pixel geometry to full integer bounds without replacing the guest', () => {
+    const host = new WhatsAppFastResponseHost(store as never)
+    const compact = {
+      ...request,
+      rectCss: { x: 2 / 3, y: 37 + 1 / 3, width: 318 + 2 / 3, height: 1 }
+    }
+    host.attach(sender as never, compact)
+    expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 37, width: 320, height: 2 })
+
+    host.update(sender as never, {
+      ...compact,
+      rectCss: { ...compact.rectCss, height: 320 }
+    })
+    expect(mocks.view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 37,
+      width: 320,
+      height: 321
+    })
+    expect(mocks.WebContentsView).toHaveBeenCalledOnce()
+    expect(mocks.webContents.loadURL).toHaveBeenCalledOnce()
+
+    expect(() =>
+      host.update(sender as never, {
+        ...compact,
+        requestId: compact.requestId + 1,
+        rectCss: { ...compact.rectCss, height: 200 }
+      })
+    ).toThrow('whatsapp_fast_response_stale')
+    expect(mocks.view.setBounds).toHaveBeenCalledTimes(2)
+  })
   it('rejects an unknown configured profile', () => {
     mocks.resolveKnownPartition.mockReturnValueOnce(null)
     store.getUI.mockReturnValueOnce({
@@ -206,13 +237,14 @@ describe('WhatsAppFastResponseHost', () => {
     expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
     expect(host.snapshot()).toMatchObject({ loaded: false, crashed: false, visible: false })
   })
-  it('keeps ready state when hidden after load', () => {
+  it('keeps ready state when hidden after load', async () => {
     const host = new WhatsAppFastResponseHost(store as never)
     host.attach(sender as never, request)
     const finish = mocks.webContents.on.mock.calls.find(
       ([event]) => event === 'did-finish-load'
     )?.[1]
     finish?.()
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true, crashed: false }))
     host.hide(sender as never, visibility)
     expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
     expect(host.snapshot()).toMatchObject({ loaded: true, crashed: false, visible: false })
@@ -229,11 +261,34 @@ describe('WhatsAppFastResponseHost', () => {
     finish?.()
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(1))
     await new Promise((resolve) => setTimeout(resolve, 0))
-    start?.()
+    start?.({}, 'https://web.whatsapp.com/', false, true)
     await vi.waitFor(() =>
       expect(mocks.webContents.removeInsertedCSS).toHaveBeenCalledWith('css-key')
     )
     finish?.()
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2))
+  })
+  it('keeps an in-flight adapter application through subframe navigation', async () => {
+    let resolveCss: ((value: string) => void) | undefined
+    mocks.webContents.insertCSS.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveCss = resolve
+        })
+    )
+    const host = new WhatsAppFastResponseHost(store as never)
+    host.attach(sender as never, request)
+    const finish = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-finish-load'
+    )?.[1]
+    const start = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-start-navigation'
+    )?.[1]
+    finish?.()
+    start?.({}, 'https://web.whatsapp.com/frame', false, false)
+    resolveCss?.('css-key')
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
+    expect(mocks.webContents.removeInsertedCSS).not.toHaveBeenCalled()
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
   })
 })

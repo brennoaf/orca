@@ -50,6 +50,7 @@ export function useWhatsAppFastResponseHost({
   const [state, setState] = useState<WhatsAppFastResponseHostState>({ kind: 'inactive' })
   const [recoveryEpoch, setRecoveryEpoch] = useState(0)
   const sequenceRef = useRef(0)
+  const mountedRef = useRef(false)
   const ownerKeyRef = useRef<string | null>(null)
   const geometryKeyRef = useRef<string | null>(null)
   const visibleRef = useRef(false)
@@ -69,17 +70,30 @@ export function useWhatsAppFastResponseHost({
     recoveredOwnerKeyRef.current = null
   }, [binding])
 
+  useLayoutEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   const applySnapshot = useCallback(
     (sequence: number, snapshot: WhatsAppFastResponseSnapshot): void => {
-      if (sequence === sequenceRef.current) {
+      if (mountedRef.current && sequence === sequenceRef.current) {
         setState(snapshotState(snapshot))
       }
     },
     []
   )
 
-  const reportError = useCallback((sequence: number): void => {
-    if (sequence !== sequenceRef.current) {
+  const reportError = useCallback((sequence: number, ownerKey: string): void => {
+    const currentBinding = bindingRef.current
+    if (
+      !mountedRef.current ||
+      sequence !== sequenceRef.current ||
+      !currentBinding ||
+      identityKey(currentBinding.identity) !== ownerKey
+    ) {
       return
     }
     setState({
@@ -130,7 +144,7 @@ export function useWhatsAppFastResponseHost({
           visibleRef.current = true
           applySnapshot(sequence, snapshot)
         },
-        () => reportError(sequence)
+        () => reportError(sequence, ownerKey)
       )
     }
     const schedulePublish = (): void => {
@@ -185,7 +199,11 @@ export function useWhatsAppFastResponseHost({
         }
         applySnapshot(sequence, snapshot)
       },
-      () => reportError(sequence)
+      () => {
+        if (binding.visible) {
+          reportError(sequence, ownerKey)
+        }
+      }
     )
   }, [applySnapshot, binding, reportError])
 
@@ -193,19 +211,20 @@ export function useWhatsAppFastResponseHost({
     () =>
       window.api.whatsappFastResponse.onStateChanged((event) => {
         const currentBinding = bindingRef.current
-        if (
-          !currentBinding ||
-          ownerKeyRef.current !== identityKey(event.identity) ||
-          identityKey(currentBinding.identity) !== identityKey(event.identity)
-        ) {
+        if (!currentBinding) {
           return
         }
+        const eventOwnerKey = identityKey(event.identity)
+        const currentOwnerKey = identityKey(currentBinding.identity)
+        if (currentOwnerKey !== eventOwnerKey) {
+          return
+        }
+        ownerKeyRef.current = currentOwnerKey
         if (event.state === 'loading' || event.state === 'ready') {
           setState({ kind: event.state })
           return
         }
         if (event.state === 'crashed') {
-          const eventOwnerKey = identityKey(event.identity)
           ownerKeyRef.current = null
           geometryKeyRef.current = null
           visibleRef.current = false
