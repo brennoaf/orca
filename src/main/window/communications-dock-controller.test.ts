@@ -129,6 +129,63 @@ describe('communications dock controller lifecycle', () => {
     expect(createdDock.window.focus).toHaveBeenCalledTimes(2)
   })
 
+  it('publishes the shown snapshot after the dock acknowledgement', async () => {
+    const { CommunicationsDockController } = await import('./communications-dock-controller')
+    const { sendCommunicationsDockSnapshot } = await import('./communications-dock-publication')
+    const controller = new CommunicationsDockController({ action: vi.fn(), reattach: vi.fn() })
+    controller.openOrFocus('whatsapp-web')
+    const createdDock = created[0]
+    createdDock.lifecycle.loaded()
+    controller.readyForSender(createdDock.window.webContents as unknown as WebContents, 1)
+    expect(
+      controller.getSnapshotForSender(createdDock.window.webContents as unknown as WebContents)
+        .visible
+    ).toBe(false)
+
+    controller.acknowledge(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 1
+    })
+
+    expect(
+      controller.getSnapshotForSender(createdDock.window.webContents as unknown as WebContents)
+        .visible
+    ).toBe(true)
+    expect(sendCommunicationsDockSnapshot).toHaveBeenLastCalledWith(
+      true,
+      createdDock.window,
+      expect.objectContaining({ visible: true })
+    )
+  })
+
+  it('rejects a stale reattach identity after layout revisions and accepts the current one', async () => {
+    const { CommunicationsDockController } = await import('./communications-dock-controller')
+    const reattach = vi.fn()
+    const controller = new CommunicationsDockController({ action: vi.fn(), reattach })
+    controller.openOrFocus('whatsapp-web')
+    const createdDock = created[0]
+    createdDock.lifecycle.loaded()
+    controller.readyForSender(createdDock.window.webContents as unknown as WebContents, 1)
+    controller.setCollapsed(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 1,
+      collapsed: true
+    })
+
+    expect(() =>
+      controller.reattach(createdDock.window.webContents as unknown as WebContents, {
+        generation: 1,
+        revision: 1
+      })
+    ).toThrow('communications_dock_stale')
+
+    controller.reattach(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 2
+    })
+    expect(reattach).toHaveBeenCalledOnce()
+  })
+
   it('returns every dock session when reattached and keeps the warm window in panel location', async () => {
     const { CommunicationsDockController } = await import('./communications-dock-controller')
     const reattach = vi.fn()

@@ -224,6 +224,16 @@ export class FloatingCommsSurfaceController {
     return this.isAttachedSender(sender, identity) || this.isDetachedSender(sender, identity)
   }
 
+  isAttachedAppFocusedVisible(appId: FloatingWorkspaceAppId): boolean {
+    const attached = this.attached
+    return Boolean(
+      attached &&
+      attached.identity.appId === appId &&
+      attached.owner.isFocused() &&
+      attached.identity.mode === 'attached-native'
+    )
+  }
+
   handleAction(sender: WebContents, action: FloatingCommsAction): void {
     if (!this.isSurfaceSender(sender, action)) {
       throw new Error('floating_comms_action_stale')

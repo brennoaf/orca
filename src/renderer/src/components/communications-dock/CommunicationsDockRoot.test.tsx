@@ -230,4 +230,21 @@ describe('CommunicationsDockRoot', () => {
     await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
     expect(whatsappHostVisibility.value).toBe(true)
   })
+
+  it('reattaches with the current dock identity after multiple layout revisions', async () => {
+    render(<CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} />)
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+    current = createSnapshot(false, 8)
+    act(() => snapshotListener?.(createSnapshot(false, 2)))
+    act(() => snapshotListener?.(createSnapshot(false, 5)))
+    act(() => snapshotListener?.(current))
+    api.reattachDock.mockRejectedValueOnce(new Error('communications_dock_stale'))
+    api.reattachDock.mockResolvedValueOnce(undefined)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to panel' }))
+
+    await vi.waitFor(() => expect(api.reattachDock).toHaveBeenCalledTimes(2))
+    expect(api.reattachDock).toHaveBeenNthCalledWith(1, { generation: 4, revision: 8 })
+    expect(api.reattachDock).toHaveBeenNthCalledWith(2, { generation: 4, revision: 8 })
+  })
 })

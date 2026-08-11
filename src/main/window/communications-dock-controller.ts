@@ -71,9 +71,8 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
     this.desiredVisible = true
     this.ensureWindow()
     if (this.ready && this.window && !this.window.isDestroyed()) {
-      this.sendSnapshot()
       showCommunicationsDockWindow(this.window)
-      this.emitSnapshot()
+      this.publish()
     }
     return this.snapshot()
   }
@@ -93,7 +92,7 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
       return
     }
     showCommunicationsDockWindow(this.window)
-    this.emitSnapshot()
+    this.publish()
   }
   getSnapshotForSender(sender: WebContents): CommunicationsDockSnapshot {
     this.requireWindowSender(sender)

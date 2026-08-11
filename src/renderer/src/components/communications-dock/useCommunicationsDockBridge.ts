@@ -19,6 +19,10 @@ function identityOf(snapshot: CommunicationsDockSnapshot): CommunicationsDockIde
   return { generation: snapshot.generation, revision: snapshot.revision }
 }
 
+function isCommunicationsDockStaleError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'communications_dock_stale'
+}
+
 export function useCommunicationsDockBridge(
   initialSnapshot: CommunicationsDockSnapshot,
   reportError: (operation: string, error: unknown) => void
@@ -104,14 +108,27 @@ export function useCommunicationsDockBridge(
   const runVoid = useCallback(
     (operation: string, request: (identity: CommunicationsDockIdentity) => Promise<void>): void => {
       enqueue(async () => {
+        const runCurrent = async (): Promise<void> => {
+          const current = await window.api.floatingCommsDock.getSnapshot()
+          accept(current)
+          await request(identityOf(current))
+        }
         try {
-          await request(identityOf(snapshotRef.current))
+          await runCurrent()
         } catch (error) {
-          reportError(operation, error)
+          if (!isCommunicationsDockStaleError(error)) {
+            reportError(operation, error)
+            return
+          }
+          try {
+            await runCurrent()
+          } catch (retryError) {
+            reportError(operation, retryError)
+          }
         }
       })
     },
-    [enqueue, reportError]
+    [accept, enqueue, reportError]
   )
 
   return { snapshot, ready, run, runVoid }
