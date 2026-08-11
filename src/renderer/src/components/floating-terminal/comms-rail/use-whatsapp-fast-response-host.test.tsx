@@ -13,6 +13,7 @@ import {
 } from './use-whatsapp-fast-response-host'
 
 const snapshot: WhatsAppFastResponseSnapshot = {
+  attention: { hasUnread: false },
   attached: true,
   crashed: false,
   loaded: false,

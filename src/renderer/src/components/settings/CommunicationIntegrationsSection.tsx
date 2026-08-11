@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import { AlertCircle, CheckCircle2, Hash, Loader2, MessageSquare } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Hash,
+  Loader2,
+  MessageCircle,
+  MessageSquare
+} from 'lucide-react'
 import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId,
@@ -20,6 +27,9 @@ import {
   type IntegrationCardStatusTone
 } from './integration-card-shell'
 import { useCommunicationIntegrationStatuses } from './use-communication-integration-statuses'
+import { useAppStore } from '@/store'
+import { getFloatingWorkspaceAppPreference } from '../../../../shared/floating-workspace-apps'
+import { SettingsSwitchRow } from './SettingsFormControls'
 import {
   useCommunicationIntegrationCardActions,
   type CommunicationIntegrationTestResult
@@ -291,6 +301,43 @@ function SlackCommunicationIntegrationCard({
   )
 }
 
+function WhatsAppWebCommunicationIntegrationCard(): React.JSX.Element {
+  const preferences = useAppStore((state) => state.floatingWorkspaceApps)
+  const setPreference = useAppStore((state) => state.setFloatingWorkspaceAppPreference)
+  const preference = getFloatingWorkspaceAppPreference(preferences, 'whatsapp-web')
+
+  return (
+    <IntegrationCardShell
+      settingsSectionId={COMMUNICATION_INTEGRATION_SECTION_IDS.whatsappWeb}
+      icon={<MessageCircle className="size-5" />}
+      name="WhatsApp Web"
+      description={translate(
+        'communicationIntegrations.whatsappWeb.cardDescription',
+        'Preferences for the compact fast-response view.'
+      )}
+      statusLabel={translate('communicationIntegrations.status.ready', 'Ready')}
+      statusTone="neutral"
+    >
+      <IntegrationCardDetails>
+        <SettingsSwitchRow
+          label={translate(
+            'communicationIntegrations.whatsappWeb.hideArchivedChats',
+            'Hide archived chats from fast response'
+          )}
+          description={translate(
+            'communicationIntegrations.whatsappWeb.hideArchivedChatsDescription',
+            'Only affects the compact panel. Full WhatsApp Web remains unchanged.'
+          )}
+          checked={preference.hideArchivedChats}
+          onChange={() =>
+            setPreference('whatsapp-web', { hideArchivedChats: !preference.hideArchivedChats })
+          }
+        />
+      </IntegrationCardDetails>
+    </IntegrationCardShell>
+  )
+}
+
 export function CommunicationIntegrationsSection(): React.JSX.Element {
   const { getStatus, loading, error } = useCommunicationIntegrationStatuses()
   const discordStatus = getStatus('discord')
@@ -310,6 +357,7 @@ export function CommunicationIntegrationsSection(): React.JSX.Element {
         </p>
       </div>
       <div className="space-y-3">
+        <WhatsAppWebCommunicationIntegrationCard />
         <DiscordCommunicationIntegrationCard
           status={discordStatus?.provider === 'discord' ? discordStatus : null}
           loading={loading}

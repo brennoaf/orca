@@ -175,6 +175,14 @@ export function isWhatsAppUrl(value: string): boolean {
   }
 }
 
+export function isAbortedNavigationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const { code, errno } = error as { code?: unknown; errno?: unknown }
+  return code === 'ERR_ABORTED' || errno === -3
+}
+
 export function visibilityIdentity(
   request: WhatsAppFastResponseAttach
 ): WhatsAppFastResponseVisibility {

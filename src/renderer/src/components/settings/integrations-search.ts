@@ -5,6 +5,22 @@ import { COMMUNICATION_INTEGRATION_SECTION_IDS } from '../../../../shared/commun
 
 export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
   {
+    title: translate('communicationIntegrations.search.whatsappWebTitle', 'WhatsApp Web'),
+    description: translate(
+      'communicationIntegrations.search.whatsappWebDescription',
+      'Configure compact fast-response display preferences for WhatsApp Web.'
+    ),
+    targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS.whatsappWeb,
+    keywords: [
+      ...translateSearchKeyword('communicationIntegrations.search.whatsapp', 'WhatsApp', {
+        englishOnly: true
+      }),
+      ...translateSearchKeyword('communicationIntegrations.search.fastResponse', 'fast response'),
+      ...translateSearchKeyword('communicationIntegrations.search.archivedChats', 'archived chats'),
+      ...translateSearchKeyword('communicationIntegrations.search.compactPanel', 'compact panel')
+    ]
+  },
+  {
     title: translate(
       'auto.components.settings.integrations.search.f16e41cc72',
       'GitHub Integration'

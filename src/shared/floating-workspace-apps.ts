@@ -19,6 +19,7 @@ export type FloatingWorkspaceAppCategoryGroup = {
 
 export type FloatingWorkspaceAppPreference = {
   enabled: boolean
+  hideArchivedChats: boolean
   sessionProfileIdOverride: string | null
   dedicatedSessionProfileId: string | null
 }
@@ -57,6 +58,7 @@ export const FLOATING_WORKSPACE_APPS: readonly FloatingWorkspaceApp[] = [
 
 const DEFAULT_FLOATING_WORKSPACE_APP_PREFERENCE: FloatingWorkspaceAppPreference = {
   enabled: true,
+  hideArchivedChats: false,
   sessionProfileIdOverride: null,
   dedicatedSessionProfileId: null
 }
@@ -137,6 +139,7 @@ export function normalizeFloatingWorkspaceAppPreferences(
     const candidate = entry as Partial<FloatingWorkspaceAppPreference>
     normalized[app.id] = {
       enabled: candidate.enabled !== false,
+      hideArchivedChats: candidate.hideArchivedChats === true,
       sessionProfileIdOverride: normalizeSessionProfileId(candidate.sessionProfileIdOverride),
       dedicatedSessionProfileId: normalizeSessionProfileId(candidate.dedicatedSessionProfileId)
     }

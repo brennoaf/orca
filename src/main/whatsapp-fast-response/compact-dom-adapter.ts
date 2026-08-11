@@ -17,6 +17,7 @@ export type CompactWhatsAppStructure = {
 const ADAPTER_ATTRIBUTE = 'data-orca-whatsapp-fast-response'
 const ADAPTER_VERSION = '1'
 const LEGACY_UNSUPPORTED_ID = 'orca-wa-fast-response-unsupported'
+const ATTENTION_ATTRIBUTE = 'data-orca-whatsapp-has-unread'
 
 export const compactWhatsAppCss = `
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] body{min-width:0!important;overflow:hidden!important}
@@ -27,6 +28,7 @@ html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"]>div{transform:none!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="wa-web-main-screen"]>div>div:has(>#side),html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="wa-web-main-screen"]>div>div:has(>#main){flex:0 0 100%!important;width:100%!important;max-width:100%!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chatlist-header"]{display:none!important}
+html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"][data-orca-whatsapp-hide-archived="true"] [data-testid="chatlist-panel-archived-button"]{display:none!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side{display:flex!important;flex:1 1 auto!important;flex-direction:column!important}
 html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{flex:1 1 auto!important}
@@ -45,13 +47,15 @@ export function compactWhatsAppModeFor(value: CompactWhatsAppStructure): Compact
   return value.qrLogo && (value.qrCanvas || value.qrReference) ? 'qr' : 'loading'
 }
 
-export function buildCompactWhatsAppScript(): string {
+export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
   return `(() => {
     const attribute = ${JSON.stringify(ADAPTER_ATTRIBUTE)};
     const version = ${JSON.stringify(ADAPTER_VERSION)};
     const root = document.documentElement;
     const id = 'orca-wa-fast-response-back';
     const legacyUnsupportedId = ${JSON.stringify(LEGACY_UNSUPPORTED_ID)};
+    const hideArchivedChats = ${JSON.stringify(hideArchivedChats)};
+    const attentionAttribute = ${JSON.stringify(ATTENTION_ATTRIBUTE)};
     let manualList = false;
     let manualListMain = '';
     let qrContainer = null;
@@ -69,6 +73,7 @@ export function buildCompactWhatsAppScript(): string {
       clearQr();
       root.removeAttribute(attribute);
       root.removeAttribute('data-orca-whatsapp-mode');
+      root.removeAttribute(attentionAttribute);
     };
     const isOwnNode = (value) => value.nodeType === 1 && value.id === id;
     const isOwnMutation = (record) => {
@@ -98,11 +103,18 @@ export function buildCompactWhatsAppScript(): string {
       if ((node('[data-testid="wa-logo"],[data-testid="wa-wordmark"]')) && qrSource()) return 'qr';
       return null;
     };
+    const updateAttention = () => {
+      const unread = [...document.querySelectorAll('#side [data-testid="icon-unread-count"]')].some((badge) =>
+        !hideArchivedChats || !badge.closest('[data-testid="chatlist-panel-archived-button"]')
+      );
+      root.setAttribute(attentionAttribute, unread ? 'true' : 'false');
+    };
     const render = () => {
       const recognized = recognizedMode();
       const current = recognized ?? 'loading';
       root.setAttribute(attribute, version);
       root.setAttribute('data-orca-whatsapp-mode', current);
+      if (hideArchivedChats) root.setAttribute('data-orca-whatsapp-hide-archived', 'true'); else root.removeAttribute('data-orca-whatsapp-hide-archived');
       if (current === 'qr') isolateQr(); else clearQr();
       let back = document.getElementById(id);
       if (current === 'conversation' && !back) {
@@ -115,6 +127,7 @@ export function buildCompactWhatsAppScript(): string {
         document.body.append(back);
       }
       if (back) back.hidden = current !== 'conversation';
+      updateAttention();
       return current;
     };
     const onReadyStateChange = () => render();
@@ -156,7 +169,8 @@ export async function applyCompactWhatsAppAdapter(
     'executeJavaScriptInIsolatedWorld' | 'insertCSS' | 'removeInsertedCSS'
   >,
   previousCssKey: string | null,
-  isCurrent: () => boolean = () => true
+  isCurrent: () => boolean = () => true,
+  hideArchivedChats = false
 ): Promise<{ cssKey: string; mode: CompactWhatsAppMode } | null> {
   if (previousCssKey) {
     await webContents.removeInsertedCSS(previousCssKey).catch(() => {})
@@ -167,7 +181,7 @@ export async function applyCompactWhatsAppAdapter(
     return null
   }
   try {
-    const script = buildCompactWhatsAppScript()
+    const script = buildCompactWhatsAppScript(hideArchivedChats)
     const mode = await webContents.executeJavaScriptInIsolatedWorld(999, [{ code: script }], false)
     if (!isCompactWhatsAppMode(mode)) {
       throw new Error('whatsapp_fast_response_adapter_invalid')

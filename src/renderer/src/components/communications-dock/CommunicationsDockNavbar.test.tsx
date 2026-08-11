@@ -36,6 +36,7 @@ describe('CommunicationsDockNavbar', () => {
           activeTabId="grouped"
           onActivateTab={vi.fn()}
           onActivateLeaf={activateLeaf}
+          whatsappHasUnread={false}
         />
       </DndContext>
     )
@@ -64,6 +65,7 @@ describe('CommunicationsDockNavbar', () => {
           activeTabId="grouped"
           onActivateTab={vi.fn()}
           onActivateLeaf={vi.fn()}
+          whatsappHasUnread={false}
         />
       </DndContext>
     )

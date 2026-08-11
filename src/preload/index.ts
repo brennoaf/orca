@@ -557,6 +557,14 @@ const api = {
       ): void => callback(state)
       ipcRenderer.on('whatsappFastResponse:stateChanged', listener)
       return () => ipcRenderer.removeListener('whatsappFastResponse:stateChanged', listener)
+    },
+    onAttentionChanged: (callback: (attention: { hasUnread: boolean }) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        attention: { hasUnread: boolean }
+      ): void => callback(attention)
+      ipcRenderer.on('whatsappFastResponse:attentionChanged', listener)
+      return () => ipcRenderer.removeListener('whatsappFastResponse:attentionChanged', listener)
     }
   },
   app: {

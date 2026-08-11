@@ -8,6 +8,7 @@ import {
 import { communicationsDockController } from '../window/communications-dock-controller'
 import { floatingCommsSurfaceController } from '../window/floating-comms-surface-controller'
 import { WhatsAppFastResponseHost } from '../whatsapp-fast-response/compact-host'
+import { dispatchMainNotification } from './notifications'
 
 let host: WhatsAppFastResponseHost | null = null
 
@@ -41,7 +42,18 @@ function isCurrentDockSender(
 }
 
 export function registerWhatsAppFastResponseHandlers(store: Store): void {
-  host ??= new WhatsAppFastResponseHost(store)
+  host ??= new WhatsAppFastResponseHost(
+    store,
+    () => {
+      void dispatchMainNotification({
+        source: 'communication-message',
+        notificationId: 'whatsapp-web-unread'
+      })
+    },
+    () =>
+      floatingCommsSurfaceController.isAttachedAppFocusedVisible('whatsapp-web') ||
+      communicationsDockController.isAppFocusedVisible(null, 'whatsapp-web')
+  )
   ipcMain.handle('whatsappFastResponse:attach', (event, value: unknown) => {
     const request = WhatsAppFastResponseAttachSchema.safeParse(value)
     if (!request.success) {

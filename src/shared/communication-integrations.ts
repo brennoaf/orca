@@ -1,6 +1,7 @@
 export const DEFAULT_SLACK_API_BASE_URL = 'https://slack.com/api'
 
 export const COMMUNICATION_INTEGRATION_SECTION_IDS = {
+  whatsappWeb: 'integrations-communications-whatsapp-web',
   discord: 'integrations-communications-discord',
   slack: 'integrations-communications-slack'
 } as const

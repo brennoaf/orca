@@ -159,7 +159,8 @@ describe('FloatingCommsRail', () => {
             Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
           ),
           collapse: vi.fn(),
-          onStateChanged: vi.fn(() => vi.fn())
+          onStateChanged: vi.fn(() => vi.fn()),
+          onAttentionChanged: vi.fn(() => vi.fn())
         },
         floatingComms: {
           open: vi.fn((request: { appId: FloatingWorkspaceAppId; requestId: number }) =>

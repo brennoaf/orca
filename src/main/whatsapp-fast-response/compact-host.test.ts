@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     insertCSS: vi.fn(() => Promise.resolve('css-key')),
     removeInsertedCSS: vi.fn(() => Promise.resolve()),
     executeJavaScript: vi.fn(() => Promise.resolve('qr')),
-    executeJavaScriptInIsolatedWorld: vi.fn(() => Promise.resolve('qr')),
+    executeJavaScriptInIsolatedWorld: vi.fn<() => Promise<unknown>>(() => Promise.resolve('qr')),
     close: vi.fn()
   }
   return {
@@ -50,13 +50,17 @@ vi.mock('../browser/browser-session-registry', () => ({
     createProfile: mocks.createProfile
   }
 }))
+vi.mock('../ipc/ui', () => ({ sendToTrustedUIRenderer: vi.fn() }))
 
 import { WhatsAppFastResponseHost } from './compact-host'
 
 const sender = { id: 1, isDestroyed: () => false, send: vi.fn() }
 const store = {
   getUI: vi.fn(() => ({ floatingWorkspaceApps: {} })),
-  updateUI: vi.fn()
+  updateUI: vi.fn(),
+  onUIChanged: vi.fn<(listener: (ui: { floatingWorkspaceApps: unknown }) => void) => () => void>(
+    () => () => {}
+  )
 }
 const request = {
   appId: 'whatsapp-web' as const,
@@ -192,7 +196,7 @@ describe('WhatsAppFastResponseHost', () => {
   })
   it('rejects an unknown configured profile', () => {
     mocks.resolveKnownPartition.mockReturnValueOnce(null)
-    store.getUI.mockReturnValueOnce({
+    store.getUI.mockReturnValue({
       floatingWorkspaceApps: {
         'whatsapp-web': { sessionProfileIdOverride: 'missing', dedicatedSessionProfileId: null }
       }
@@ -249,6 +253,67 @@ describe('WhatsAppFastResponseHost', () => {
     expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
     expect(host.snapshot()).toMatchObject({ loaded: true, crashed: false, visible: false })
   })
+  it('uses the hidden polling cadence after its owner closes', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = new WhatsAppFastResponseHost(store as never)
+      host.attach(sender as never, request)
+      const finish = mocks.webContents.on.mock.calls.find(
+        ([event]) => event === 'did-finish-load'
+      )?.[1]
+      finish?.()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      mocks.webContents.executeJavaScriptInIsolatedWorld.mockClear()
+      const closed = mocks.windows
+        .get(sender.id)!
+        .once.mock.calls.find((call) => call[0] === 'closed')?.[1]
+      if (typeof closed !== 'function') {
+        throw new Error('owner closed listener missing')
+      }
+      closed()
+
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(mocks.webContents.executeJavaScriptInIsolatedWorld).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(mocks.webContents.executeJavaScriptInIsolatedWorld).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('keeps initial unread attention silent through a main-frame reload', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.webContents.executeJavaScriptInIsolatedWorld
+        .mockResolvedValueOnce('qr')
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('qr')
+        .mockResolvedValueOnce(true)
+      const onUnread = vi.fn()
+      const host = new WhatsAppFastResponseHost(store as never, onUnread)
+      host.attach(sender as never, request)
+      const finish = mocks.webContents.on.mock.calls.find(
+        ([event]) => event === 'did-finish-load'
+      )?.[1]
+      const start = mocks.webContents.on.mock.calls.find(
+        ([event]) => event === 'did-start-navigation'
+      )?.[1]
+      finish?.()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(onUnread).not.toHaveBeenCalled()
+
+      start?.({}, 'https://web.whatsapp.com/', false, true)
+      finish?.()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(2000)
+
+      expect(host.snapshot().attention).toEqual({ hasUnread: true })
+      expect(onUnread).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('injects the compact adapter only after its guest finishes loading and reapplies on reload', async () => {
     const host = new WhatsAppFastResponseHost(store as never)
     host.attach(sender as never, request)
@@ -259,7 +324,7 @@ describe('WhatsAppFastResponseHost', () => {
       ([event]) => event === 'did-start-navigation'
     )?.[1]
     finish?.()
-    await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
     await new Promise((resolve) => setTimeout(resolve, 0))
     start?.({}, 'https://web.whatsapp.com/', false, true)
     await vi.waitFor(() =>
@@ -267,6 +332,27 @@ describe('WhatsAppFastResponseHost', () => {
     )
     finish?.()
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2))
+  })
+  it('reapplies the adapter when archived chats preference changes without reloading the guest', async () => {
+    let listener: ((ui: { floatingWorkspaceApps: unknown }) => void) | undefined
+    store.onUIChanged.mockImplementationOnce(
+      (next: (ui: { floatingWorkspaceApps: unknown }) => void) => {
+        listener = next
+        return () => {}
+      }
+    )
+    const host = new WhatsAppFastResponseHost(store as never)
+    host.attach(sender as never, request)
+    const finish = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-finish-load'
+    )?.[1]
+    finish?.()
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
+    listener?.({ floatingWorkspaceApps: { 'whatsapp-web': { hideArchivedChats: true } } })
+    await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2))
+    expect(mocks.webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(mocks.WebContentsView).toHaveBeenCalledTimes(1)
+    expect(mocks.webContents.removeInsertedCSS).toHaveBeenCalledWith('css-key')
   })
   it('keeps an in-flight adapter application through subframe navigation', async () => {
     let resolveCss: ((value: string) => void) | undefined

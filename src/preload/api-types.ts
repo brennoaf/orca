@@ -1240,6 +1240,7 @@ export type PreloadApi = {
     hide: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
     collapse: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
     onStateChanged: (callback: (state: WhatsAppFastResponseStateChanged) => void) => () => void
+    onAttentionChanged: (callback: (attention: { hasUnread: boolean }) => void) => () => void
   }
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>

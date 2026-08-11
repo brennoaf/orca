@@ -21,6 +21,7 @@ import {
   listEnabledCommunicationManagers
 } from './communication-managers'
 import { FloatingCommsRailItem } from './FloatingCommsRailItem'
+import { useWhatsAppFastResponseAttention } from './use-whatsapp-fast-response-attention'
 import { closeFloatingCommsAttachedSurface } from './close-floating-comms-attached-surface'
 import {
   createFloatingCommsOpenRequest,
@@ -31,7 +32,6 @@ import {
   sameFloatingCommsIdentity,
   useFloatingCommsPresentations
 } from './use-floating-comms-presentations'
-
 type FloatingCommsRailProps = {
   panelRef: RefObject<HTMLDivElement | null>
   panelVisible: boolean
@@ -40,7 +40,6 @@ type FloatingCommsRailProps = {
   onOpenAppIdChange: (appId: FloatingWorkspaceAppId | null) => void
   onOpenApp: (app: FloatingWorkspaceApp) => void
 }
-
 export function FloatingCommsRail({
   panelRef,
   panelVisible,
@@ -56,6 +55,7 @@ export function FloatingCommsRail({
   )
   const [dockPresence, setDockPresence] = useState<CommunicationsDockPresence | null>(null)
   const [reattachAppId, setReattachAppId] = useState<FloatingWorkspaceAppId | null>(null)
+  const whatsappHasUnread = useWhatsAppFastResponseAttention()
   const buttonRefs = useRef(new Map<FloatingWorkspaceAppId, HTMLButtonElement>())
   const attachedIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
   const openAppIdRef = useRef(openAppId)
@@ -64,7 +64,6 @@ export function FloatingCommsRail({
   const requestSequenceRef = useRef(0)
   attachedIdentityRef.current = attachedIdentity
   openAppIdRef.current = openAppId
-
   const releaseAttached = useCallback(
     (identity?: FloatingCommsSurfaceIdentity) => {
       if (identity && !sameFloatingCommsIdentity(attachedIdentityRef.current, identity)) {
@@ -79,7 +78,6 @@ export function FloatingCommsRail({
     },
     [onOpenAppIdChange]
   )
-
   const { presentations, pendingSessions, recordPresentation } = useFloatingCommsPresentations({
     entries,
     onOpenApp,
@@ -90,7 +88,6 @@ export function FloatingCommsRail({
     setAttachedIdentity,
     releaseAttached
   })
-
   const closeAttached = useCallback(
     (preserveSession = false) => {
       const identity = attachedIdentityRef.current
@@ -106,7 +103,6 @@ export function FloatingCommsRail({
     },
     [pendingSessions, releaseAttached]
   )
-
   const openAttachedApp = useCallback(
     (appId: FloatingWorkspaceAppId): void => {
       if (attachedIdentityRef.current?.appId === appId) {
@@ -148,7 +144,6 @@ export function FloatingCommsRail({
     },
     [closeAttached, onOpenAppIdChange, panelRef, recordPresentation, releaseAttached]
   )
-
   useEffect(() => {
     let disposed = false
     const initialSequence = presenceSequenceRef.current
@@ -190,14 +185,12 @@ export function FloatingCommsRail({
       offReattached()
     }
   }, [pendingSessions])
-
   useEffect(() => {
     if (reattachAppId) {
       setReattachAppId(null)
       openAttachedApp(reattachAppId)
     }
   }, [openAttachedApp, reattachAppId])
-
   useLayoutEffect(() => {
     if (openAppId !== null && !entries.some(({ app }) => app.id === openAppId)) {
       closeAttached()
@@ -211,26 +204,22 @@ export function FloatingCommsRail({
       }
     }
   }, [closeAttached, entries, openAppId, pendingSessions, presentations])
-
   useEffect(() => {
     if (!panelVisible && attachedIdentityRef.current) {
       closeAttached()
     }
   }, [closeAttached, panelVisible])
-
   useEffect(() => {
     if (openAppId === null && attachedIdentityRef.current) {
       closeAttached()
     }
   }, [closeAttached, openAppId])
-
   useFloatingCommsGeometry({
     panelRef,
     buttonRefs,
     attachedIdentityRef,
     close: closeAttached
   })
-
   useLayoutEffect(() => {
     if (!attachedIdentity || attachedIdentity.mode === 'attached-dom') {
       return
@@ -296,11 +285,9 @@ export function FloatingCommsRail({
       window.removeEventListener('scroll', update, true)
     }
   }, [attachedIdentity, closeAttached, panelRef, recordPresentation, workspaceBounds])
-
   if (entries.length === 0) {
     return null
   }
-
   return (
     <Popover
       modal={false}
@@ -327,6 +314,7 @@ export function FloatingCommsRail({
               attached={attached}
               domAttached={domAttached}
               detached={detached}
+              hasUnread={app.id === 'whatsapp-web' && whatsappHasUnread}
               initialSessionState={
                 pendingSessions.get(app.id) ?? createCommunicationManagerSessionState(app.id)
               }

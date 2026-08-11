@@ -43,14 +43,20 @@ export const WhatsAppFastResponseVisibilitySchema = z.discriminatedUnion('target
 export type WhatsAppFastResponseVisibility = z.infer<typeof WhatsAppFastResponseVisibilitySchema>
 
 export type WhatsAppFastResponseSnapshot = {
+  attention: WhatsAppFastResponseAttention
   attached: boolean
   crashed: boolean
   loaded: boolean
   visible: boolean
 }
 
+export type WhatsAppFastResponseAttention = {
+  hasUnread: boolean
+}
+
 export type WhatsAppFastResponseState = 'loading' | 'ready' | 'crashed' | 'error'
 export type WhatsAppFastResponseStateChanged = {
+  attention?: WhatsAppFastResponseAttention
   identity: WhatsAppFastResponseVisibility
   state: WhatsAppFastResponseState
   recoverable: boolean

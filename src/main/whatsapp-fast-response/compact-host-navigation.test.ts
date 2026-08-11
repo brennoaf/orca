@@ -50,11 +50,16 @@ vi.mock('../browser/browser-session-registry', () => ({
     createProfile: mocks.createProfile
   }
 }))
+vi.mock('../ipc/ui', () => ({ sendToTrustedUIRenderer: vi.fn() }))
 
 import { WhatsAppFastResponseHost } from './compact-host'
 
 const sender = { id: 1, isDestroyed: () => false, send: vi.fn() }
-const store = { getUI: vi.fn(() => ({ floatingWorkspaceApps: {} })), updateUI: vi.fn() }
+const store = {
+  getUI: vi.fn(() => ({ floatingWorkspaceApps: {} })),
+  updateUI: vi.fn(),
+  onUIChanged: vi.fn(() => () => {})
+}
 const request = {
   appId: 'whatsapp-web' as const,
   target: 'attached' as const,
@@ -132,6 +137,31 @@ describe('WhatsAppFastResponseHost navigation', () => {
     fail?.({}, -2, 'failed', 'https://web.whatsapp.com/frame', false)
     await vi.waitFor(() => expect(sender.send.mock.calls.at(-1)?.[1].state).toBe('ready'))
   })
+  it('keeps loading through a cancelled main-frame navigation until its replacement is ready', async () => {
+    const host = new WhatsAppFastResponseHost(store as never)
+    host.attach(sender as never, request)
+    const start = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-start-navigation'
+    )?.[1]
+    const fail = mocks.webContents.on.mock.calls.find(([event]) => event === 'did-fail-load')?.[1]
+    const finish = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-finish-load'
+    )?.[1]
+    start?.({}, 'https://web.whatsapp.com/redirect', false, true)
+    fail?.({}, -3, 'ERR_ABORTED', 'https://web.whatsapp.com/redirect', true)
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
+    finish?.()
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
+  })
+  it('publishes a recoverable error for a real main-frame load failure', () => {
+    const host = new WhatsAppFastResponseHost(store as never)
+    host.attach(sender as never, request)
+    const fail = mocks.webContents.on.mock.calls.find(([event]) => event === 'did-fail-load')?.[1]
+    fail?.({}, -2, 'ERR_FAILED', 'https://web.whatsapp.com/', true)
+    expect(host.snapshot()).toMatchObject({ loaded: false, crashed: false })
+    expect(sender.send.mock.calls.at(-1)?.[1]).toMatchObject({ state: 'error', recoverable: true })
+  })
   it('ignores an initial load rejection after a newer main-frame navigation', async () => {
     let rejectLoad: ((reason?: unknown) => void) | undefined
     mocks.webContents.loadURL.mockImplementationOnce(
@@ -148,6 +178,25 @@ describe('WhatsAppFastResponseHost navigation', () => {
     start?.({}, 'https://web.whatsapp.com/', false, true)
     start?.({}, 'https://web.whatsapp.com/chats', false, true)
     rejectLoad?.(new Error('stale'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
+  })
+  it('ignores a cancelled initial load rejection after a newer main-frame navigation', async () => {
+    let rejectLoad: ((reason?: unknown) => void) | undefined
+    mocks.webContents.loadURL.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectLoad = reject
+        })
+    )
+    const host = new WhatsAppFastResponseHost(store as never)
+    host.attach(sender as never, request)
+    const start = mocks.webContents.on.mock.calls.find(
+      ([event]) => event === 'did-start-navigation'
+    )?.[1]
+    start?.({}, 'https://web.whatsapp.com/redirect', false, true)
+    start?.({}, 'https://web.whatsapp.com/chats', false, true)
+    rejectLoad?.(Object.assign(new Error('ERR_ABORTED (-3)'), { code: 'ERR_ABORTED', errno: -3 }))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
   })

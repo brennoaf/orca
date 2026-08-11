@@ -95,6 +95,7 @@ export function CommunicationsDockRoot({
   )
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
+  const [whatsappHasUnread, setWhatsappHasUnread] = useState(false)
   const headerRef = useRef<HTMLDivElement | null>(null)
   const identity = useMemo(
     () => ({ generation: snapshot.generation, revision: snapshot.revision }),
@@ -193,6 +194,16 @@ export function CommunicationsDockRoot({
     return () => observer.disconnect()
   }, [ready, run])
 
+  useLayoutEffect(
+    () =>
+      window.api.whatsappFastResponse.onStateChanged((event) => {
+        if (event.attention) {
+          setWhatsappHasUnread(event.attention.hasUnread)
+        }
+      }),
+    []
+  )
+
   const runtime = useMemo<CommunicationManagerRuntime>(
     () => ({
       commandDiscord: (method: string, params?: unknown): Promise<DiscordVoiceSnapshot> =>
@@ -262,6 +273,7 @@ export function CommunicationsDockRoot({
               <CommunicationsDockNavbar
                 tabs={snapshot.layout.tabs}
                 activeTabId={snapshot.layout.activeTabId}
+                whatsappHasUnread={whatsappHasUnread}
                 onActivateTab={(tabId) =>
                   hideWhatsAppBeforeRun('activate communication tab', (current) =>
                     window.api.floatingCommsDock.activateTab({ ...current, tabId })

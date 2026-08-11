@@ -70,6 +70,41 @@ describe('compact WhatsApp DOM adapter', () => {
     expect(compactWhatsAppCss).toContain('data-orca-whatsapp-qr-visible')
     expect(buildCompactWhatsAppScript()).not.toContain('fetch(')
   })
+  it('hides only the archived chats entry when the preference is enabled', () => {
+    expect(compactWhatsAppCss).toContain(
+      '[data-orca-whatsapp-hide-archived="true"] [data-testid="chatlist-panel-archived-button"]'
+    )
+    expect(buildCompactWhatsAppScript(true)).toContain('data-orca-whatsapp-hide-archived')
+    expect(buildCompactWhatsAppScript(false)).toContain(
+      "root.removeAttribute('data-orca-whatsapp-hide-archived')"
+    )
+  })
+  it('stores unread attention as a boolean and excludes archived badges when configured', async () => {
+    const window = new Window()
+    const { document } = window
+    document.body.innerHTML = `
+      <div id="side">
+        <div data-testid="icon-unread-count"></div>
+        <button data-testid="chatlist-panel-archived-button"><span data-testid="icon-unread-count"></span></button>
+      </div>
+    `
+    const run = (hideArchivedChats: boolean): unknown =>
+      new Function(
+        'window',
+        'document',
+        'MutationObserver',
+        `return ${buildCompactWhatsAppScript(hideArchivedChats)}`
+      )(window, document, window.MutationObserver)
+    expect(run(true)).toBe('loading')
+    expect(document.documentElement.dataset.orcaWhatsappHasUnread).toBe('true')
+    document.querySelector('#side > [data-testid="icon-unread-count"]')?.remove()
+    await Promise.resolve()
+    expect(document.documentElement.dataset.orcaWhatsappHasUnread).toBe('false')
+    expect(run(false)).toBe('loading')
+    expect(document.documentElement.dataset.orcaWhatsappHasUnread).toBe('true')
+    new Function('window', 'return window.__orcaWhatsAppFastResponseCleanup()')(window)
+    expect(document.documentElement.hasAttribute('data-orca-whatsapp-has-unread')).toBe(false)
+  })
   it('scopes the compact list and conversation layout to public live structure', () => {
     expect(compactWhatsAppCss).toContain('[data-testid="wa-web-main-screen"]>div')
     expect(compactWhatsAppCss).toContain(

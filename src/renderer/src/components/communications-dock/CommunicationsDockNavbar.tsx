@@ -28,7 +28,8 @@ function DockTab({
   roving,
   onSelect,
   onActivateLeaf,
-  onRovingMove
+  onRovingMove,
+  whatsappHasUnread
 }: {
   tab: CommunicationsDockTab
   selected: boolean
@@ -36,6 +37,7 @@ function DockTab({
   onSelect: (tabId: string) => void
   onActivateLeaf: (tabId: string, appId: FloatingWorkspaceAppId) => void
   onRovingMove: (tabId: string, direction: 'previous' | 'next' | 'first' | 'last') => void
+  whatsappHasUnread: boolean
 }): React.JSX.Element {
   const apps = listCommunicationsDockApps(tab.layout)
   const label = apps.map(appLabel).join(', ')
@@ -131,6 +133,7 @@ function DockTab({
                 tabId={tab.id}
                 active={tab.activeLeafAppId === appId}
                 onActivate={() => onActivateLeaf(tab.id, appId)}
+                hasUnread={appId === 'whatsapp-web' && whatsappHasUnread}
               >
                 <Icon className="size-3.5" />
               </DockTabAppSegment>
@@ -150,13 +153,15 @@ function DockTabAppSegment({
   tabId,
   active,
   onActivate,
-  children
+  children,
+  hasUnread
 }: {
   appId: FloatingWorkspaceAppId
   tabId: string
   active: boolean
   onActivate: () => void
   children: React.ReactNode
+  hasUnread: boolean
 }): React.JSX.Element {
   const data: CommunicationsDockAppDragData = {
     type: 'communications-dock-app',
@@ -169,7 +174,7 @@ function DockTabAppSegment({
       ref={draggable.setNodeRef}
       aria-label={appLabel(appId)}
       className={cn(
-        'flex min-w-7 flex-1 cursor-grab items-center justify-center border-l border-border/60 first:border-l-0 active:cursor-grabbing',
+        'relative flex min-w-7 flex-1 cursor-grab items-center justify-center border-l border-border/60 first:border-l-0 active:cursor-grabbing',
         active ? 'text-foreground' : 'text-muted-foreground'
       )}
       onClick={(event) => {
@@ -184,6 +189,15 @@ function DockTabAppSegment({
       }}
     >
       {children}
+      {hasUnread ? (
+        <span
+          aria-label={translate(
+            'communicationIntegrations.whatsappWeb.unreadMessages',
+            'Unread WhatsApp messages'
+          )}
+          className="absolute ml-3 mt-[-12px] size-1.5 rounded-full bg-status-warning"
+        />
+      ) : null}
     </span>
   )
 }
@@ -210,12 +224,14 @@ export function CommunicationsDockNavbar({
   tabs,
   activeTabId,
   onActivateTab,
-  onActivateLeaf
+  onActivateLeaf,
+  whatsappHasUnread
 }: {
   tabs: readonly CommunicationsDockTab[]
   activeTabId: string
   onActivateTab: (tabId: string) => void
   onActivateLeaf: (tabId: string, appId: FloatingWorkspaceAppId) => void
+  whatsappHasUnread: boolean
 }): React.JSX.Element {
   const [rovingTabId, setRovingTabId] = useState(activeTabId)
   useEffect(() => {
@@ -255,6 +271,7 @@ export function CommunicationsDockNavbar({
               onActivateLeaf(tabId, appId)
             }}
             onRovingMove={moveRoving}
+            whatsappHasUnread={whatsappHasUnread}
           />
           <DockTabInsertion index={index + 1} />
         </div>

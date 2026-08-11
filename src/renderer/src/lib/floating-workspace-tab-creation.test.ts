@@ -90,6 +90,7 @@ describe('openOrFocusFloatingWorkspaceAppTab', () => {
     store.browserSessionProfilesByHostId[LOCAL_EXECUTION_HOST_ID] = []
     store.floatingWorkspaceApps.discord = {
       enabled: true,
+      hideArchivedChats: false,
       sessionProfileIdOverride: null,
       dedicatedSessionProfileId: null
     }
@@ -124,6 +125,7 @@ describe('openOrFocusFloatingWorkspaceAppTab', () => {
     store.browserSessionProfilesByHostId[LOCAL_EXECUTION_HOST_ID] = []
     store.floatingWorkspaceApps.discord = {
       enabled: true,
+      hideArchivedChats: false,
       sessionProfileIdOverride: null,
       dedicatedSessionProfileId: null
     }

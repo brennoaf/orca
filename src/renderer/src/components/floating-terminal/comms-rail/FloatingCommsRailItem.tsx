@@ -16,6 +16,7 @@ export function FloatingCommsRailItem({
   attached,
   domAttached,
   detached,
+  hasUnread,
   initialSessionState,
   onSessionStateChange,
   onSelect,
@@ -29,6 +30,7 @@ export function FloatingCommsRailItem({
   attached: boolean
   domAttached: boolean
   detached: boolean
+  hasUnread: boolean
   initialSessionState: FloatingCommsSessionState
   onSessionStateChange: (sessionState: FloatingCommsSessionState) => void
   onSelect: () => void
@@ -72,6 +74,15 @@ export function FloatingCommsRailItem({
             <Icon size={18} />
             {presentation.status.kind === 'active' ? (
               <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-status-success" />
+            ) : null}
+            {hasUnread ? (
+              <span
+                aria-label={translate(
+                  'communicationIntegrations.whatsappWeb.unreadMessages',
+                  'Unread WhatsApp messages'
+                )}
+                className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-status-warning"
+              />
             ) : null}
             {attached ? (
               <span className="absolute right-0 top-[25%] bottom-[25%] w-[2px] rounded-l bg-foreground" />
