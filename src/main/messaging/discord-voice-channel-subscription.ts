@@ -33,6 +33,7 @@ export class DiscordVoiceChannelSubscription {
       return
     }
     this.applyEvent(event)
+    this.onChannelSettled()
   }
 
   switchTo(channelId: string | null): Promise<void> {

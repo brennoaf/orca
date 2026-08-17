@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import type { Store } from '../persistence'
+import { registerNativeAppearanceWindow } from '../native-appearance-windows'
 import type { KeybindingOverrides } from '../../shared/keybindings'
 import { nativeZoomCommandMatchesKeybindings } from '../../shared/window-shortcut-policy'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
@@ -138,6 +139,7 @@ export function createOrFocusDiscordVoiceWindow(): BrowserWindow {
       webviewTag: false
     }
   })
+  registerNativeAppearanceWindow(window)
   installPrivilegedWindowNavigationPolicy(window.webContents)
   window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
     callback(false)

@@ -3,7 +3,16 @@ import type { RpcContext } from '../core'
 
 const mocks = vi.hoisted(() => ({
   getOverlayState: vi.fn(() => ({ open: true })),
-  getSnapshot: vi.fn(() => ({ state: 'snapshot' })),
+  getSnapshot: vi.fn(() => ({
+    connection: 'connected',
+    channelId: null,
+    channelName: null,
+    selfUserId: null,
+    participants: [],
+    credentialsConfigured: true,
+    lastError: null,
+    selection: { kind: 'idle', revision: 0, requestId: 0, channelId: null, errorCode: null }
+  })),
   saveCommunicationIntegration: vi.fn(),
   clearCommunicationIntegration: vi.fn(),
   getCommunicationStatus: vi.fn(() => ({
@@ -32,6 +41,7 @@ vi.mock('../../../messaging/discord-voice-service', () => ({
   getDiscordVoiceSnapshot: mocks.getSnapshot,
   leaveDiscordVoiceCall: vi.fn(),
   reconnectDiscordVoiceService: vi.fn(),
+  selectDiscordVoiceChannel: vi.fn(),
   setDiscordVoiceSelfDeaf: vi.fn(),
   setDiscordVoiceSelfMute: vi.fn()
 }))
@@ -54,6 +64,34 @@ describe('discordVoice.getOverlayState', () => {
     expect(method?.params).toBeNull()
     expect(await method?.handler(undefined, {} as RpcContext)).toEqual({ open: true })
     expect(mocks.getOverlayState).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('discordVoice.selectVoiceChannel', () => {
+  it('accepts a snowflake channel ID and rejects malformed IDs', () => {
+    const schema = method('discordVoice.selectVoiceChannel').params
+    expect(schema?.safeParse({ channelId: '12345678901234567' }).success).toBe(true)
+    expect(schema?.safeParse({ channelId: '' }).success).toBe(false)
+    expect(schema?.safeParse({ channelId: 'voice' }).success).toBe(false)
+  })
+
+  it.each(['mobile', 'runtime'] as const)('rejects %s callers', async (clientKind) => {
+    await expect(
+      method('discordVoice.selectVoiceChannel').handler({ channelId: '12345678901234567' }, {
+        clientKind
+      } as RpcContext)
+    ).rejects.toThrow('local windows')
+  })
+})
+
+describe('Discord voice snapshot output', () => {
+  it('strictly rejects fields outside the public snapshot schema', () => {
+    mocks.getSnapshot.mockReturnValueOnce({
+      ...mocks.getSnapshot(),
+      clientSecret: 'must-not-cross-rpc'
+    } as never)
+
+    expect(() => method('discordVoice.getState').handler(undefined, {} as RpcContext)).toThrow()
   })
 })
 

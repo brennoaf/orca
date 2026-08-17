@@ -8,8 +8,11 @@ import {
   installRendererCrashDiagnostics,
   recordRendererCrashBreadcrumb
 } from './lib/crash-diagnostics'
-import { applyDocumentTheme } from './lib/document-theme'
-import { buildAppFontFamily } from './lib/app-font-family'
+import {
+  initializeNativeDocumentTheme,
+  subscribeNativeDocumentTheme
+} from './lib/native-document-theme'
+import { applyDocumentInterfaceTheme } from './lib/document-theme'
 import { I18nProvider } from './i18n/I18nProvider'
 import { translate } from './i18n/i18n'
 import { useAppStore } from './store'
@@ -20,11 +23,7 @@ recordRendererCrashBreadcrumb('discord_voice_bootstrap_started', { dev: import.m
 installRendererCrashDiagnostics('discord-voice')
 
 function applyOverlayAppearance(settings: GlobalSettings | null): void {
-  applyDocumentTheme(settings?.theme ?? 'system', { disableTransitions: false })
-  document.documentElement.style.setProperty(
-    '--app-font-family',
-    buildAppFontFamily(settings?.appFontFamily)
-  )
+  applyDocumentInterfaceTheme(settings?.interfaceTheme, settings?.appFontFamily)
 }
 
 let startupSettings: GlobalSettings | null = null
@@ -70,13 +69,9 @@ function OverlaySettingsSync(): null {
 
   useEffect(() => {
     applyOverlayAppearance(settings)
-    if (settings?.theme !== 'system') {
-      return
-    }
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (): void => applyDocumentTheme('system')
-    media.addEventListener('change', handleChange)
-    return () => media.removeEventListener('change', handleChange)
+    return subscribeNativeDocumentTheme(settings?.theme ?? 'system', {
+      disableTransitions: false
+    })
   }, [settings])
 
   return null
@@ -99,12 +94,16 @@ function OverlayRoot(): React.JSX.Element {
   )
 }
 
-getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
-  <StrictMode>
-    <I18nProvider>
-      <OverlaySettingsSync />
-      <OverlayRoot />
-    </I18nProvider>
-  </StrictMode>
-)
-recordRendererCrashBreadcrumb('discord_voice_bootstrap_rendered')
+void initializeNativeDocumentTheme(startupSettings?.theme ?? 'system', {
+  disableTransitions: false
+}).then(() => {
+  getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
+    <StrictMode>
+      <I18nProvider>
+        <OverlaySettingsSync />
+        <OverlayRoot />
+      </I18nProvider>
+    </StrictMode>
+  )
+  recordRendererCrashBreadcrumb('discord_voice_bootstrap_rendered')
+})

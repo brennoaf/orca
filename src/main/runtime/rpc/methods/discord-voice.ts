@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DiscordVoiceSnapshotSchema } from '../../../../shared/discord-voice'
 import { defineMethod, type RpcContext, type RpcMethod } from '../core'
 import {
   closeDiscordVoiceWindow,
@@ -16,12 +17,14 @@ import {
   getDiscordVoiceSnapshot,
   leaveDiscordVoiceCall,
   reconnectDiscordVoiceService,
+  selectDiscordVoiceChannel,
   setDiscordVoiceSelfDeaf,
   setDiscordVoiceSelfMute
 } from '../../../messaging/discord-voice-service'
 
 const SetSelfMute = z.object({ muted: z.boolean() })
 const SetSelfDeaf = z.object({ deafened: z.boolean() })
+const SelectVoiceChannel = z.object({ channelId: z.string().regex(/^\d{17,20}$/) }).strict()
 const SetOverlayCompact = z.object({ compact: z.boolean() })
 const SaveCredentials = z
   .object({
@@ -32,7 +35,7 @@ const SaveCredentials = z
 
 function assertLocalWindow(ctx: RpcContext): void {
   if (ctx.clientKind !== undefined) {
-    throw new Error('Discord voice credentials are only available to local windows.')
+    throw new Error('Discord desktop operations are only available to local windows.')
   }
 }
 
@@ -41,18 +44,22 @@ function legacyCredentialStatus(): { configured: boolean; clientId: string | nul
   return { configured: status.readiness.configured, clientId: status.clientId }
 }
 
+function snapshotOutput(value: unknown) {
+  return DiscordVoiceSnapshotSchema.parse(value)
+}
+
 export const DISCORD_VOICE_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'discordVoice.getState',
     params: null,
-    handler: () => getDiscordVoiceSnapshot()
+    handler: () => snapshotOutput(getDiscordVoiceSnapshot())
   }),
   defineMethod({
     name: 'discordVoice.openOverlay',
     params: null,
     handler: () => {
       createOrFocusDiscordVoiceWindow()
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
     }
   }),
   defineMethod({
@@ -65,7 +72,7 @@ export const DISCORD_VOICE_METHODS: RpcMethod[] = [
     params: null,
     handler: () => {
       reconnectDiscordVoiceService()
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
     }
   }),
   defineMethod({
@@ -73,7 +80,7 @@ export const DISCORD_VOICE_METHODS: RpcMethod[] = [
     params: SetSelfMute,
     handler: async (params) => {
       await setDiscordVoiceSelfMute(params.muted)
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
     }
   }),
   defineMethod({
@@ -81,7 +88,7 @@ export const DISCORD_VOICE_METHODS: RpcMethod[] = [
     params: SetSelfDeaf,
     handler: async (params) => {
       await setDiscordVoiceSelfDeaf(params.deafened)
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
     }
   }),
   defineMethod({
@@ -89,7 +96,15 @@ export const DISCORD_VOICE_METHODS: RpcMethod[] = [
     params: null,
     handler: async () => {
       await leaveDiscordVoiceCall()
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
+    }
+  }),
+  defineMethod({
+    name: 'discordVoice.selectVoiceChannel',
+    params: SelectVoiceChannel,
+    handler: async (params, ctx) => {
+      assertLocalWindow(ctx)
+      return snapshotOutput(await selectDiscordVoiceChannel(params.channelId))
     }
   }),
   defineMethod({
@@ -133,7 +148,7 @@ export const DISCORD_VOICE_METHODS: RpcMethod[] = [
     params: null,
     handler: () => {
       closeDiscordVoiceWindow()
-      return getDiscordVoiceSnapshot()
+      return snapshotOutput(getDiscordVoiceSnapshot())
     }
   }),
   defineMethod({
