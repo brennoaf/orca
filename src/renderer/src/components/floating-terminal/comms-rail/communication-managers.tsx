@@ -1,12 +1,7 @@
-import type { ComponentType, ReactNode } from 'react'
-import type {
-  DiscordVoiceSnapshot,
-  DiscordVoiceParticipant
-} from '../../../../../shared/discord-voice'
-import type {
-  CommunicationIntegrationStatus,
-  CommunicationProviderId
-} from '../../../../../shared/communication-integrations'
+import { useState, type ComponentType, type ReactNode } from 'react'
+import { HeadphoneOff, Headphones, LoaderCircle, PictureInPicture2, Unplug } from 'lucide-react'
+import type { DiscordVoiceSnapshot } from '../../../../../shared/discord-voice'
+import type { CommunicationProviderId } from '../../../../../shared/communication-integrations'
 import type { FloatingCommsSessionState } from '../../../../../shared/floating-comms-surface'
 import {
   listEnabledFloatingWorkspaceApps,
@@ -15,8 +10,8 @@ import {
   type FloatingWorkspaceAppPreferences
 } from '../../../../../shared/floating-workspace-apps'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DiscordVoiceControls } from '@/components/discord-voice/DiscordVoiceControls'
-import { DiscordVoiceParticipantRow } from '@/components/discord-voice/DiscordVoiceParticipantRow'
 import {
   callDiscordVoice,
   useDiscordVoiceSnapshot
@@ -28,14 +23,14 @@ import {
 } from './communication-manager-runtime'
 import { WhatsAppWebFastResponsePresentation } from './WhatsAppWebFastResponsePresentation'
 import type { WhatsAppFastResponseHostBinding } from './use-whatsapp-fast-response-host'
+import { SlackWebFastResponsePresentation } from './SlackWebFastResponsePresentation'
+import type { SlackFastResponseHostBinding } from './use-slack-fast-response-host'
 import {
-  CommunicationOverlayControl,
-  useOpenCommunicationSettings
-} from './communication-manager-actions'
-import {
-  CommunicationManagerStatusErrorContent,
-  CommunicationManagerStatusLoadingContent
-} from './CommunicationManagerStatusContent'
+  useDiscordWebFastResponseHost,
+  type DiscordWebFastResponseHostBinding
+} from './use-discord-web-fast-response-host'
+import { useOpenCommunicationSettings } from './communication-manager-actions'
+import { DiscordWebCompactModeAction } from './DiscordWebCompactModeAction'
 
 export { getCommunicationSettingsTarget } from './communication-manager-actions'
 export {
@@ -60,6 +55,9 @@ export type CommunicationManagerPresentation = {
   tooltip: string
   content: ReactNode
   sessionState: FloatingCommsSessionState
+  minimal?: boolean
+  headerActions?: ReactNode
+  hideFooter?: boolean
 }
 
 type CommunicationManagerPresentationProps = {
@@ -67,25 +65,13 @@ type CommunicationManagerPresentationProps = {
   initialSessionState?: FloatingCommsSessionState
   onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
   whatsappHost?: WhatsAppFastResponseHostBinding
+  slackHost?: SlackFastResponseHostBinding
+  discordWebHost?: DiscordWebFastResponseHostBinding
   children: (presentation: CommunicationManagerPresentation) => ReactNode
 }
 
 export type CommunicationManager = {
   Presentation: ComponentType<CommunicationManagerPresentationProps>
-}
-
-function ParticipantList({
-  participants
-}: {
-  participants: readonly DiscordVoiceParticipant[]
-}): React.JSX.Element {
-  return (
-    <div className="space-y-0.5 px-1 py-2">
-      {participants.map((participant) => (
-        <DiscordVoiceParticipantRow key={participant.userId} participant={participant} />
-      ))}
-    </div>
-  )
 }
 
 function runDiscordCommand(
@@ -98,7 +84,7 @@ function runDiscordCommand(
     .catch((error: unknown) => console.error(`[discord-voice] ${method} failed:`, error))
 }
 
-function DiscordContent({
+function DiscordVoiceHeaderActions({
   snapshot,
   apply,
   command,
@@ -109,87 +95,113 @@ function DiscordContent({
   command: (method: string, params?: unknown) => Promise<DiscordVoiceSnapshot>
   openSettings: (provider: CommunicationProviderId) => void
 }): React.JSX.Element {
-  let stateContent: React.JSX.Element
+  const runtime = useCommunicationManagerRuntime()
   const popoverState = getDiscordPopoverState(snapshot)
-  if (popoverState === 'setup') {
-    stateContent = (
-      <div className="space-y-3 px-3 py-3">
-        <div className="text-sm font-medium">
-          {translate('communicationRail.discord.notConnected', 'Discord not connected')}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {translate(
-            'communicationRail.discord.configureCredentials',
-            'Configure the Application ID and Client Secret to connect to Discord desktop.'
-          )}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={() => openSettings('discord')}>
-          {translate('communicationRail.discord.openSettings', 'Configure Discord')}
-        </Button>
-      </div>
-    )
-  } else if (popoverState === 'active') {
-    stateContent = (
-      <div>
-        <div className="border-b border-border/60 px-3 py-2 text-sm font-medium">
+  const selection = snapshot.selection ?? {
+    kind: 'idle' as const,
+    revision: 0,
+    requestId: 0,
+    channelId: null,
+    errorCode: null
+  }
+  const selectionStatus =
+    selection.kind === 'pending'
+      ? translate('communicationRail.discord.selectionPending', 'Selecting voice channel…')
+      : selection.kind === 'failed'
+        ? translate('communicationRail.discord.selectionFailed', 'Could not select voice channel.')
+        : null
+  const selectionIndicator = selectionStatus ? (
+    <span role="status" aria-label={selectionStatus} className="text-xs text-muted-foreground">
+      {selection.kind === 'pending' ? <LoaderCircle className="animate-spin" /> : <HeadphoneOff />}
+    </span>
+  ) : null
+  if (popoverState === 'active') {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="max-w-28 shrink-0 truncate text-xs font-normal text-muted-foreground">
           {snapshot.channelName ?? translate('discordVoice.channel.unknown', 'Voice channel')}
-        </div>
-        <ParticipantList participants={snapshot.participants} />
-        <DiscordVoiceControls snapshot={snapshot} apply={apply} command={command} />
-      </div>
-    )
-  } else if (popoverState === 'connecting') {
-    stateContent = (
-      <p className="px-3 py-3 text-xs text-muted-foreground">
-        {translate('communicationRail.discord.connecting', 'Connecting to Discord desktop…')}
-      </p>
-    )
-  } else if (popoverState === 'error') {
-    stateContent = (
-      <div className="space-y-3 px-3 py-3">
-        <p className="text-xs text-destructive">{snapshot.lastError}</p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => runDiscordCommand(command, 'discordVoice.reconnect', apply)}
-        >
-          {translate('discordVoice.action.reconnect', 'Reconnect')}
-        </Button>
-      </div>
-    )
-  } else if (popoverState === 'idle') {
-    stateContent = (
-      <p className="px-3 py-3 text-xs text-muted-foreground">
-        {translate('communicationRail.discord.outsideCall', 'Connected — not in a call')}
-      </p>
-    )
-  } else {
-    stateContent = (
-      <div className="space-y-3 px-3 py-3">
-        <p className="text-xs text-muted-foreground">
-          {translate(
-            'communicationRail.discord.desktopDisconnected',
-            'Discord desktop disconnected.'
-          )}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => runDiscordCommand(command, 'discordVoice.reconnect', apply)}
-        >
-          {translate('discordVoice.action.reconnect', 'Reconnect')}
-        </Button>
+        </span>
+        <DiscordVoiceControls snapshot={snapshot} apply={apply} command={command} compact />
+        {selectionIndicator}
+        {runtime ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={translate('communicationRail.overlaySeparate', 'Separate overlay')}
+                aria-pressed={runtime.overlayOpen}
+                onClick={() => runtime.setOverlayOpen(!runtime.overlayOpen)}
+              >
+                <PictureInPicture2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              {translate('communicationRail.overlaySeparate', 'Separate overlay')}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
     )
   }
 
+  const label =
+    popoverState === 'setup'
+      ? translate(
+          'communicationRail.discord.voiceNotConfigured',
+          'Controles de voz não configurados'
+        )
+      : popoverState === 'connecting'
+        ? translate('communicationRail.discord.connecting', 'Connecting to Discord desktop…')
+        : popoverState === 'idle'
+          ? translate('communicationRail.discord.outsideCall', 'Connected — not in a call')
+          : (snapshot.lastError ??
+            translate(
+              'communicationRail.discord.desktopDisconnected',
+              'Discord desktop disconnected.'
+            ))
+  const icon =
+    popoverState === 'setup' ? (
+      <Unplug />
+    ) : popoverState === 'connecting' ? (
+      <LoaderCircle className="animate-spin" />
+    ) : popoverState === 'idle' ? (
+      <Headphones />
+    ) : (
+      <HeadphoneOff />
+    )
+  const onClick =
+    popoverState === 'setup'
+      ? () => openSettings('discord')
+      : popoverState === 'error' || popoverState === 'disconnected'
+        ? () => runDiscordCommand(command, 'discordVoice.reconnect', apply)
+        : undefined
+
+  const trigger = onClick ? (
+    <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
+      {icon}
+    </Button>
+  ) : (
+    <span
+      role="status"
+      aria-label={label}
+      className="inline-flex size-7 items-center justify-center text-muted-foreground [&_svg]:size-4"
+    >
+      {icon}
+    </span>
+  )
+
   return (
-    <>
-      {stateContent}
-      <CommunicationOverlayControl />
-    </>
+    <div className="flex shrink-0 items-center gap-1">
+      {selectionIndicator}
+      <Tooltip>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </div>
   )
 }
 
@@ -229,10 +241,13 @@ export function getDiscordCommunicationStatus(
   return { kind: 'idle' }
 }
 
-function DiscordPresentation({
+export function DiscordPresentation({
   isPopoverOpen,
+  discordWebHost,
   children
 }: CommunicationManagerPresentationProps): React.JSX.Element {
+  const [webElement, setWebElement] = useState<HTMLDivElement | null>(null)
+  const webState = useDiscordWebFastResponseHost({ binding: discordWebHost, element: webElement })
   const runtime = useCommunicationManagerRuntime()
   useCommunicationManagerStatuses(runtime, isPopoverOpen)
   const command = runtime?.commandDiscord ?? callDiscordVoice
@@ -260,131 +275,50 @@ function DiscordPresentation({
         status,
         tooltip,
         sessionState: { appId: 'discord' },
-        content: (
-          <DiscordContent
-            snapshot={snapshot}
-            apply={apply}
-            command={command}
-            openSettings={openSettings}
-          />
-        )
-      })}
-    </>
-  )
-}
-
-function integrationSetupState(status: CommunicationIntegrationStatus | null) {
-  if (status?.readiness.lastError) {
-    return 'attention'
-  }
-  if (!status?.readiness.configured) {
-    return 'unconfigured'
-  }
-  return status.readiness.verified ? 'verified' : 'configured'
-}
-
-function UnavailableContent(props: {
-  provider: CommunicationProviderId
-  providerName: string
-  setupState: ReturnType<typeof integrationSetupState>
-  configuredCopy: string
-  verifiedCopy: string
-  unconfiguredCopy: string
-  persistentCopy?: string
-  openSettings: (provider: CommunicationProviderId) => void
-}): React.JSX.Element {
-  const setupCopy =
-    props.setupState === 'verified'
-      ? props.verifiedCopy
-      : props.setupState === 'configured'
-        ? props.configuredCopy
-        : props.setupState === 'attention'
-          ? translate(
-              'communicationRail.integrationNeedsAttention',
-              'Saved credentials need attention. Review them in Integrations.'
-            )
-          : props.unconfiguredCopy
-  return (
-    <div className="space-y-3 px-3 py-3">
-      <p className="text-xs text-muted-foreground">{setupCopy}</p>
-      {props.persistentCopy ? (
-        <p className="text-xs text-muted-foreground">{props.persistentCopy}</p>
-      ) : null}
-      {props.setupState === 'unconfigured' || props.setupState === 'attention' ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => props.openSettings(props.provider)}
-        >
-          {translate('communicationRail.configureProvider', 'Configure {{provider}}', {
-            provider: props.providerName
-          })}
-        </Button>
-      ) : null}
-    </div>
-  )
-}
-
-function SlackPresentation({
-  isPopoverOpen,
-  children
-}: CommunicationManagerPresentationProps): React.JSX.Element {
-  const runtime = useCommunicationManagerRuntime()
-  const { getStatus, loading, error, refresh } = useCommunicationManagerStatuses(
-    runtime,
-    isPopoverOpen
-  )
-  const openSettings = useOpenCommunicationSettings()
-  const status = getStatus('slack')
-  const setupState = integrationSetupState(status?.provider === 'slack' ? status : null)
-  const reason = translate(
-    'communicationRail.slackUnavailable',
-    'Slack fast responses are not enabled yet.'
-  )
-  if (loading && !status) {
-    return (
-      <>
-        {children({
-          status: { kind: 'loading' },
-          tooltip: translate('communicationRail.loadingTooltip', '{{app}} — loading', {
-            app: 'Slack'
-          }),
-          sessionState: { appId: 'slack' },
-          content: <CommunicationManagerStatusLoadingContent providerName="Slack" />
-        })}
-      </>
-    )
-  }
-  return (
-    <>
-      {children({
-        status: { kind: 'unavailable', reason: error ?? reason },
-        tooltip: translate('communicationRail.unavailableTooltip', '{{app}} — unavailable', {
-          app: 'Slack'
-        }),
-        sessionState: { appId: 'slack' },
-        content: error ? (
-          <CommunicationManagerStatusErrorContent error={error} onRetry={refresh} />
+        headerActions: (
+          <div className="flex w-max shrink-0 items-center gap-1">
+            <DiscordWebCompactModeAction state={webState} />
+            <DiscordVoiceHeaderActions
+              snapshot={snapshot}
+              apply={apply}
+              command={command}
+              openSettings={openSettings}
+            />
+          </div>
+        ),
+        hideFooter: true,
+        content: discordWebHost ? (
+          <div className="relative h-full min-h-0 overflow-hidden bg-background">
+            <div
+              ref={setWebElement}
+              className="absolute inset-0"
+              aria-label={translate('communicationRail.discord.web', 'Discord Web — fast response')}
+            />
+            {webState.kind === 'loading' ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                {translate('communicationRail.discord.webLoading', 'Loading Discord Web…')}
+              </div>
+            ) : webState.kind === 'crashed' || webState.kind === 'error' ? (
+              <div
+                role="alert"
+                className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground"
+              >
+                {translate('communicationRail.discord.webError', 'Could not open Discord Web.')}
+              </div>
+            ) : webState.kind === 'ready' && webState.contentMode === 'unsupported' ? (
+              <div
+                role="status"
+                className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground"
+              >
+                {translate(
+                  'communicationRail.discord.webUnsupported',
+                  'This Discord view is not available in fast response yet.'
+                )}
+              </div>
+            ) : null}
+          </div>
         ) : (
-          <UnavailableContent
-            provider="slack"
-            providerName="Slack"
-            openSettings={openSettings}
-            setupState={setupState}
-            unconfiguredCopy={translate(
-              'communicationRail.slackUnconfigured',
-              'Configure Slack credentials in Integrations. Socket Mode transport is not active yet.'
-            )}
-            configuredCopy={translate(
-              'communicationRail.slackConfigured',
-              'Credentials configured. Fast responses are not enabled yet.'
-            )}
-            verifiedCopy={translate(
-              'communicationRail.slackVerified',
-              'Credentials verified. Fast responses are not enabled yet.'
-            )}
-          />
+          <div className="h-full min-h-0 bg-background" />
         )
       })}
     </>
@@ -394,7 +328,7 @@ function SlackPresentation({
 export const COMMUNICATION_MANAGER_REGISTRY: Record<FloatingWorkspaceAppId, CommunicationManager> =
   {
     'whatsapp-web': { Presentation: WhatsAppWebFastResponsePresentation },
-    slack: { Presentation: SlackPresentation },
+    slack: { Presentation: SlackWebFastResponsePresentation },
     discord: { Presentation: DiscordPresentation }
   }
 

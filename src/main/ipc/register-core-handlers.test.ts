@@ -17,6 +17,8 @@ const {
   registerNotificationHandlersMock,
   registerDeveloperPermissionHandlersMock,
   registerComputerUsePermissionHandlersMock,
+  registerNativeAppearanceHandlersMock,
+  registerDiscordWebFastResponseHandlersMock,
   registerSettingsHandlersMock,
   registerKeybindingHandlersMock,
   registerTelemetryHandlersMock,
@@ -82,6 +84,8 @@ const {
   registerNotificationHandlersMock: vi.fn(),
   registerDeveloperPermissionHandlersMock: vi.fn(),
   registerComputerUsePermissionHandlersMock: vi.fn(),
+  registerNativeAppearanceHandlersMock: vi.fn(),
+  registerDiscordWebFastResponseHandlersMock: vi.fn(),
   registerSettingsHandlersMock: vi.fn(),
   registerKeybindingHandlersMock: vi.fn(),
   registerTelemetryHandlersMock: vi.fn(),
@@ -224,6 +228,36 @@ vi.mock('./computer-use-permissions', () => ({
 
 vi.mock('./settings', () => ({
   registerSettingsHandlers: registerSettingsHandlersMock
+}))
+
+vi.mock('./slack-fast-response', () => ({
+  registerSlackFastResponseHandlers: vi.fn()
+}))
+
+vi.mock('./floating-comms-surface', () => ({
+  registerFloatingCommsSurfaceHandlers: vi.fn()
+}))
+
+vi.mock('./communications-dock', () => ({
+  registerCommunicationsDockHandlers: vi.fn()
+}))
+
+vi.mock('./whatsapp-fast-response', () => ({
+  registerWhatsAppFastResponseHandlers: vi.fn()
+}))
+
+vi.mock('./discord-web-fast-response', () => ({
+  registerDiscordWebFastResponseHandlers: registerDiscordWebFastResponseHandlersMock
+}))
+
+vi.mock('../window/discord-voice-window', () => ({
+  closeDiscordVoiceWindow: vi.fn(),
+  createOrFocusDiscordVoiceWindow: vi.fn(),
+  getDiscordVoiceOverlayState: vi.fn(() => ({ open: false }))
+}))
+
+vi.mock('./native-appearance', () => ({
+  registerNativeAppearanceHandlers: registerNativeAppearanceHandlersMock
 }))
 
 vi.mock('./skills', () => ({
@@ -400,6 +434,8 @@ describe('registerCoreHandlers', () => {
     registerNotificationHandlersMock.mockReset()
     registerDeveloperPermissionHandlersMock.mockReset()
     registerComputerUsePermissionHandlersMock.mockReset()
+    registerNativeAppearanceHandlersMock.mockReset()
+    registerDiscordWebFastResponseHandlersMock.mockReset()
     registerSettingsHandlersMock.mockReset()
     registerKeybindingHandlersMock.mockReset()
     registerTelemetryHandlersMock.mockReset()
@@ -519,6 +555,8 @@ describe('registerCoreHandlers', () => {
     expect(registerNotificationHandlersMock).toHaveBeenCalledWith(store, runtime)
     expect(registerDeveloperPermissionHandlersMock).toHaveBeenCalled()
     expect(registerComputerUsePermissionHandlersMock).toHaveBeenCalled()
+    expect(registerNativeAppearanceHandlersMock).toHaveBeenCalledWith(store)
+    expect(registerDiscordWebFastResponseHandlersMock).toHaveBeenCalledWith(store)
     expect(registerDashboardPopoutHandlersMock).toHaveBeenCalledWith(store, undefined)
     expect(registerTerminalPreviewHandlersMock).toHaveBeenCalledWith(runtime)
     expect(registerSettingsHandlersMock).toHaveBeenCalledWith(store, agentAwakeService)

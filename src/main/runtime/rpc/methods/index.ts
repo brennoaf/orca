@@ -35,6 +35,8 @@ import { PLUGIN_METHODS } from './plugins'
 import { SKILL_METHODS } from './skills'
 import { CLIPBOARD_METHODS } from './clipboard'
 import { DISCORD_VOICE_METHODS } from './discord-voice'
+import { DISCORD_WEB_FAST_RESPONSE_METHODS } from './discord-web-fast-response'
+import { SPOTIFY_PLAYBACK_METHODS } from './spotify-playback'
 import { COMMUNICATION_INTEGRATION_METHODS } from './communication-integrations'
 import { HOST_CAPABILITY_METHODS } from './host-capabilities'
 import { EMULATOR_METHODS } from './emulator'
@@ -81,6 +83,8 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...SKILL_METHODS,
   ...CLIPBOARD_METHODS,
   ...DISCORD_VOICE_METHODS,
+  ...DISCORD_WEB_FAST_RESPONSE_METHODS,
+  ...SPOTIFY_PLAYBACK_METHODS,
   ...COMMUNICATION_INTEGRATION_METHODS,
   ...HOST_CAPABILITY_METHODS,
   ...CLIENT_EVENT_METHODS,

@@ -188,6 +188,11 @@ import { shouldPollChromiumErrorPage } from './chromium-error-page-polling'
 import { useContextualTour } from '@/components/contextual-tours/use-contextual-tour'
 import { translate } from '@/i18n/i18n'
 import { isBrowserPagePanePaintable } from './browser-page-paintability'
+import {
+  usesWhatsAppWebNativeSurface,
+  WhatsAppWebNativeSurfacePane
+} from './WhatsAppWebNativeSurfacePane'
+import { usesSlackWebNativeSurface, SlackWebNativeSurfacePane } from './SlackWebNativeSurfacePane'
 import { useMarkupMode, type MarkupCaptureContext } from './markup/useMarkupMode'
 import { MarkupOverlay } from './markup/MarkupOverlay'
 import { MarkupDrawButton } from './markup/MarkupDrawButton'
@@ -863,25 +868,47 @@ export default function BrowserPane({
     <div className="relative flex h-full min-h-0 flex-1 flex-col">
       {renderedBrowserPages.length > 0 ? (
         <div className="relative flex min-h-0 flex-1">
-          {renderedBrowserPages.map((page) => (
-            <BrowserPagePane
-              key={page.id}
-              browserTab={page}
-              workspaceId={browserTab.id}
-              worktreeId={browserTab.worktreeId}
-              sessionProfileId={browserTab.sessionProfileId ?? null}
-              sessionPartition={browserTab.sessionPartition ?? null}
-              isActive={isActive && page.id === activeBrowserPage?.id}
-              findShortcutScope={
-                page.id === activeBrowserPage?.id ? resolvedFindShortcutScope : 'inactive'
-              }
-              isAutomationVisible={automationVisiblePageIds.has(page.id)}
-              isMobileDriven={mobileDrivenPageIds.has(page.id)}
-              inputLocked={inputLocked || activeBrowserDriver.kind === 'mobile'}
-              onUpdatePageState={updateBrowserPageState}
-              onSetUrl={setBrowserPageUrl}
-            />
-          ))}
+          {renderedBrowserPages.map((page) =>
+            usesWhatsAppWebNativeSurface(browserTab) || usesSlackWebNativeSurface(browserTab) ? (
+              page.id === activeBrowserPage?.id ? (
+                usesSlackWebNativeSurface(browserTab) ? (
+                  <SlackWebNativeSurfacePane
+                    key={page.id}
+                    browserTab={browserTab}
+                    browserPage={page}
+                    isActive={isActive}
+                    inputLocked={inputLocked || activeBrowserDriver.kind === 'mobile'}
+                  />
+                ) : (
+                  <WhatsAppWebNativeSurfacePane
+                    key={page.id}
+                    browserTab={browserTab}
+                    browserPage={page}
+                    isActive={isActive}
+                    inputLocked={inputLocked || activeBrowserDriver.kind === 'mobile'}
+                  />
+                )
+              ) : null
+            ) : (
+              <BrowserPagePane
+                key={page.id}
+                browserTab={page}
+                workspaceId={browserTab.id}
+                worktreeId={browserTab.worktreeId}
+                sessionProfileId={browserTab.sessionProfileId ?? null}
+                sessionPartition={browserTab.sessionPartition ?? null}
+                isActive={isActive && page.id === activeBrowserPage?.id}
+                findShortcutScope={
+                  page.id === activeBrowserPage?.id ? resolvedFindShortcutScope : 'inactive'
+                }
+                isAutomationVisible={automationVisiblePageIds.has(page.id)}
+                isMobileDriven={mobileDrivenPageIds.has(page.id)}
+                inputLocked={inputLocked || activeBrowserDriver.kind === 'mobile'}
+                onUpdatePageState={updateBrowserPageState}
+                onSetUrl={setBrowserPageUrl}
+              />
+            )
+          )}
           <BrowserMobileDriverOverlay
             driver={activeBrowserDriver}
             onTakeBack={reclaimActiveBrowserForDesktop}
@@ -4943,7 +4970,7 @@ function BrowserPagePane({
                 {reloadShortcut && reloadButtonLabelKind === 'reload' ? ` · ${reloadShortcut}` : ''}
               </TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="start" alignOffset={-4}>
+            <DropdownMenuContent data-browser-page-pane-portal="" align="start" alignOffset={-4}>
               <DropdownMenuItem onClick={() => runReloadTrigger('reload')}>
                 {translate('auto.components.browser.pane.BrowserPane.0e080d820e', 'Reload')}
                 <DropdownMenuShortcut>{reloadShortcut}</DropdownMenuShortcut>
@@ -5306,6 +5333,7 @@ function BrowserPagePane({
                     </TooltipContent>
                   </Tooltip>
                   <DropdownMenuContent
+                    data-browser-page-pane-portal=""
                     align="end"
                     className="min-w-[180px]"
                     onInteractOutside={preventAgentSendTargetOutsideDismiss}
@@ -5515,6 +5543,7 @@ function BrowserPagePane({
                         </TooltipContent>
                       </Tooltip>
                       <DropdownMenuContent
+                        data-browser-page-pane-portal=""
                         align="end"
                         className="min-w-[180px]"
                         onInteractOutside={preventAgentSendTargetOutsideDismiss}
@@ -5642,7 +5671,7 @@ function BrowserPagePane({
                     })()}
                   />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" sideOffset={4}>
+                <DropdownMenuContent data-browser-page-pane-portal="" align="start" sideOffset={4}>
                   <DropdownMenuItem onSelect={handleGrabCopy}>
                     <Copy className="size-3.5" />
                     {translate(
@@ -5726,7 +5755,11 @@ function BrowserPagePane({
                             <span className="text-sm font-bold leading-none">···</span>
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" sideOffset={4}>
+                        <DropdownMenuContent
+                          data-browser-page-pane-portal=""
+                          align="start"
+                          sideOffset={4}
+                        >
                           <DropdownMenuItem
                             onSelect={() => {
                               const dataUrl = grabToast.payload?.screenshot?.dataUrl

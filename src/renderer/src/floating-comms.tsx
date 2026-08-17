@@ -18,18 +18,20 @@ import type {
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfacePresentation
 } from '../../shared/floating-comms-surface'
-import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
+import { FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT } from '../../shared/floating-comms-surface'
 import type { GlobalSettings } from '../../shared/types'
 import { TooltipProvider } from './components/ui/tooltip'
 import { FloatingCommsEntry } from './components/communications-dock/FloatingCommsEntry'
-import { CommunicationManagerSurfaceContent } from './components/floating-terminal/comms-rail/CommunicationManagerSurfaceContent'
 import {
-  COMMUNICATION_MANAGER_REGISTRY,
   CommunicationManagerRuntimeProvider,
   type CommunicationManagerRuntime
 } from './components/floating-terminal/comms-rail/communication-managers'
-import { applyDocumentTheme } from './lib/document-theme'
-import { buildAppFontFamily } from './lib/app-font-family'
+import { FloatingCommsSurfaceShell } from './floating-comms-surface-shell'
+import {
+  initializeNativeDocumentTheme,
+  subscribeNativeDocumentTheme
+} from './lib/native-document-theme'
+import { applyDocumentInterfaceTheme } from './lib/document-theme'
 import { isReopenedAttachedSurface } from './lib/floating-comms-surface-identity'
 import { I18nProvider } from './i18n/I18nProvider'
 
@@ -97,11 +99,7 @@ function toDiscordCommand(
 }
 
 function applyFloatingCommsAppearance(settings: GlobalSettings | null): void {
-  applyDocumentTheme(settings?.theme ?? 'system', { disableTransitions: false })
-  document.documentElement.style.setProperty(
-    '--app-font-family',
-    buildAppFontFamily(settings?.appFontFamily)
-  )
+  applyDocumentInterfaceTheme(settings?.interfaceTheme, settings?.appFontFamily)
 }
 
 function FloatingCommsAppearanceSync(): null {
@@ -127,20 +125,16 @@ function FloatingCommsAppearanceSync(): null {
   }, [])
   useEffect(() => {
     applyFloatingCommsAppearance(settings)
-    if (settings?.theme !== 'system') {
-      return
-    }
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const applySystemTheme = (): void => applyDocumentTheme('system')
-    media.addEventListener('change', applySystemTheme)
-    return () => media.removeEventListener('change', applySystemTheme)
+    return subscribeNativeDocumentTheme(settings?.theme ?? 'system', {
+      disableTransitions: false,
+      reportError: (error) => reportSurfaceError('native theme', error)
+    })
   }, [settings])
   return null
 }
 
 function FloatingCommsRoot(): React.JSX.Element {
   const [state, setState] = useState<FloatingCommsSurfacePresentation | null>(null)
-  const surfaceRef = useRef<HTMLDivElement | null>(null)
   const latestSessionRef = useRef<FloatingCommsSessionState | null>(null)
   const refreshSequenceRef = useRef(0)
   const latestIdentityRef = useRef<FloatingCommsSurfaceIdentity | null>(null)
@@ -237,21 +231,16 @@ function FloatingCommsRoot(): React.JSX.Element {
   }, [refresh])
   const surfaceIdentity = state ? surfaceIdentityOf(state) : null
   useLayoutEffect(() => {
-    const element = surfaceRef.current
-    if (!element || !surfaceIdentity || surfaceIdentity.mode === 'detached') {
+    if (!surfaceIdentity || !state) {
       return
     }
-    const measure = (): void => {
-      const height = clampFloatingCommsSurfaceHeight(element.getBoundingClientRect().height)
-      void window.api.floatingComms
-        .measure({ ...surfaceIdentity, height })
-        .catch((error: unknown) => reportSurfaceError('measure', error))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [surfaceIdentity])
+    void window.api.floatingComms
+      .measure({
+        ...surfaceIdentity,
+        height: state.height ?? FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT
+      })
+      .catch((error: unknown) => reportSurfaceError('measure', error))
+  }, [state, surfaceIdentity])
   const discordIdentity = state?.appId === 'discord' ? state : null
   const runtime = useMemo<CommunicationManagerRuntime>(
     () => ({
@@ -314,70 +303,15 @@ function FloatingCommsRoot(): React.JSX.Element {
   if (!app) {
     throw new Error('Floating communications app is invalid')
   }
-  const Manager = COMMUNICATION_MANAGER_REGISTRY[state.appId].Presentation
-  const whatsappHost =
-    state.appId === 'whatsapp-web' && state.mode === 'attached-native'
-      ? {
-          identity: {
-            target: 'attached' as const,
-            appId: 'whatsapp-web' as const,
-            requestId: state.requestId,
-            surfaceId: state.surfaceId,
-            mode: state.mode
-          },
-          visible: state.visible
-        }
-      : undefined
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
-      <Manager
-        isPopoverOpen={state.visible}
-        initialSessionState={state.sessionState}
-        whatsappHost={whatsappHost}
-        onSessionStateChange={(sessionState) => {
-          latestSessionRef.current = sessionState
-        }}
-      >
-        {(presentation) => (
-          <div
-            ref={surfaceRef}
-            className="scrollbar-sleek max-h-[420px] overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
-          >
-            <CommunicationManagerSurfaceContent
-              app={app}
-              content={presentation.content}
-              detached={state.mode === 'detached'}
-              onOpenApp={() => {
-                const identity = surfaceIdentityOf(state)
-                const hide = whatsappHost
-                  ? window.api.whatsappFastResponse.hide(whatsappHost.identity)
-                  : Promise.resolve()
-                void hide
-                  .then(() => window.api.floatingComms.action({ type: 'open-app', ...identity }))
-                  .catch((error: unknown) => reportSurfaceError('open app', error))
-              }}
-              onToggleDetached={() => {
-                const sessionState = latestSessionRef.current ?? presentation.sessionState
-                const operation =
-                  state.mode === 'detached'
-                    ? window.api.floatingComms.minimizeDetached
-                    : window.api.floatingComms.detach
-                void (async () => {
-                  if (whatsappHost) {
-                    await window.api.whatsappFastResponse.hide(whatsappHost.identity)
-                  }
-                  await operation({ ...surfaceIdentityOf(state), sessionState })
-                })().catch((error: unknown) =>
-                  reportSurfaceError(
-                    state.mode === 'detached' ? 'return to panel' : 'detach',
-                    error
-                  )
-                )
-              }}
-            />
-          </div>
-        )}
-      </Manager>
+      <FloatingCommsSurfaceShell
+        app={app}
+        latestSessionRef={latestSessionRef}
+        reportError={reportSurfaceError}
+        state={state}
+        surfaceIdentityOf={surfaceIdentityOf}
+      />
     </CommunicationManagerRuntimeProvider>
   )
 }
@@ -394,13 +328,18 @@ const root = document.getElementById('root')
 if (!root) {
   throw new Error('Floating communications root not found')
 }
-createRoot(root).render(
-  <StrictMode>
-    <I18nProvider>
-      <TooltipProvider>
-        <FloatingCommsAppearanceSync />
-        <FloatingCommsEntry reportError={reportSurfaceError} surface={<FloatingCommsRoot />} />
-      </TooltipProvider>
-    </I18nProvider>
-  </StrictMode>
+void initializeNativeDocumentTheme(startupSettings?.theme ?? 'system', {
+  disableTransitions: false,
+  reportError: (error) => reportSurfaceError('initialize native theme', error)
+}).then(() =>
+  createRoot(root).render(
+    <StrictMode>
+      <I18nProvider>
+        <TooltipProvider>
+          <FloatingCommsAppearanceSync />
+          <FloatingCommsEntry reportError={reportSurfaceError} surface={<FloatingCommsRoot />} />
+        </TooltipProvider>
+      </I18nProvider>
+    </StrictMode>
+  )
 )

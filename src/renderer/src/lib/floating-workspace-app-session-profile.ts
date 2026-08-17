@@ -19,6 +19,13 @@ export async function resolveFloatingWorkspaceAppSessionProfile(
   store: FloatingWorkspaceAppSessionStore,
   app: FloatingWorkspaceApp
 ): Promise<BrowserSessionProfile | null> {
+  if (app.id === 'discord' && typeof window !== 'undefined' && window.api.discordWebFastResponse) {
+    const profile = await window.api.discordWebFastResponse.resolveSessionProfile()
+    store.setFloatingWorkspaceAppPreference(app.id, {
+      dedicatedSessionProfileId: profile.id
+    })
+    return profile
+  }
   const preference = getFloatingWorkspaceAppPreference(store.floatingWorkspaceApps, app.id)
   const candidateIds = [
     preference.sessionProfileIdOverride,

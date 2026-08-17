@@ -46,6 +46,12 @@
         "japanese": "日本語",
         "spanish": "Español"
       },
+      "interfaceTheme": {
+        "title": "Interface Theme",
+        "description": "Choose the visual style used throughout Orca.",
+        "appearance": "Light & dark",
+        "default": "Default"
+      },
       "statusBar": {
         "claudeToggleDescription": "Show Claude token and cost usage for the active workspace.",
         "codexToggleDescription": "Show Codex token and cost usage for the active workspace.",
@@ -15063,7 +15069,6 @@
   },
   "communicationRail": {
     "detach": "Detach overlay",
-    "focusDetached": "Focus {{app}} detached overlay",
     "returnToPanel": "Back to panel",
     "overlaySeparate": "Separate overlay",
     "overlaySeparateDescription": "Appears automatically when you join a call.",
@@ -15073,18 +15078,17 @@
     "integrationLoading": "Loading {{provider}} status…",
     "retryStatus": "Retry",
     "whatsappUnavailable": "WhatsApp fast responses are not enabled yet.",
-    "slackUnavailable": "Slack fast responses are not enabled yet.",
     "integrationNeedsAttention": "Saved credentials need attention. Review them in Integrations.",
     "configureProvider": "Configure {{provider}}",
-    "slackUnconfigured": "Configure Slack credentials in Integrations. Socket Mode transport is not active yet.",
-    "slackConfigured": "Credentials configured. Fast responses are not enabled yet.",
-    "slackVerified": "Credentials verified. Fast responses are not enabled yet.",
+    "resizeFastResponse": "Resize fast response",
     "whatsappWeb": {
       "fullOnly": "Compact WhatsApp Web is unavailable here. Open WhatsApp Web to continue.",
       "loading": "Loading WhatsApp Web…",
       "crashed": "WhatsApp Web stopped unexpectedly.",
       "error": "Could not open compact WhatsApp Web.",
-      "tooltip": "WhatsApp Web — fast response"
+      "tooltip": "WhatsApp Web — fast response",
+      "browserError": "Could not open WhatsApp Web.",
+      "retry": "Retry"
     },
     "discord": {
       "notConnected": "Discord not connected",
@@ -15097,19 +15101,54 @@
       "tooltipSetup": "Discord — setup required",
       "tooltipConnecting": "Discord — connecting",
       "tooltipError": "Discord — connection error",
-      "tooltipIdle": "Discord — not in a call"
+      "tooltipIdle": "Discord — not in a call",
+      "voiceNotConfigured": "Controles de voz não configurados",
+      "openManager": "Open Discord manager",
+      "managerTabs": "Discord manager",
+      "servers": "Servers",
+      "messages": "Messages",
+      "friends": "Friends",
+      "compactModeFailed": "Could not change the Discord view.",
+      "selectionPending": "Selecting voice channel…",
+      "selectionFailed": "Could not select voice channel.",
+      "web": "Discord Web — fast response",
+      "webLoading": "Loading Discord Web…",
+      "webError": "Could not open Discord Web.",
+      "webUnsupported": "This Discord view is not available in fast response yet."
+    },
+    "slack": {
+      "loading": "Loading Slack…",
+      "unsupported": "This Slack view is not available in fast response yet.",
+      "crashed": "Slack stopped unexpectedly.",
+      "error": "Could not open Slack.",
+      "tooltip": "Slack — fast response",
+      "browserError": "Could not open Slack.",
+      "retry": "Retry"
     }
+  },
+  "spotifyPlayback": {
+    "group": "Spotify playback",
+    "open": "Open Spotify player",
+    "brand": "Spotify",
+    "progress": "Playback progress",
+    "trackProgress": "Track progress",
+    "controls": "Playback controls",
+    "previous": "Previous",
+    "pause": "Pause",
+    "play": "Play",
+    "next": "Next"
   },
   "communicationIntegrations": {
     "section": {
       "title": "Communications",
-      "description": "Configure credentials and API endpoints for communication providers used by Orca."
+      "description": "Manage communication apps, persistent web sessions, and provider-specific controls."
     },
     "status": {
       "checking": "Checking…",
       "connected": "Connected",
-      "verified": "Verified",
       "ready": "Ready",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
       "configured": "Configured",
       "notConfigured": "Not configured",
       "needsAttention": "Needs attention",
@@ -15124,7 +15163,7 @@
     "dialog": {
       "title": "Configure {{provider}}",
       "clearTitle": "Clear {{provider}} integration?",
-      "clearDescription": "This removes the saved credentials and endpoint configuration from this computer.",
+      "clearDescription": "This removes the saved credentials from this computer.",
       "clearConfirm": "Clear integration",
       "clear": "Clear integration",
       "cancel": "Cancel",
@@ -15132,11 +15171,7 @@
       "secretStored": "A token is stored. Leave this field empty to keep it.",
       "secretClearPending": "The saved token will be cleared when you save.",
       "clearSavedToken": "Clear saved token",
-      "undoClear": "Undo clear",
-      "advanced": "Advanced",
-      "apiBaseUrl": "API base URL",
-      "apiBaseUrlDescription": "Use the provider default unless your organization supplies a compatible endpoint.",
-      "trustEndpoint": "I trust {{host}} to receive this integration's credentials."
+      "undoClear": "Undo clear"
     },
     "toast": {
       "saved": "{{provider}} integration saved",
@@ -15158,13 +15193,11 @@
       "clientSecretDescription": "From OAuth2 in the same Discord application."
     },
     "slack": {
-      "cardDescription": "Socket Mode credentials for a future fast-response transport.",
-      "transportInactive": "Socket Mode transport and fast responses are not enabled yet.",
-      "dialogDescription": "Store credentials for Slack Socket Mode. Fast-response transport is not active yet.",
-      "appToken": "App Token",
-      "appTokenDescription": "Use an app-level xapp token with Socket Mode enabled.",
-      "userToken": "User OAuth Token",
-      "userTokenDescription": "Use a user xoxp token. Bot tokens are not supported."
+      "cardDescription": "Slack Web uses its own persistent browser session for full and fast-response views.",
+      "open": "Open Slack",
+      "enabled": "Show Slack",
+      "enabledDescription": "Controls whether Slack appears in the communications rail and floating workspace menu.",
+      "signInDescription": "Sign in directly in the Slack window. Orca does not store Slack API credentials."
     },
     "whatsappWeb": {
       "cardDescription": "Preferences for the compact fast-response view.",
@@ -15178,7 +15211,7 @@
       "discordTitle": "Discord Integration",
       "discordDescription": "Configure Discord application credentials and the call overlay.",
       "slackTitle": "Slack Integration",
-      "slackDescription": "Configure Slack credentials and an optional API endpoint.",
+      "slackDescription": "Open Slack Web and manage its communications visibility.",
       "discord": "Discord",
       "slack": "Slack",
       "whatsapp": "WhatsApp",
@@ -15186,10 +15219,7 @@
       "applicationId": "application id",
       "clientSecret": "client secret",
       "overlay": "overlay",
-      "endpoint": "endpoint",
-      "socketMode": "Socket Mode",
-      "appToken": "app token",
-      "userToken": "user token",
+      "webSession": "web session",
       "instance": "instance",
       "clientToken": "client token",
       "webhook": "webhook",
@@ -15385,6 +15415,7 @@
   },
   "communicationsDock": {
     "dragApp": "Drag {{app}}",
+    "focusApp": "Focus {{app}} in communication dock",
     "tabs": "Communication layouts",
     "show": "Show dock content",
     "collapse": "Collapse dock",

@@ -31,7 +31,6 @@ import {
 } from '@/lib/desktop-window-chrome'
 import { resolveLeftTitlebarChromeLayout } from '@/lib/titlebar-left-chrome'
 import { shouldShowWorktreeCreationSurface } from '@/lib/worktree-creation-surface'
-import { buildAppFontFamily } from '@/lib/app-font-family'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -65,6 +64,7 @@ import { SkillFreshnessNudge } from './components/skills/SkillFreshnessNudge'
 import { SkillFreshnessUpdateDialog } from './components/skills/SkillFreshnessUpdateDialog'
 import { TelemetryFirstLaunchSurface } from './components/TelemetryFirstLaunchSurface'
 import { ZoomOverlay } from './components/ZoomOverlay'
+import { ThemeChrome } from './components/ThemeChrome'
 import { onOnboardingReopened } from './components/onboarding/show-onboarding-event'
 import { shouldShowOnboarding } from './components/onboarding/should-show-onboarding'
 import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
@@ -150,7 +150,8 @@ import {
 } from './startup/startup-diagnostics'
 import { reconnectSshTargetForRendererStartup } from './startup/ssh-startup-reconnect'
 import { shouldRenderPetOverlay } from './components/pet/pet-overlay-visibility'
-import { applyDocumentTheme } from './lib/document-theme'
+import { subscribeNativeDocumentTheme } from './lib/native-document-theme'
+import { applyDocumentInterfaceTheme } from './lib/document-theme'
 import { getSystemPrefersDark } from './lib/terminal-theme'
 import { publishTerminalViewAttributesAtAppStart } from './components/terminal-pane/terminal-appearance'
 import { isEditableTarget } from './lib/editable-target'
@@ -1446,32 +1447,14 @@ function App(): React.JSX.Element {
       return
     }
 
-    if (settings.theme === 'dark') {
-      applyDocumentTheme('dark')
-      return undefined
-    } else if (settings.theme === 'light') {
-      applyDocumentTheme('light')
-      return undefined
-    } else {
-      // system
-      const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      applyDocumentTheme('system')
-      const handler = (): void => {
-        applyDocumentTheme('system')
-        // System theme changes don't mutate the store, so mobile terminal colors need an explicit graph republish.
-        scheduleRuntimeGraphSync()
-      }
-      mq.addEventListener('change', handler)
-      return () => mq.removeEventListener('change', handler)
-    }
+    return subscribeNativeDocumentTheme(settings.theme, {
+      onSystemThemeChanged: scheduleRuntimeGraphSync
+    })
   }, [settings])
 
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      '--app-font-family',
-      buildAppFontFamily(settings?.appFontFamily)
-    )
-  }, [settings?.appFontFamily])
+    applyDocumentInterfaceTheme(settings?.interfaceTheme, settings?.appFontFamily)
+  }, [settings?.appFontFamily, settings?.interfaceTheme])
 
   // Refresh GitHub data (PR/issue status) when window regains focus
   useEffect(() => {
@@ -2240,6 +2223,7 @@ function App(): React.JSX.Element {
         } as React.CSSProperties
       }
     >
+      <ThemeChrome />
       <TooltipProvider delayDuration={400}>
         <ConfirmationDialogProvider>
           <LinkRoutingPreferenceDialogProvider>

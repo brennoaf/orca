@@ -34,6 +34,8 @@ import { registerDashboardPopoutHandlers } from './dashboard-popout'
 import { registerFloatingCommsSurfaceHandlers } from './floating-comms-surface'
 import { registerCommunicationsDockHandlers } from './communications-dock'
 import { registerWhatsAppFastResponseHandlers } from './whatsapp-fast-response'
+import { registerSlackFastResponseHandlers } from './slack-fast-response'
+import { registerDiscordWebFastResponseHandlers } from './discord-web-fast-response'
 import { registerTerminalPreviewHandlers } from './terminal-preview'
 import { registerDeveloperPermissionHandlers } from './developer-permissions'
 import { registerComputerUsePermissionHandlers } from './computer-use-permissions'
@@ -44,6 +46,7 @@ import {
 } from './browser'
 import { registerSessionHandlers } from './session'
 import { registerSettingsHandlers } from './settings'
+import { registerNativeAppearanceHandlers } from './native-appearance'
 import { registerDiagnosticsHandlers } from './diagnostics'
 import { registerSkillsHandlers } from './skills'
 import { registerWorkspaceSpaceHandlers } from './workspace-space'
@@ -174,6 +177,8 @@ export function registerCoreHandlers(
   registerFloatingCommsSurfaceHandlers()
   registerCommunicationsDockHandlers()
   registerWhatsAppFastResponseHandlers(store)
+  registerSlackFastResponseHandlers(store)
+  registerDiscordWebFastResponseHandlers(store)
   registerTerminalPreviewHandlers(runtime)
   registerDeveloperPermissionHandlers()
   // Why: diagnostics handlers are wired alongside telemetry but the two
@@ -183,6 +188,7 @@ export function registerCoreHandlers(
   registerDiagnosticsHandlers()
   registerTerminalRenderDesyncEvidenceHandler()
   registerComputerUsePermissionHandlers()
+  registerNativeAppearanceHandlers(store)
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store)
   if (automations) {

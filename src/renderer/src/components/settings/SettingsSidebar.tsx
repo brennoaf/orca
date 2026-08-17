@@ -176,6 +176,7 @@ export function SettingsSidebar({
 
   return (
     <aside
+      data-theme-sidebar=""
       className="flex w-[280px] shrink-0 flex-col border-r border-worktree-sidebar-border bg-worktree-sidebar"
       style={leftSidebarStyle}
     >
