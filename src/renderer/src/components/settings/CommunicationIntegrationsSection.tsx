@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
+  ExternalLink,
   Hash,
   Loader2,
   MessageCircle,
@@ -9,18 +10,13 @@ import {
 } from 'lucide-react'
 import type {
   CommunicationIntegrationStatus,
-  CommunicationProviderId,
-  DiscordCommunicationIntegrationStatus,
-  SlackCommunicationIntegrationStatus
+  DiscordCommunicationIntegrationStatus
 } from '../../../../shared/communication-integrations'
 import { COMMUNICATION_INTEGRATION_SECTION_IDS } from '../../../../shared/communication-integrations'
 import { DiscordVoiceOverlaySwitch } from '@/components/discord-voice/DiscordVoiceOverlaySwitch'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
-import {
-  DiscordCommunicationIntegrationDialog,
-  SlackCommunicationIntegrationDialog
-} from './CommunicationIntegrationDialog'
+import { DiscordCommunicationIntegrationDialog } from './CommunicationIntegrationDialog'
 import {
   IntegrationCardDetails,
   IntegrationCardShell,
@@ -28,7 +24,11 @@ import {
 } from './integration-card-shell'
 import { useCommunicationIntegrationStatuses } from './use-communication-integration-statuses'
 import { useAppStore } from '@/store'
-import { getFloatingWorkspaceAppPreference } from '../../../../shared/floating-workspace-apps'
+import {
+  FLOATING_WORKSPACE_APPS,
+  getFloatingWorkspaceAppPreference
+} from '../../../../shared/floating-workspace-apps'
+import { openOrFocusFloatingWorkspaceAppTab } from '@/lib/floating-workspace-tab-creation'
 import { SettingsSwitchRow } from './SettingsFormControls'
 import {
   useCommunicationIntegrationCardActions,
@@ -43,7 +43,6 @@ type CardPresentation = {
 }
 
 export function getCommunicationIntegrationCardPresentation(
-  provider: CommunicationProviderId,
   status: CommunicationIntegrationStatus | null,
   loading: boolean,
   loadError: string | null
@@ -71,10 +70,7 @@ export function getCommunicationIntegrationCardPresentation(
   }
   if (status.readiness.verified) {
     return {
-      label:
-        provider === 'discord'
-          ? translate('communicationIntegrations.status.connected', 'Connected')
-          : translate('communicationIntegrations.status.verified', 'Verified'),
+      label: translate('communicationIntegrations.status.connected', 'Connected'),
       tone: 'connected',
       checking: false
     }
@@ -180,12 +176,7 @@ function DiscordCommunicationIntegrationCard({
 }: CommonCardProps & { status: DiscordCommunicationIntegrationStatus | null }): React.JSX.Element {
   const [dialogOpen, setDialogOpen] = useState(false)
   const actions = useCommunicationIntegrationCardActions('discord', 'Discord')
-  const presentation = getCommunicationIntegrationCardPresentation(
-    'discord',
-    status,
-    loading,
-    loadError
-  )
+  const presentation = getCommunicationIntegrationCardPresentation(status, loading, loadError)
   const configured = status?.readiness.configured ?? false
   const statusError = getStatusError(status, loadError)
 
@@ -241,21 +232,18 @@ function DiscordCommunicationIntegrationCard({
   )
 }
 
-function SlackCommunicationIntegrationCard({
-  status,
-  loading,
-  loadError
-}: CommonCardProps & { status: SlackCommunicationIntegrationStatus | null }): React.JSX.Element {
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const actions = useCommunicationIntegrationCardActions('slack', 'Slack')
-  const presentation = getCommunicationIntegrationCardPresentation(
-    'slack',
-    status,
-    loading,
-    loadError
-  )
-  const configured = status?.readiness.configured ?? false
-  const statusError = getStatusError(status, loadError)
+function SlackCommunicationIntegrationCard(): React.JSX.Element {
+  const preferences = useAppStore((state) => state.floatingWorkspaceApps)
+  const setPreference = useAppStore((state) => state.setFloatingWorkspaceAppPreference)
+  const preference = getFloatingWorkspaceAppPreference(preferences, 'slack')
+
+  const openSlack = (): void => {
+    const app = FLOATING_WORKSPACE_APPS.find((candidate) => candidate.id === 'slack')
+    if (!app) {
+      throw new Error('Slack is missing from the floating workspace app catalog')
+    }
+    void openOrFocusFloatingWorkspaceAppTab(useAppStore.getState(), app)
+  }
 
   return (
     <IntegrationCardShell
@@ -264,39 +252,38 @@ function SlackCommunicationIntegrationCard({
       name="Slack"
       description={translate(
         'communicationIntegrations.slack.cardDescription',
-        'Socket Mode credentials for a future fast-response transport.'
+        'Slack Web uses its own persistent browser session for full and fast-response views.'
       )}
-      checking={presentation.checking}
-      statusLabel={presentation.label}
-      statusTone={presentation.tone}
+      statusLabel={
+        preference.enabled
+          ? translate('communicationIntegrations.status.enabled', 'Enabled')
+          : translate('communicationIntegrations.status.disabled', 'Disabled')
+      }
+      statusTone="neutral"
       actions={
-        <CardActions
-          configured={configured}
-          pending={actions.pending}
-          onConfigure={() => setDialogOpen(true)}
-          onTest={() => void actions.test()}
-        />
+        <Button type="button" variant="outline" size="sm" onClick={openSlack}>
+          <ExternalLink />
+          {translate('communicationIntegrations.slack.open', 'Open Slack')}
+        </Button>
       }
     >
       <IntegrationCardDetails>
-        <StatusError message={statusError} />
-        <TestResultLine result={actions.testResult} duplicateError={statusError} />
+        <SettingsSwitchRow
+          label={translate('communicationIntegrations.slack.enabled', 'Show Slack')}
+          description={translate(
+            'communicationIntegrations.slack.enabledDescription',
+            'Controls whether Slack appears in the communications rail and floating workspace menu.'
+          )}
+          checked={preference.enabled}
+          onChange={() => setPreference('slack', { enabled: !preference.enabled })}
+        />
         <p className="text-xs text-muted-foreground">
           {translate(
-            'communicationIntegrations.slack.transportInactive',
-            'Socket Mode transport and fast responses are not enabled yet.'
+            'communicationIntegrations.slack.signInDescription',
+            'Sign in directly in the Slack window. Orca does not store Slack API credentials.'
           )}
         </p>
       </IntegrationCardDetails>
-      <SlackCommunicationIntegrationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        status={status}
-        pending={actions.pending}
-        error={actions.error}
-        onSave={actions.save}
-        onClear={actions.clear}
-      />
     </IntegrationCardShell>
   )
 }
@@ -341,7 +328,6 @@ function WhatsAppWebCommunicationIntegrationCard(): React.JSX.Element {
 export function CommunicationIntegrationsSection(): React.JSX.Element {
   const { getStatus, loading, error } = useCommunicationIntegrationStatuses()
   const discordStatus = getStatus('discord')
-  const slackStatus = getStatus('slack')
 
   return (
     <section className="space-y-3">
@@ -352,7 +338,7 @@ export function CommunicationIntegrationsSection(): React.JSX.Element {
         <p className="text-xs text-muted-foreground">
           {translate(
             'communicationIntegrations.section.description',
-            'Configure credentials and API endpoints for communication providers used by Orca.'
+            'Manage communication apps, persistent web sessions, and provider-specific controls.'
           )}
         </p>
       </div>
@@ -363,11 +349,7 @@ export function CommunicationIntegrationsSection(): React.JSX.Element {
           loading={loading}
           loadError={error}
         />
-        <SlackCommunicationIntegrationCard
-          status={slackStatus?.provider === 'slack' ? slackStatus : null}
-          loading={loading}
-          loadError={error}
-        />
+        <SlackCommunicationIntegrationCard />
       </div>
     </section>
   )

@@ -1,12 +1,10 @@
-export const DEFAULT_SLACK_API_BASE_URL = 'https://slack.com/api'
-
 export const COMMUNICATION_INTEGRATION_SECTION_IDS = {
   whatsappWeb: 'integrations-communications-whatsapp-web',
   discord: 'integrations-communications-discord',
   slack: 'integrations-communications-slack'
 } as const
 
-export type CommunicationProviderId = 'discord' | 'slack'
+export type CommunicationProviderId = 'discord'
 
 export type CommunicationSecretMutation =
   | { action: 'keep' }
@@ -53,23 +51,12 @@ export type CommunicationIntegrationErrorCode =
   | 'network_error'
   | 'provider_unavailable'
 
-export type CommunicationIntegrationFieldName =
-  | 'clientId'
-  | 'clientSecret'
-  | 'appToken'
-  | 'userToken'
-  | 'baseUrl'
+export type CommunicationIntegrationFieldName = 'clientId' | 'clientSecret' | 'baseUrl'
 
 export type CommunicationIntegrationRedactedError = {
   code: CommunicationIntegrationErrorCode
   message: string
   field: CommunicationIntegrationFieldName | null
-}
-
-export type CommunicationEndpointStatus = {
-  baseUrl: string
-  authority: string
-  trust: CommunicationEndpointTrust
 }
 
 export type CommunicationIntegrationReadiness = {
@@ -89,25 +76,7 @@ export type DiscordCommunicationIntegrationStatus = {
   clientSecretStored: boolean
 }
 
-export type SlackCommunicationWorkspace = {
-  teamId: string
-  teamName: string | null
-  userId: string
-  userName: string | null
-}
-
-export type SlackCommunicationIntegrationStatus = {
-  provider: 'slack'
-  endpoint: CommunicationEndpointStatus
-  readiness: CommunicationIntegrationReadiness
-  appTokenStored: boolean
-  userTokenStored: boolean
-  workspace: SlackCommunicationWorkspace | null
-}
-
-export type CommunicationIntegrationStatus =
-  | DiscordCommunicationIntegrationStatus
-  | SlackCommunicationIntegrationStatus
+export type CommunicationIntegrationStatus = DiscordCommunicationIntegrationStatus
 
 export type CommunicationIntegrationOperationResult =
   | { ok: true; status: CommunicationIntegrationStatus }
@@ -123,14 +92,4 @@ export type SaveDiscordCommunicationIntegrationParams = {
   clientSecret: CommunicationSecretMutation
 }
 
-export type SaveSlackCommunicationIntegrationParams = {
-  provider: 'slack'
-  baseUrl: string
-  endpointTrust: CommunicationEndpointTrust
-  appToken: CommunicationSecretMutation
-  userToken: CommunicationSecretMutation
-}
-
-export type SaveCommunicationIntegrationParams =
-  | SaveDiscordCommunicationIntegrationParams
-  | SaveSlackCommunicationIntegrationParams
+export type SaveCommunicationIntegrationParams = SaveDiscordCommunicationIntegrationParams

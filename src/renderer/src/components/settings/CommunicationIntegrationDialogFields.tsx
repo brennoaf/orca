@@ -1,13 +1,7 @@
-import { useId } from 'react'
-import { ChevronDown, Loader2 } from 'lucide-react'
-import type {
-  CommunicationEndpointTrust,
-  CommunicationSecretMutation
-} from '../../../../shared/communication-integrations'
+import { Loader2 } from 'lucide-react'
+import type { CommunicationSecretMutation } from '../../../../shared/communication-integrations'
 import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -69,7 +63,7 @@ export function CommunicationIntegrationDialogFrame(props: {
         props.clearConfirmation?.description ??
         translate(
           'communicationIntegrations.dialog.clearDescription',
-          'This removes the saved credentials and endpoint configuration from this computer.'
+          'This removes the saved credentials from this computer.'
         ),
       confirmLabel:
         props.clearConfirmation?.confirmLabel ??
@@ -231,108 +225,4 @@ export function getCommunicationSecretMutation(
     return { action: 'clear' }
   }
   return value ? { action: 'replace', value } : { action: 'keep' }
-}
-
-export function getCommunicationEndpointAuthority(baseUrl: string): string | null {
-  const input = baseUrl.trim()
-  if (!input || input.length > 2_048) {
-    return null
-  }
-  try {
-    const url = new URL(input)
-    if (
-      url.protocol !== 'https:' ||
-      !url.hostname ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    ) {
-      return null
-    }
-    const bare = url.hostname
-      .replace(/^\[|\]$/g, '')
-      .toLowerCase()
-      .replace(/\.$/, '')
-    if (!bare) {
-      return null
-    }
-    const hostname = bare.includes(':') ? `[${bare}]` : bare
-    return `${hostname}${url.port ? `:${url.port}` : ''}`
-  } catch {
-    return null
-  }
-}
-
-export function CommunicationIntegrationEndpointFields(props: {
-  baseUrl: string
-  defaultBaseUrl: string
-  trusted: boolean
-  disabled: boolean
-  onBaseUrlChange: (value: string) => void
-  onTrustedChange: (trusted: boolean) => void
-}): React.JSX.Element {
-  const id = useId()
-  const authority = getCommunicationEndpointAuthority(props.baseUrl)
-  const defaultAuthority = getCommunicationEndpointAuthority(props.defaultBaseUrl)
-  const customAuthority = authority !== null && authority !== defaultAuthority
-
-  return (
-    <Collapsible>
-      <CollapsibleTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" className="px-0">
-          <ChevronDown className="size-4" />
-          {translate('communicationIntegrations.dialog.advanced', 'Advanced')}
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-3 pt-2">
-        <CommunicationIntegrationField
-          id={id}
-          label={translate('communicationIntegrations.dialog.apiBaseUrl', 'API base URL')}
-          description={translate(
-            'communicationIntegrations.dialog.apiBaseUrlDescription',
-            'Use the provider default unless your organization supplies a compatible endpoint.'
-          )}
-        >
-          <Input
-            id={id}
-            type="url"
-            value={props.baseUrl}
-            disabled={props.disabled}
-            aria-invalid={authority === null}
-            onChange={(event) => props.onBaseUrlChange(event.target.value)}
-          />
-        </CommunicationIntegrationField>
-        {customAuthority ? (
-          <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3">
-            <Checkbox
-              id={`${id}-trust`}
-              checked={props.trusted}
-              disabled={props.disabled}
-              onCheckedChange={(checked) => props.onTrustedChange(checked === true)}
-            />
-            <Label htmlFor={`${id}-trust`} className="text-xs leading-5">
-              {translate(
-                'communicationIntegrations.dialog.trustEndpoint',
-                "I trust {{host}} to receive this integration's credentials.",
-                { host: authority }
-              )}
-            </Label>
-          </div>
-        ) : null}
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-export function getCommunicationEndpointTrust(
-  baseUrl: string,
-  defaultBaseUrl: string
-): CommunicationEndpointTrust | null {
-  const authority = getCommunicationEndpointAuthority(baseUrl)
-  const defaultAuthority = getCommunicationEndpointAuthority(defaultBaseUrl)
-  if (authority === null || defaultAuthority === null) {
-    return null
-  }
-  return authority === defaultAuthority ? { kind: 'default' } : { kind: 'custom', authority }
 }

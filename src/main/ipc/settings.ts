@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import type { Store } from '../persistence'
 import type { GlobalSettings, PersistedState } from '../../shared/types'
 import { listSystemFontFamilies } from '../system-fonts'
@@ -29,6 +29,8 @@ import {
   normalizeMobilePairingCustomAddress,
   normalizeMobilePairingCustomAddresses
 } from '../../shared/mobile-pairing-custom-address'
+import { normalizeInterfaceTheme } from '../../shared/interface-theme'
+import { syncNativeThemeSource } from '../native-theme-source'
 
 // Why: the whitelist is the source-of-truth for which keys we emit on. Casting
 // to a Set once at module load lets the IPC handler's per-key membership
@@ -139,6 +141,9 @@ export function registerSettingsHandlers(
     if ('uiLanguage' in args) {
       sanitizedArgs.uiLanguage = normalizeUiLanguage(args.uiLanguage)
     }
+    if ('interfaceTheme' in args) {
+      sanitizedArgs.interfaceTheme = normalizeInterfaceTheme(args.interfaceTheme)
+    }
     if ('mobilePairingCustomAddress' in args) {
       sanitizedArgs.mobilePairingCustomAddress = normalizeMobilePairingCustomAddress(
         args.mobilePairingCustomAddress
@@ -150,7 +155,7 @@ export function registerSettingsHandlers(
       )
     }
     if (args.theme) {
-      nativeTheme.themeSource = args.theme
+      syncNativeThemeSource(args.theme)
     }
     // Why: capture the pre-update value so we only emit when the value
     // actually changes. The settings UI sometimes re-saves the same value

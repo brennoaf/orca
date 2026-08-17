@@ -244,18 +244,15 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
     title: translate('communicationIntegrations.search.slackTitle', 'Slack Integration'),
     description: translate(
       'communicationIntegrations.search.slackDescription',
-      'Configure Slack credentials and an optional API endpoint.'
+      'Open Slack Web and manage its communications visibility.'
     ),
     targetSectionId: COMMUNICATION_INTEGRATION_SECTION_IDS.slack,
     keywords: [
       ...translateSearchKeyword('communicationIntegrations.search.slack', 'Slack', {
         englishOnly: true
       }),
-      ...translateSearchKeyword('communicationIntegrations.search.credentials', 'credentials'),
-      ...translateSearchKeyword('communicationIntegrations.search.endpoint', 'endpoint'),
-      ...translateSearchKeyword('communicationIntegrations.search.socketMode', 'Socket Mode'),
-      ...translateSearchKeyword('communicationIntegrations.search.appToken', 'app token'),
-      ...translateSearchKeyword('communicationIntegrations.search.userToken', 'user token')
+      ...translateSearchKeyword('communicationIntegrations.search.fastResponse', 'fast response'),
+      ...translateSearchKeyword('communicationIntegrations.search.webSession', 'web session')
     ]
   }
 ])

@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   CommunicationIntegrationOperationResult,
-  SaveCommunicationIntegrationParams,
-  SlackCommunicationIntegrationStatus
+  DiscordCommunicationIntegrationStatus,
+  SaveCommunicationIntegrationParams
 } from '../../../../shared/communication-integrations'
 import { useCommunicationIntegrationCardActions } from './use-communication-integration-card-actions'
 import { resetCommunicationIntegrationStatusesForTests } from './use-communication-integration-statuses'
@@ -31,23 +31,17 @@ vi.mock('sonner', () => ({
 }))
 
 const saveParams: SaveCommunicationIntegrationParams = {
-  provider: 'slack',
-  baseUrl: 'https://slack.com/api',
-  endpointTrust: { kind: 'default' },
-  appToken: { action: 'keep' },
-  userToken: { action: 'keep' }
+  provider: 'discord',
+  clientId: '12345678901234567',
+  clientSecret: { action: 'keep' }
 }
 
-function createSlackStatus(
-  lastError: SlackCommunicationIntegrationStatus['readiness']['lastError'] = null
-): SlackCommunicationIntegrationStatus {
+function createDiscordStatus(
+  lastError: DiscordCommunicationIntegrationStatus['readiness']['lastError'] = null
+): DiscordCommunicationIntegrationStatus {
   return {
-    provider: 'slack',
-    endpoint: {
-      baseUrl: 'https://slack.com/api',
-      authority: 'slack.com',
-      trust: { kind: 'default' }
-    },
+    provider: 'discord',
+    endpoint: null,
     readiness: {
       configured: true,
       verified: lastError === null,
@@ -56,9 +50,8 @@ function createSlackStatus(
       verifiedAt: null,
       lastError
     },
-    appTokenStored: true,
-    userTokenStored: true,
-    workspace: null
+    clientId: '12345678901234567',
+    clientSecretStored: true
   }
 }
 
@@ -74,7 +67,7 @@ function deferred<T>(): {
 }
 
 function ActionsHarness(): React.JSX.Element {
-  const actions = useCommunicationIntegrationCardActions('slack', 'Slack')
+  const actions = useCommunicationIntegrationCardActions('discord', 'Discord')
   return (
     <div>
       <button type="button" onClick={() => void actions.save(saveParams)}>
@@ -111,7 +104,7 @@ describe('useCommunicationIntegrationCardActions', () => {
     'exposes %s as pending until its RPC and refresh settle',
     async (_, pending, method) => {
       const operation = deferred<CommunicationIntegrationOperationResult>()
-      const status = createSlackStatus()
+      const status = createDiscordStatus()
       mocks.callRuntimeRpc.mockImplementation(
         (_target: unknown, requestedMethod: string): Promise<unknown> =>
           requestedMethod === method ? operation.promise : Promise.resolve([status])
@@ -137,8 +130,8 @@ describe('useCommunicationIntegrationCardActions', () => {
   )
 
   it('surfaces operation errors inline and through a toast', async () => {
-    const message = 'Slack rejected the user token.'
-    const status = createSlackStatus({ code: 'unauthorized', message, field: 'userToken' })
+    const message = 'Discord rejected the credentials.'
+    const status = createDiscordStatus({ code: 'unauthorized', message, field: 'clientSecret' })
     mocks.callRuntimeRpc.mockImplementation(
       (_target: unknown, method: string): Promise<unknown> =>
         method === 'communicationIntegrations.save'
@@ -161,9 +154,9 @@ describe('useCommunicationIntegrationCardActions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save request' }))
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Could not save the Slack integration.')
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not save the Discord integration.')
     )
     expect(document.body.textContent).not.toContain('secret transport detail')
-    expect(mocks.toastError).toHaveBeenCalledWith('Could not save the Slack integration.')
+    expect(mocks.toastError).toHaveBeenCalledWith('Could not save the Discord integration.')
   })
 })

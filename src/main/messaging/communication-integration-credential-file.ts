@@ -112,7 +112,7 @@ const ERROR_CODES: readonly CommunicationIntegrationErrorCode[] = [
   'provider_unavailable'
 ]
 
-const ERROR_FIELDS = ['clientId', 'clientSecret', 'appToken', 'userToken', 'baseUrl'] as const
+const ERROR_FIELDS = ['clientId', 'clientSecret', 'baseUrl'] as const
 
 export function parseCommunicationIntegrationRedactedError(
   value: unknown

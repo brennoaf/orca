@@ -2371,6 +2371,7 @@ describe('Store', () => {
     expect(ui.rightSidebarTab).toBe('explorer')
     // settings should preserve the overridden value
     expect(store.getSettings().theme).toBe('dark')
+    expect(store.getSettings().interfaceTheme).toBe('default')
     // new fields get defaults when missing from persisted data
     expect(store.getSettings().editorAutoSave).toBe(false)
     expect(store.getSettings().editorAutoSaveDelayMs).toBe(1000)
@@ -2388,6 +2389,22 @@ describe('Store', () => {
     expect(store.getSettings().notifications.customSoundPath).toBeNull()
     // repos should be loaded
     expect(store.getRepos()).toHaveLength(1)
+  })
+
+  it('normalizes invalid interface themes on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { interfaceTheme: 'unsupported' },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().interfaceTheme).toBe('default')
   })
 
   it('migrates legacy commit-message AI settings to source-control AI on load', async () => {

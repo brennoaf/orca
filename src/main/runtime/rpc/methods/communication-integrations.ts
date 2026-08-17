@@ -7,38 +7,23 @@ import {
 } from '../../../messaging/communication-integration-registry'
 import { defineMethod, type RpcContext, type RpcMethod } from '../core'
 
-const Provider = z.enum(['discord', 'slack'])
+const Provider = z.literal('discord')
 const ProviderParams = z.object({ provider: Provider }).strict()
 const SecretMutation = z.discriminatedUnion('action', [
   z.object({ action: z.literal('keep') }).strict(),
   z.object({ action: z.literal('clear') }).strict(),
   z.object({ action: z.literal('replace'), value: z.string().trim().min(1).max(4_096) }).strict()
 ])
-const EndpointTrust = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('default') }).strict(),
-  z.object({ kind: z.literal('custom'), authority: z.string().trim().min(1).max(2_048) }).strict()
-])
-const SaveParams = z.discriminatedUnion('provider', [
-  z
-    .object({
-      provider: z.literal('discord'),
-      clientId: z
-        .string()
-        .trim()
-        .regex(/^\d{17,20}$/),
-      clientSecret: SecretMutation
-    })
-    .strict(),
-  z
-    .object({
-      provider: z.literal('slack'),
-      baseUrl: z.string().trim().min(1).max(2_048),
-      endpointTrust: EndpointTrust,
-      appToken: SecretMutation,
-      userToken: SecretMutation
-    })
-    .strict()
-])
+const SaveParams = z
+  .object({
+    provider: Provider,
+    clientId: z
+      .string()
+      .trim()
+      .regex(/^\d{17,20}$/),
+    clientSecret: SecretMutation
+  })
+  .strict()
 function assertLocalWindow(ctx: RpcContext): void {
   if (ctx.clientKind !== undefined) {
     throw new Error('Communication integration credentials are only available to local windows.')

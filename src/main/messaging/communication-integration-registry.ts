@@ -4,23 +4,14 @@ import type {
   CommunicationIntegrationStatus,
   CommunicationProviderId,
   SaveCommunicationIntegrationParams,
-  SaveDiscordCommunicationIntegrationParams,
-  SaveSlackCommunicationIntegrationParams
+  SaveDiscordCommunicationIntegrationParams
 } from '../../shared/communication-integrations'
-import { DEFAULT_SLACK_API_BASE_URL } from '../../shared/communication-integrations'
 import * as DiscordStore from './discord-voice-credential-store'
 import * as DiscordService from './discord-voice-service'
-import {
-  assertCommunicationEndpointTrust,
-  CommunicationApiError,
-  normalizeCommunicationApiEndpoint
-} from './communication-api-endpoint'
 import {
   CommunicationIntegrationCredentialFileError,
   redactCommunicationIntegrationError
 } from './communication-integration-credential-file'
-import * as SlackStore from './slack-communication-credential-store'
-import { probeSlackCommunicationIntegration } from './slack-communication-probe'
 
 type ProviderStatus<P extends CommunicationProviderId> = Extract<
   CommunicationIntegrationStatus,
@@ -65,25 +56,17 @@ function discordStatus(): ProviderStatus<'discord'> {
 }
 
 function storageFailureStatus(
-  provider: CommunicationProviderId,
   error: CommunicationIntegrationRedactedError
 ): CommunicationIntegrationStatus {
-  return provider === 'slack'
-    ? SlackStore.emptySlackCommunicationStatus(error)
-    : DiscordStore.emptyDiscordCommunicationStatus(error)
-}
-
-function status(provider: CommunicationProviderId): CommunicationIntegrationStatus {
-  return provider === 'discord' ? discordStatus() : SlackStore.getSlackCommunicationStatus()
+  return DiscordStore.emptyDiscordCommunicationStatus(error)
 }
 
 async function operation(
-  provider: CommunicationProviderId,
   run: () => Promise<void> | void
 ): Promise<CommunicationIntegrationOperationResult> {
   try {
     await run()
-    return { ok: true, status: status(provider) }
+    return { ok: true, status: discordStatus() }
   } catch (error) {
     const safeError = redactCommunicationIntegrationError(error)
     if (!safeError) {
@@ -91,14 +74,14 @@ async function operation(
     }
     const nextStatus =
       error instanceof CommunicationIntegrationCredentialFileError
-        ? storageFailureStatus(provider, safeError)
-        : status(provider)
+        ? storageFailureStatus(safeError)
+        : discordStatus()
     return { ok: false, status: nextStatus, error: safeError }
   }
 }
 
 async function saveDiscord(params: SaveDiscordCommunicationIntegrationParams) {
-  return operation('discord', () => {
+  return operation(() => {
     const saved = DiscordStore.updateDiscordVoiceCredentials(params)
     if (saved) {
       DiscordService.reconnectDiscordVoiceService()
@@ -113,7 +96,7 @@ async function testDiscord(): Promise<CommunicationIntegrationOperationResult> {
   try {
     initial = discordStatus()
   } catch (error) {
-    return operation('discord', () => {
+    return operation(() => {
       throw error
     })
   }
@@ -145,100 +128,36 @@ async function testDiscord(): Promise<CommunicationIntegrationOperationResult> {
   }
 }
 
-async function saveSlack(params: SaveSlackCommunicationIntegrationParams) {
-  return operation('slack', () => {
-    const normalized = normalizeCommunicationApiEndpoint(params.baseUrl)
-    assertCommunicationEndpointTrust(normalized, params.endpointTrust, DEFAULT_SLACK_API_BASE_URL)
-    SlackStore.saveSlackCommunicationCredentials({
-      ...params,
-      baseUrl: normalized.baseUrl,
-      trustedCustomAuthority: params.endpointTrust.kind === 'custom' ? normalized.authority : null
-    })
-  })
-}
-
-async function testSlack(): Promise<CommunicationIntegrationOperationResult> {
-  let stored
-  try {
-    stored = SlackStore.readSlackCommunicationCredentials()
-  } catch (error) {
-    return operation('slack', () => {
-      throw error
-    })
-  }
-  if (!stored?.appToken || !stored.userToken) {
-    return { ok: false, status: SlackStore.getSlackCommunicationStatus(), error: NOT_CONFIGURED }
-  }
-  const { appToken, userToken } = stored
-  return operation('slack', async () => {
-    const endpointTrust = stored.trustedCustomAuthority
-      ? { kind: 'custom' as const, authority: stored.trustedCustomAuthority }
-      : { kind: 'default' as const }
-    try {
-      const result = await probeSlackCommunicationIntegration({
-        ...stored,
-        endpointTrust,
-        appToken,
-        userToken
-      })
-      SlackStore.saveSlackCommunicationVerification(result.workspace, new Date().toISOString())
-    } catch (error) {
-      const safeError = redactCommunicationIntegrationError(error)
-      if (safeError && error instanceof CommunicationApiError) {
-        SlackStore.saveSlackCommunicationError(safeError)
-      }
-      throw error
-    }
-  })
-}
-
 export const COMMUNICATION_INTEGRATION_REGISTRY = {
   discord: {
     provider: 'discord',
     getStatus: discordStatus,
     save: saveDiscord,
     clear: () =>
-      operation('discord', () => {
+      operation(() => {
         DiscordStore.clearDiscordVoiceCredentials()
         DiscordService.stopDiscordVoiceService()
       }),
     test: testDiscord
-  },
-  slack: {
-    provider: 'slack',
-    getStatus: SlackStore.getSlackCommunicationStatus,
-    save: saveSlack,
-    clear: () => operation('slack', SlackStore.clearSlackCommunicationCredentials),
-    test: testSlack
   }
 } satisfies Record<CommunicationProviderId, unknown>
 
 export async function getCommunicationIntegrationStatuses(): Promise<
   CommunicationIntegrationStatus[]
 > {
-  return Promise.all(
-    (['discord', 'slack'] as const).map(async (provider) => {
-      try {
-        return status(provider)
-      } catch (error) {
-        const safeError = redactCommunicationIntegrationError(error)
-        if (safeError && error instanceof CommunicationIntegrationCredentialFileError) {
-          return storageFailureStatus(provider, safeError)
-        }
-        throw error
-      }
-    })
-  )
+  try {
+    return [discordStatus()]
+  } catch (error) {
+    const safeError = redactCommunicationIntegrationError(error)
+    if (safeError && error instanceof CommunicationIntegrationCredentialFileError) {
+      return [storageFailureStatus(safeError)]
+    }
+    throw error
+  }
 }
 
 export async function saveCommunicationIntegration(params: SaveCommunicationIntegrationParams) {
-  if (params.provider === 'discord') {
-    return saveDiscord(params)
-  }
-  if (params.provider === 'slack') {
-    return saveSlack(params)
-  }
-  return saveSlack(params)
+  return saveDiscord(params)
 }
 
 export function clearCommunicationIntegration(provider: CommunicationProviderId) {

@@ -253,6 +253,7 @@ import {
 } from '../shared/osc52-clipboard-settings'
 import { normalizeTerminalLineHeight } from '../shared/terminal-line-height-settings'
 import { normalizeUiLanguage } from '../shared/ui-language'
+import { normalizeInterfaceTheme } from '../shared/interface-theme'
 import { normalizeBrowserPageZoomLevel } from '../shared/browser-page-zoom'
 import { normalizeFloatingWorkspaceAppPreferences } from '../shared/floating-workspace-apps'
 import { persistedUIValuesEqual } from '../shared/persisted-ui-equality'
@@ -3450,6 +3451,7 @@ export class Store {
             // Why: missing means default-on; round-trips unchanged on non-mac since darwin consumers gate the effect.
             showMenuBarIcon: parsed.settings?.showMenuBarIcon !== false,
             uiLanguage: normalizeUiLanguage(parsed.settings?.uiLanguage),
+            interfaceTheme: normalizeInterfaceTheme(parsed.settings?.interfaceTheme),
             defaultTaskSource: taskProviderSettings.defaultTaskSource,
             visibleTaskProviders: taskProviderSettings.visibleTaskProviders,
             visibleTaskProvidersDefaultedForJira: true,

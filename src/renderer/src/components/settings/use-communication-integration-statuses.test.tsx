@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { act } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SlackCommunicationIntegrationStatus } from '../../../../shared/communication-integrations'
+import type { DiscordCommunicationIntegrationStatus } from '../../../../shared/communication-integrations'
 import {
   applyCommunicationIntegrationStatus,
   refreshCommunicationIntegrationStatuses,
@@ -19,14 +19,10 @@ vi.mock('@/runtime/runtime-rpc-client', () => ({
   callRuntimeRpc: mocks.callRuntimeRpc
 }))
 
-function createSlackStatus(message: string): SlackCommunicationIntegrationStatus {
+function createDiscordStatus(message: string): DiscordCommunicationIntegrationStatus {
   return {
-    provider: 'slack',
-    endpoint: {
-      baseUrl: 'https://slack.com/api',
-      authority: 'slack.com',
-      trust: { kind: 'default' }
-    },
+    provider: 'discord',
+    endpoint: null,
     readiness: {
       configured: true,
       verified: false,
@@ -35,9 +31,8 @@ function createSlackStatus(message: string): SlackCommunicationIntegrationStatus
       verifiedAt: null,
       lastError: { code: 'provider_rejected', message, field: null }
     },
-    appTokenStored: true,
-    userTokenStored: true,
-    workspace: null
+    clientId: '12345678901234567',
+    clientSecretStored: true
   }
 }
 
@@ -54,7 +49,7 @@ function deferred<T>(): {
 
 function StatusHarness(): React.JSX.Element {
   const { getStatus, loading } = useCommunicationIntegrationStatuses()
-  const status = getStatus('slack')
+  const status = getStatus('discord')
   return (
     <p data-testid="snapshot">
       {loading ? 'loading' : (status?.readiness.lastError?.message ?? 'empty')}
@@ -71,10 +66,10 @@ describe('communication integration status refresh', () => {
   afterEach(() => cleanup())
 
   it('deduplicates concurrent refreshes and lets an after-current refresh win a stale race', async () => {
-    const stale = createSlackStatus('stale status')
-    const current = createSlackStatus('current status')
-    const first = deferred<SlackCommunicationIntegrationStatus[]>()
-    const second = deferred<SlackCommunicationIntegrationStatus[]>()
+    const stale = createDiscordStatus('stale status')
+    const current = createDiscordStatus('current status')
+    const first = deferred<DiscordCommunicationIntegrationStatus[]>()
+    const second = deferred<DiscordCommunicationIntegrationStatus[]>()
     mocks.callRuntimeRpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     render(<StatusHarness />)
     await waitFor(() => expect(mocks.callRuntimeRpc).toHaveBeenCalledTimes(1))

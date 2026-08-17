@@ -11,7 +11,9 @@ const {
   previewWarpThemeImportMock,
   prepareLocalWorktreeRootsForReposMock,
   resolveEnvironmentMock,
-  rebuildAppMenuMock
+  rebuildAppMenuMock,
+  scheduleCurrentWorktreeBaseDirectoryWatcherSyncMock,
+  syncNativeThemeSourceMock
 } = vi.hoisted(() => ({
   applyAppIconMock: vi.fn(),
   applyAgentStatusHooksEnabledMock: vi.fn(),
@@ -23,7 +25,9 @@ const {
   previewWarpThemeImportMock: vi.fn(),
   prepareLocalWorktreeRootsForReposMock: vi.fn(),
   resolveEnvironmentMock: vi.fn(),
-  rebuildAppMenuMock: vi.fn()
+  rebuildAppMenuMock: vi.fn(),
+  scheduleCurrentWorktreeBaseDirectoryWatcherSyncMock: vi.fn(),
+  syncNativeThemeSourceMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -59,6 +63,15 @@ vi.mock('../worktree-root-preparation', () => ({
 
 vi.mock('../menu/register-app-menu', () => ({
   rebuildAppMenu: rebuildAppMenuMock
+}))
+
+vi.mock('../native-theme-source', () => ({
+  syncNativeThemeSource: syncNativeThemeSourceMock
+}))
+
+vi.mock('./worktree-base-directory-watcher', () => ({
+  scheduleCurrentWorktreeBaseDirectoryWatcherSync:
+    scheduleCurrentWorktreeBaseDirectoryWatcherSyncMock
 }))
 
 vi.mock('../../shared/runtime-environment-store', () => ({
@@ -494,6 +507,24 @@ describe('registerSettingsHandlers', () => {
 
     expect(store.updateSettings).toHaveBeenCalledWith(
       { terminalLineHeight: 1 },
+      { notifyListeners: true, originWebContentsId: 1 }
+    )
+  })
+
+  it('normalizes invalid interface themes before persistence', async () => {
+    store.getSettings.mockReturnValue({ interfaceTheme: 'default' })
+    store.updateSettings.mockReturnValue({ interfaceTheme: 'default' })
+    registerSettingsHandlers(store as never)
+
+    const handler = handleMock.mock.calls.find((call) => call[0] === 'settings:set')?.[1] as (
+      _event: unknown,
+      args: unknown
+    ) => Promise<unknown>
+
+    await handler(settingsInvokeEvent, { interfaceTheme: 'invalid-theme' })
+
+    expect(store.updateSettings).toHaveBeenCalledWith(
+      { interfaceTheme: 'default' },
       { notifyListeners: true, originWebContentsId: 1 }
     )
   })
