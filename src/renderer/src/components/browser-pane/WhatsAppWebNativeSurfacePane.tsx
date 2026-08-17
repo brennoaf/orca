@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { BrowserPage, BrowserWorkspace } from '../../../../shared/types'
+import type { BrowserPage, BrowserWorkspace } from '../../../../shared/browser-workspace-types'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 
@@ -33,7 +33,7 @@ function enqueueBrowserSurfaceOperation(
 }
 
 function rendererZoomFactor(): number {
-  return Math.pow(1.2, window.api.ui.getZoomLevel())
+  return 1.2 ** window.api.ui.getZoomLevel()
 }
 
 export function usesWhatsAppWebNativeSurface(

@@ -4,7 +4,7 @@ import {
   FLOATING_WORKSPACE_APPS,
   type FloatingWorkspaceAppPreferences
 } from '../../../shared/floating-workspace-apps'
-import type { BrowserSessionProfile, BrowserTab } from '../../../shared/types'
+import type { BrowserSessionProfile, BrowserTab } from '../../../shared/browser-workspace-types'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
 import { openOrFocusFloatingWorkspaceAppTab } from './floating-workspace-tab-creation'
 

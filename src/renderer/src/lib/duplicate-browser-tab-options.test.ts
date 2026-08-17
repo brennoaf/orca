@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BrowserTab } from '../../../shared/types'
+import type { BrowserTab } from '../../../shared/browser-workspace-types'
 import { buildDuplicatedBrowserTabOptions } from './duplicate-browser-tab-options'
 
 describe('buildDuplicatedBrowserTabOptions', () => {

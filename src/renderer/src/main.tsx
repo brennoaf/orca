@@ -3,7 +3,7 @@ import './assets/main.css'
 import { StrictMode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { InterfaceTheme } from '../../shared/interface-theme'
-import type { GlobalSettings } from '../../shared/types'
+import type { GlobalSettings } from '../../shared/global-settings-types'
 import App from './App'
 import { RecoverableRenderErrorBoundary } from './components/error-boundaries/RecoverableRenderErrorBoundary'
 import {
@@ -18,6 +18,7 @@ import { shouldEnableReactGrab } from './lib/react-grab-dev-gate'
 import { I18nProvider } from './i18n/I18nProvider'
 import { translate } from './i18n/i18n'
 import { getOrCreateRendererRoot } from './lib/react-renderer-root'
+import { SkillWarningPreviewLauncher } from './components/skills/SkillWarningPreviewLauncher'
 
 recordRendererCrashBreadcrumb('renderer_bootstrap_started', { dev: import.meta.env.DEV })
 installRendererCrashDiagnostics()
@@ -53,6 +54,7 @@ function RendererRoot(): React.JSX.Element {
       )}
     >
       <App />
+      <SkillWarningPreviewLauncher />
     </RecoverableRenderErrorBoundary>
   )
 }

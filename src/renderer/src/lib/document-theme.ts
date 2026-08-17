@@ -1,4 +1,4 @@
-import type { GlobalSettings } from '../../../shared/types'
+import type { GlobalSettings } from '../../../shared/global-settings-types'
 import { normalizeInterfaceTheme, type InterfaceTheme } from '../../../shared/interface-theme'
 import { buildAppFontFamily } from './app-font-family'
 

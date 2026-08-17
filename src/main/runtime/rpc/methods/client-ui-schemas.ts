@@ -16,13 +16,15 @@ import { normalizePRBotAuthorOverrides } from '../../../../shared/pr-bot-author-
 import {
   normalizeWorktreeCardProperties,
   WORKTREE_CARD_PROPERTIES
-} from '../../../../shared/worktree-card-properties'
+} from '../../../../shared/worktree/card-properties'
 import { isPluginPanelTabKey } from '../../../../shared/plugins/plugin-manifest'
-import type { TaskProvider } from '../../../../shared/types'
+import type { TaskProvider } from '../../../../shared/task-providers'
+import { ClientUiWorkspaceFilterFields } from './client-ui-workspace-filter-fields'
 import { FloatingWorkspaceApps } from './floating-workspace-apps-schema'
 import { TaskResumeState } from './task-resume-state-schema'
-import { WorkspaceCleanup } from './workspace-cleanup-schema'
+import { WorkspaceCleanup } from './workspace-cleanup-ui-schema'
 import { omitUndefinedValues, tolerateUnknownValues } from './ui-update-value-tolerance'
+import { WorktreeVisibilityDefaultsUpdate } from './worktree-visibility-defaults-schema'
 
 const NullableString = z.string().nullable()
 const StringArray = z.array(z.string())
@@ -124,6 +126,7 @@ const GitHubProjectSettings = z
 
 export const SettingsUpdate = z
   .object({
+    worktreeVisibilityDefaults: WorktreeVisibilityDefaultsUpdate.optional(),
     defaultTuiAgent: z
       .unknown()
       .transform((value) =>
@@ -163,25 +166,23 @@ export const SettingsUpdate = z
   .strict()
   .default({})
 
+const TopLevelViewSchema = z.enum([
+  'terminal',
+  'settings',
+  'tasks',
+  'activity',
+  'automations',
+  'space',
+  'skills',
+  'artifacts',
+  'mobile'
+])
 const UiUpdateFields = z
   .object({
     lastActiveRepoId: NullableString.optional(),
     lastActiveWorktreeId: NullableString.optional(),
-    // Why: App.tsx persists this on every top-level view switch (#9002). Desktop
-    // hydration ignores it on 'sync' broadcasts, so accepting it cannot yank a
-    // paired window's current view — it only restores the view on next startup.
-    activeView: z
-      .enum([
-        'terminal',
-        'settings',
-        'tasks',
-        'activity',
-        'automations',
-        'space',
-        'skills',
-        'mobile'
-      ])
-      .optional(),
+    // Why: sync hydration ignores this persisted startup view, so paired windows stay put.
+    activeView: TopLevelViewSchema.optional(),
     sidebarWidth: z.number().finite().optional(),
     rightSidebarOpen: z.boolean().optional(),
     rightSidebarTab: RightSidebarTabParam.optional(),
@@ -203,15 +204,10 @@ const UiUpdateFields = z
     manualRepoOrder: z
       .array(z.object({ hostId: z.string(), repoId: z.string() }).strict())
       .optional(),
-    hideDefaultBranchWorkspace: z.boolean().optional(),
-    hideAutomationGeneratedWorkspaces: z.boolean().optional(),
+    ...ClientUiWorkspaceFilterFields,
     // Why: rides App.tsx's debounced writer, so omitting it rejected that entire
     // payload (sidebar widths, filters, agent acks) for every paired client.
     showDotfilesByWorktree: z.record(z.string(), z.boolean()).optional(),
-    hideCliCreatedWorkspaces: z.boolean().optional(),
-    hideDetachedHeadWorkspaces: z.boolean().optional(),
-    alwaysShowDefaultBranchWorkspace: z.boolean().optional(),
-    filterRepoIds: StringArray.optional(),
     collapsedGroups: StringArray.optional(),
     uiZoomLevel: z.number().finite().optional(),
     editorFontZoomLevel: z.number().finite().optional(),

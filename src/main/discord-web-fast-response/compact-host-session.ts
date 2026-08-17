@@ -1,6 +1,6 @@
 import type { Store } from '../persistence'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
-import type { BrowserSessionProfile } from '../../shared/types'
+import type { BrowserSessionProfile } from '../../shared/browser-workspace-types'
 import {
   FLOATING_WORKSPACE_APPS,
   getFloatingWorkspaceAppPreference,

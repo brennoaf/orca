@@ -19,7 +19,7 @@ import type {
   FloatingCommsSurfacePresentation
 } from '../../shared/floating-comms-surface'
 import { FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT } from '../../shared/floating-comms-surface'
-import type { GlobalSettings } from '../../shared/types'
+import type { GlobalSettings } from '../../shared/global-settings-types'
 import { TooltipProvider } from './components/ui/tooltip'
 import { FloatingCommsEntry } from './components/communications-dock/FloatingCommsEntry'
 import {

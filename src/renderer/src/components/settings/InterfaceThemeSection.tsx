@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react'
 import type { KeyboardEvent, ReactElement } from 'react'
 
-import type { GlobalSettings } from '../../../../shared/types'
+import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { InterfaceTheme } from '../../../../shared/interface-theme'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'

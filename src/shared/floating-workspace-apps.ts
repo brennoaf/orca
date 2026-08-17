@@ -1,4 +1,4 @@
-import type { BrowserSessionUserAgentMode } from './types'
+import type { BrowserSessionUserAgentMode } from './browser-workspace-types'
 
 export type FloatingWorkspaceAppId = 'whatsapp-web' | 'slack' | 'discord'
 

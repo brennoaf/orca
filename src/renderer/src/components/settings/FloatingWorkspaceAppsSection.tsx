@@ -6,7 +6,7 @@ import {
   type FloatingWorkspaceApp
 } from '../../../../shared/floating-workspace-apps'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
-import type { BrowserSessionProfile } from '../../../../shared/types'
+import type { BrowserSessionProfile } from '../../../../shared/browser-workspace-types'
 import { useAppStore } from '../../store'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { SearchableSetting } from './SearchableSetting'

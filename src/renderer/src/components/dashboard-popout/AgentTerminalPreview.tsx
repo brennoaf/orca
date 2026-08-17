@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import { getShortcutPlatform } from '@/lib/shortcut-platform'
 import { subscribeToTerminalUserInput } from '@/components/terminal-pane/terminal-user-input-signal'
 import { TerminalKittyKeyboardModeTracker } from '../../../../shared/terminal-kitty-keyboard-mode-tracker'
+import { replayPreviewConnectionSnapshot } from './preview-terminal-snapshot-replay'
 import { buildPreviewTerminalOptions } from './preview-terminal-options'
 import { installPreviewTerminalCompatibility } from './preview-terminal-compatibility'
 import { createPreviewClipboardPaster } from './preview-terminal-paste'
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import { installPreviewTerminalKeyHandler } from './preview-terminal-key-handler'
 import { createPreviewGridClaim } from './preview-grid-claim'
+import { installPreviewTerminalAppMenuClipboard } from './preview-terminal-app-menu-clipboard'
 import type { TerminalPreviewDataPayload } from '../../../../shared/terminal-preview'
 import {
   createPreviewTerminalFitter,
@@ -133,6 +135,7 @@ export function AgentTerminalPreview({
       ptyId,
       container,
       getTerminal: () => terminal,
+      getTerminalInput: () => terminalInputRef.current,
       isDisposed: () => disposed
     })
 
@@ -143,7 +146,11 @@ export function AgentTerminalPreview({
 
     const installImeNativeTextBridge = (): void => {
       if (terminal) {
-        imeBridge = installPreviewImeBridge(terminal)
+        // Why a live getter: kitty state can change between keydown and commit,
+        // and the tracker outlives every reconnect inside this effect.
+        imeBridge = installPreviewImeBridge(terminal, {
+          getKittyKeyboardFlags: () => kittyKeyboardModes.flags
+        })
       }
     }
 
@@ -163,7 +170,7 @@ export function AgentTerminalPreview({
           macOptionAsAlt: macOptionAsAltRef.current,
           keybindings: useAppStore.getState().keybindings,
           terminalInput: terminalInputRef.current,
-          kittyKeyboardActive: () => kittyKeyboardModes.flags > 0,
+          getKittyKeyboardFlags: () => kittyKeyboardModes.flags,
           terminalShortcutPolicy: getTerminalShortcutPolicy()
         })
       })
@@ -237,22 +244,13 @@ export function AgentTerminalPreview({
           clamp(snap.rows ?? FALLBACK_ROWS, 2, 200)
         )
         terminal.reset()
-        // Why: the reset drops xterm's kitty flags, so the mirror must restart
-        // from the incoming snapshot instead of the dead session's state.
-        kittyKeyboardModes.reset()
       }
-      if (snap.scrollbackAnsi) {
-        writeReplayed(snap.scrollbackAnsi)
-      }
-      if (snap.data) {
-        writeReplayed(snap.data)
-      }
-      if (snap.pendingEscapeTailAnsi) {
-        writeReplayed(snap.pendingEscapeTailAnsi)
-      }
-      for (const data of connection.replay) {
-        writeReplayed(data)
-      }
+      replayPreviewConnectionSnapshot({
+        snapshot: snap,
+        replay: connection.replay,
+        kittyKeyboardModes,
+        write: (chunk, live) => writeReplayed(chunk, undefined, live)
+      })
       for (const payload of pendingLivePayloads.splice(0)) {
         writeLive(payload)
       }
@@ -317,14 +315,10 @@ export function AgentTerminalPreview({
       replayConnection(connection, replaceExisting, () => void setup(true))
     }
 
-    // Why: the popout has no TerminalPane/useAppMenuPaste, so the Edit menu's
-    // Cmd/Ctrl+V (routed to the focused window as ui:appMenuPaste) would
-    // otherwise be dropped and paste would silently do nothing here.
-    const offAppMenuPaste = window.api.ui.onAppMenuPaste(() => {
-      const active = document.activeElement
-      if (active && container.contains(active)) {
-        void pasteClipboardText(active, 'app-menu')
-      }
+    const disposeAppMenuClipboard = installPreviewTerminalAppMenuClipboard({
+      container,
+      getTerminal: () => terminal,
+      pasteClipboardText
     })
 
     offData = window.api.terminalPreview.onData((payload) => {
@@ -347,7 +341,7 @@ export function AgentTerminalPreview({
       }
       gridClaim.dispose()
       boxResizeObserver?.disconnect()
-      offAppMenuPaste()
+      disposeAppMenuClipboard()
       offData?.()
       userInputDisposable?.dispose()
       disposeImeNativeTextBridge()
