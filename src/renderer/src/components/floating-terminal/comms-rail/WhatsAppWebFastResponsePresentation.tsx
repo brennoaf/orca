@@ -25,13 +25,13 @@ const EMPTY_SESSION: FloatingCommsWhatsAppSessionState = {
 }
 
 function FastResponseHost({
-  binding,
   setElement,
-  state
+  state,
+  minimal
 }: {
-  binding?: WhatsAppFastResponseHostBinding
   setElement: (element: HTMLDivElement | null) => void
   state: ReturnType<typeof useWhatsAppFastResponseHost>
+  minimal: boolean
 }): React.JSX.Element {
   const message =
     state.kind === 'inactive'
@@ -51,11 +51,7 @@ function FastResponseHost({
             : null
   return (
     <div
-      className={
-        binding?.identity.target === 'dock'
-          ? 'relative h-full min-h-48 overflow-hidden bg-background'
-          : 'relative h-80 min-h-48 overflow-hidden bg-background'
-      }
+      className={`relative h-full overflow-hidden ${minimal ? 'min-h-0 bg-white' : 'min-h-48 bg-background'}`}
     >
       <div
         ref={setElement}
@@ -65,7 +61,7 @@ function FastResponseHost({
           'WhatsApp Web — fast response'
         )}
       />
-      {message ? (
+      {message && !minimal ? (
         <div
           role={state.kind === 'error' || state.kind === 'crashed' ? 'alert' : 'status'}
           className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground"
@@ -87,6 +83,7 @@ export function WhatsAppWebFastResponsePresentation({
   const sessionState =
     initialSessionState?.appId === 'whatsapp-web' ? initialSessionState : EMPTY_SESSION
   const unavailable = hostState.kind === 'crashed' || hostState.kind === 'error'
+  const minimal = hostState.kind === 'ready' && hostState.contentMode === 'qr'
   const status =
     whatsappHost && hostState.kind === 'loading'
       ? ({ kind: 'loading' } as const)
@@ -99,9 +96,8 @@ export function WhatsAppWebFastResponsePresentation({
         status,
         tooltip: translate('communicationRail.whatsappWeb.tooltip', 'WhatsApp Web — fast response'),
         sessionState,
-        content: (
-          <FastResponseHost binding={whatsappHost} setElement={setElement} state={hostState} />
-        )
+        minimal,
+        content: <FastResponseHost setElement={setElement} state={hostState} minimal={minimal} />
       })}
     </>
   )

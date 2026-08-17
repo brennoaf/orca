@@ -11,7 +11,7 @@ export type WhatsAppFastResponseOwner = {
   sender: WebContents
   request: WhatsAppFastResponseVisibility
   window: BrowserWindow
-  closed: () => void
+  closed: (() => void) | null
 }
 
 export class AdapterReconcileQueue {
@@ -35,6 +35,10 @@ export class AdapterReconcileQueue {
 
   reset(): void {
     this.queued = false
+  }
+
+  async settle(): Promise<void> {
+    await this.promise
   }
 }
 
@@ -129,7 +133,7 @@ export function contentBoundsForFastResponse(
   const bottom = Math.min(content.height, Math.ceil((rect.y + rect.height) * zoom))
   const left = Math.max(0, Math.floor(x))
   const top = Math.max(0, Math.floor(y))
-  if (x < 0 || y < 0 || left >= right || top >= bottom) {
+  if (left >= right || top >= bottom) {
     throw new Error('whatsapp_fast_response_rect_denied')
   }
   return { x: left, y: top, width: right - left, height: bottom - top }
@@ -140,7 +144,9 @@ export function ownerIdentity(
 ): string {
   return request.target === 'attached'
     ? `attached:${request.requestId}:${request.surfaceId}:${request.mode}`
-    : `dock:${request.generation}:${request.revision}:${request.tabId}:${request.activeLeafAppId}`
+    : request.target === 'dock'
+      ? `dock:${request.generation}:${request.revision}:${request.tabId}:${request.activeLeafAppId}`
+      : `browser:${request.browserTabId}:${request.browserPageId}:${request.workspaceId}:${request.registrationToken}:${request.revision}`
 }
 
 export function isCurrentOwner(
@@ -190,6 +196,11 @@ export function visibilityIdentity(
     const { target, appId, requestId, surfaceId, mode } = request
     return { target, appId, requestId, surfaceId, mode }
   }
-  const { target, appId, generation, revision, tabId, activeLeafAppId } = request
-  return { target, appId, generation, revision, tabId, activeLeafAppId }
+  if (request.target === 'dock') {
+    const { target, appId, generation, revision, tabId, activeLeafAppId } = request
+    return { target, appId, generation, revision, tabId, activeLeafAppId }
+  }
+  const { target, appId, browserTabId, browserPageId, workspaceId, registrationToken, revision } =
+    request
+  return { target, appId, browserTabId, browserPageId, workspaceId, registrationToken, revision }
 }

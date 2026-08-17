@@ -1,4 +1,13 @@
-import type { WebContents } from 'electron'
+import {
+  adapterAttribute as ADAPTER_ATTRIBUTE,
+  adapterVersion as ADAPTER_VERSION,
+  applyCompactWhatsAppAdapterPresentation,
+  attentionAttribute as ATTENTION_ATTRIBUTE,
+  clearCompactWhatsAppAdapterPresentation,
+  legacyUnsupportedId as LEGACY_UNSUPPORTED_ID
+} from './compact-dom-adapter-presentation'
+
+export { compactWhatsAppCss, isCompactWhatsAppMode } from './compact-dom-adapter-presentation'
 
 export type CompactWhatsAppMode = 'loading' | 'qr' | 'list' | 'conversation'
 
@@ -14,32 +23,6 @@ export type CompactWhatsAppStructure = {
   manualList: boolean
 }
 
-const ADAPTER_ATTRIBUTE = 'data-orca-whatsapp-fast-response'
-const ADAPTER_VERSION = '1'
-const LEGACY_UNSUPPORTED_ID = 'orca-wa-fast-response-unsupported'
-const ATTENTION_ATTRIBUTE = 'data-orca-whatsapp-has-unread'
-
-export const compactWhatsAppCss = `
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] body{min-width:0!important;overflow:hidden!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body{display:grid!important;min-height:100%!important;place-items:center!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body [data-orca-whatsapp-qr-visible]{max-width:100%!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="qr"] body *:not([data-orca-whatsapp-qr-visible]){display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"]>div{min-width:0!important;width:100%!important;max-width:100%!important;overflow:hidden!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"] [data-testid="wa-web-main-screen"]>div{transform:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="wa-web-main-screen"]>div>div:has(>#side),html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="wa-web-main-screen"]>div>div:has(>#main){flex:0 0 100%!important;width:100%!important;max-width:100%!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chatlist-header"]{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"][data-orca-whatsapp-hide-archived="true"] [data-testid="chatlist-panel-archived-button"]{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side{display:flex!important;flex:1 1 auto!important;flex-direction:column!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #pane-side{flex:1 1 auto!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #side [role="tablist"]{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="list"] #main{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #app,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #main{display:flex!important;flex:1 1 auto!important;min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chatlist-header"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #side [role="tablist"]{display:none!important}
-html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] #pane-side,html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chat-list"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="chat-list-search-container"],html[${ADAPTER_ATTRIBUTE}="${ADAPTER_VERSION}"][data-orca-whatsapp-mode="conversation"] [data-testid="search-container"]{display:none!important}
-#orca-wa-fast-response-back{position:fixed;z-index:2147483647;top:8px;left:8px;border:0;border-radius:8px;padding:6px 8px;background:#111b21;color:#fff;font:inherit;cursor:pointer}
-`
-
 export function compactWhatsAppModeFor(value: CompactWhatsAppStructure): CompactWhatsAppMode {
   if (value.chatList && value.chatlistHeader && value.search) {
     return value.manualList || !value.main || !value.composer ? 'list' : 'conversation'
@@ -53,42 +36,163 @@ export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
     const version = ${JSON.stringify(ADAPTER_VERSION)};
     const root = document.documentElement;
     const id = 'orca-wa-fast-response-back';
+    const listToolsId = 'orca-wa-fast-response-list-tools';
     const legacyUnsupportedId = ${JSON.stringify(LEGACY_UNSUPPORTED_ID)};
     const hideArchivedChats = ${JSON.stringify(hideArchivedChats)};
     const attentionAttribute = ${JSON.stringify(ATTENTION_ATTRIBUTE)};
     let manualList = false;
     let manualListMain = '';
-    let qrContainer = null;
+    let listToolsExpanded = false;
+    let loginShell = null;
     const node = (selector) => document.querySelector(selector);
     const mainComposer = () => node('#main [contenteditable="true"]');
     const search = () => node('[data-testid="search-container"],[data-testid="chat-list-search-container"]');
-    const qrSource = () => node('canvas,[data-ref]');
-    const clearQr = () => {
-      document.querySelectorAll('[data-orca-whatsapp-qr-visible]').forEach((element) => element.removeAttribute('data-orca-whatsapp-qr-visible'));
-      qrContainer = null;
+    const isVisible = (element) => {
+      if (!element || element.hidden || element.getAttribute('aria-hidden') === 'true') return false;
+      const style = window.getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const archivedChatList = () => {
+      const list = node('[data-testid="archived-chatlist"]');
+      const drawer = list?.closest('[data-testid="drawer-fullscreen"]');
+      return isVisible(list) && (!drawer || isVisible(drawer)) ? list : null;
+    };
+    const conversationHeader = () => node('#main [data-testid="conversation-header"],#main header');
+    const profileControls = () => {
+      const header = conversationHeader();
+      if (!header) return [];
+      const avatar = header.querySelector('img')?.closest('div[role="button"]');
+      const title = header.querySelector('div[role="button"][data-testid="conversation-info-header"]');
+      return [avatar, title].filter(Boolean);
+    };
+    const markHeaderActions = () => conversationHeader()?.querySelectorAll('button[aria-label="Video call"],button[aria-label="Voice call"],button[aria-label="Group video call"],button[aria-label="Search"],button[aria-label="Subgroup switcher"]').forEach((control) => {
+      control.setAttribute('data-orca-whatsapp-header-action-hidden', '');
+    });
+    const loadingSpinner = () => node('[data-testid="loading-spinner"]');
+    const updateLoginShell = () => {
+      const shell = loadingSpinner()?.parentElement;
+      if (shell && shell !== document.body && shell !== root && shell.childElementCount === 1) loginShell = shell;
+      return loginShell?.isConnected ? loginShell : null;
+    };
+    const qrSource = () => {
+      const exact = node('[data-testid="link-device-qr-code"][data-ref] canvas[role="img"]');
+      if (exact) return exact;
+      const shell = updateLoginShell();
+      const candidate = shell?.querySelector('canvas,[data-ref]');
+      if (!candidate) return null;
+      if (candidate.matches('canvas,img,svg')) return candidate;
+      return candidate.querySelector('canvas,img,svg') ?? candidate;
+    };
+    const clearLogin = () => {
+      document.querySelectorAll('[data-orca-whatsapp-login-spinner]').forEach((element) => element.removeAttribute('data-orca-whatsapp-login-spinner'));
+      document.querySelectorAll('[data-orca-whatsapp-login-qr-source]').forEach((element) => element.removeAttribute('data-orca-whatsapp-login-qr-source'));
+    };
+    const listToolsSources = () => {
+      const side = node('#side');
+      const searchContainer = search();
+      if (!side || !searchContainer || !side.contains(searchContainer)) return [];
+      const searchSource = [...side.children].find((child) => child === searchContainer || child.contains(searchContainer));
+      const filters = [...side.children].find((child) => child.getAttribute('role') === 'tablist');
+      return [...new Set([searchSource, filters].filter(Boolean))];
+    };
+    const archivedButton = () => node('#pane-side [data-testid="chatlist-panel-archived-button"]');
+    const archivedHasAttention = (button) => Boolean(button?.querySelector('[data-testid="icon-unread-count"],[data-icon="mention"],[aria-label*="@"]'));
+    const clearListTools = () => {
+      document.getElementById(listToolsId)?.remove();
+      document.querySelectorAll('[data-orca-whatsapp-list-tools-source]').forEach((element) => element.removeAttribute('data-orca-whatsapp-list-tools-source'));
+      document.querySelectorAll('[data-orca-whatsapp-native-archived]').forEach((element) => element.removeAttribute('data-orca-whatsapp-native-archived'));
+      root.removeAttribute('data-orca-whatsapp-list-tools-expanded');
+    };
+    const renderListTools = (current, archived) => {
+      if (current !== 'list' || archived) {
+        listToolsExpanded = false;
+        clearListTools();
+        return;
+      }
+      const side = node('#side');
+      const pane = node('#pane-side');
+      const sources = listToolsSources();
+      if (!side || sources.length === 0) {
+        clearListTools();
+        return;
+      }
+      document.querySelectorAll('[data-orca-whatsapp-list-tools-source]').forEach((element) => {
+        if (!sources.includes(element)) element.removeAttribute('data-orca-whatsapp-list-tools-source');
+      });
+      sources.forEach((element) => element.setAttribute('data-orca-whatsapp-list-tools-source', ''));
+      const nativeArchived = archivedButton();
+      nativeArchived?.setAttribute('data-orca-whatsapp-native-archived', '');
+      let toolbar = document.getElementById(listToolsId);
+      if (!toolbar) {
+        toolbar = document.createElement('div');
+        toolbar.id = listToolsId;
+        const archive = document.createElement('button');
+        archive.type = 'button';
+        archive.dataset.action = 'archived';
+        archive.addEventListener('click', () => archivedButton()?.click());
+        const searchButton = document.createElement('button');
+        searchButton.type = 'button';
+        searchButton.dataset.action = 'search';
+        searchButton.addEventListener('click', () => {
+          listToolsExpanded = !listToolsExpanded;
+          renderListTools('list', false);
+        });
+        toolbar.append(archive, searchButton);
+      }
+      const archive = toolbar.querySelector('[data-action="archived"]');
+      const button = toolbar.querySelector('[data-action="search"]');
+      archive.setAttribute('aria-label', 'Archived chats');
+      archive.title = 'Archived chats';
+      if (archive.dataset.attention !== String(archivedHasAttention(nativeArchived))) {
+        archive.dataset.attention = String(archivedHasAttention(nativeArchived));
+        archive.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"></path><path d="M1 3h22v5H1z"></path><path d="M10 12h4"></path></svg>' + (archivedHasAttention(nativeArchived) ? '<span data-orca-whatsapp-archived-attention aria-hidden="true">@</span>' : '');
+      }
+      const label = listToolsExpanded ? 'Hide search and filters' : 'Show search and filters';
+      if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+      button.setAttribute('aria-expanded', String(listToolsExpanded));
+      button.title = label;
+      const state = listToolsExpanded ? 'expanded' : 'collapsed';
+      if (button.dataset.state !== state) {
+        button.dataset.state = state;
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>';
+      }
+      if (pane?.parentElement === side) side.insertBefore(toolbar, pane); else side.append(toolbar);
+      root.setAttribute('data-orca-whatsapp-list-tools-expanded', String(listToolsExpanded));
     };
     const removeOwn = () => {
       document.querySelectorAll('#' + id).forEach((element) => element.remove());
       document.querySelectorAll('#' + legacyUnsupportedId).forEach((element) => element.remove());
-      clearQr();
+      document.querySelectorAll('[data-orca-whatsapp-header-action-hidden]').forEach((element) => element.removeAttribute('data-orca-whatsapp-header-action-hidden'));
+      clearListTools();
+      clearLogin();
       root.removeAttribute(attribute);
       root.removeAttribute('data-orca-whatsapp-mode');
+      root.removeAttribute('data-orca-whatsapp-archived');
+      root.removeAttribute('data-orca-whatsapp-hide-archived');
       root.removeAttribute(attentionAttribute);
     };
-    const isOwnNode = (value) => value.nodeType === 1 && value.id === id;
+    const isOwnNode = (value) => value.nodeType === 1 && (value.id === id || value.id === listToolsId || value.closest?.('#' + listToolsId));
     const isOwnMutation = (record) => {
+      if (record.type === 'attributes') {
+        return isOwnNode(record.target) || record.attributeName?.startsWith('data-orca-whatsapp-');
+      }
       if (record.type !== 'childList') return false;
+      if (isOwnNode(record.target)) return true;
       const changed = [...record.addedNodes, ...record.removedNodes];
       return changed.length > 0 && changed.every(isOwnNode);
     };
-    const isolateQr = () => {
-      const container = qrSource()?.parentElement;
-      if (!container || container === qrContainer) return;
-      clearQr();
-      document.body.querySelectorAll('*').forEach((element) => {
-        if (element === container || element.contains(container) || container.contains(element)) element.setAttribute('data-orca-whatsapp-qr-visible', '');
-      });
-      qrContainer = container;
+    const presentLogin = (current) => {
+      clearLogin();
+      if (current === 'qr') {
+        qrSource()?.setAttribute('data-orca-whatsapp-login-qr-source', '');
+        return;
+      }
+      if (current === 'loading') {
+        const spinner = loadingSpinner();
+        spinner?.setAttribute('data-orca-whatsapp-login-spinner', '');
+      }
     };
     const mainSignature = () => {
       const main = node('#main');
@@ -100,7 +204,7 @@ export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
       const searchContainer = search();
       if (manualList && mainSignature() !== manualListMain && mainComposer()) manualList = false;
       if (list && header && searchContainer) return manualList ? 'list' : (node('#main') && mainComposer() ? 'conversation' : 'list');
-      if ((node('[data-testid="wa-logo"],[data-testid="wa-wordmark"]')) && qrSource()) return 'qr';
+      if (qrSource()) return 'qr';
       return null;
     };
     const updateAttention = () => {
@@ -114,35 +218,59 @@ export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
       const current = recognized ?? 'loading';
       root.setAttribute(attribute, version);
       root.setAttribute('data-orca-whatsapp-mode', current);
+      const archived = current === 'list' && Boolean(archivedChatList());
+      if (archived) root.setAttribute('data-orca-whatsapp-archived', 'true'); else root.removeAttribute('data-orca-whatsapp-archived');
       if (hideArchivedChats) root.setAttribute('data-orca-whatsapp-hide-archived', 'true'); else root.removeAttribute('data-orca-whatsapp-hide-archived');
-      if (current === 'qr') isolateQr(); else clearQr();
+      presentLogin(current);
+      renderListTools(current, archived);
       let back = document.getElementById(id);
-      if (current === 'conversation' && !back) {
+      const header = current === 'conversation' ? conversationHeader() : null;
+      if (!header) {
+        back?.remove();
+        back = null;
+      }
+      if (header && !back) {
         back = document.createElement('button');
         back.id = id;
         back.type = 'button';
         back.setAttribute('aria-label', 'Back to chats');
-        back.textContent = 'Back';
+        back.title = 'Back to chats';
+        back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>';
         back.addEventListener('click', () => { manualList = true; manualListMain = mainSignature(); render(); });
-        document.body.append(back);
+        header.prepend(back);
       }
-      if (back) back.hidden = current !== 'conversation';
+      if (header && back) header.prepend(back);
+      if (current === 'conversation') markHeaderActions();
       updateAttention();
       return current;
     };
     const onReadyStateChange = () => render();
     const releaseList = (target) => {
-      if (node('[data-testid="chat-list"]')?.contains(target)) {
+      if (node('[data-testid="chat-list"]')?.contains(target) || archivedChatList()?.contains(target)) {
         manualList = false;
         render();
       }
     };
-    const onClick = (event) => releaseList(event.target);
+    const blocksProfile = (event) => {
+      if (!profileControls().some((control) => control.contains(event.target))) return false;
+      if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return false;
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    };
+    const onPointerdown = (event) => {
+      blocksProfile(event);
+    };
+    const onClick = (event) => {
+      if (!blocksProfile(event)) releaseList(event.target);
+    };
     const onKeydown = (event) => {
+      if (blocksProfile(event)) return;
       if (event.key === 'Enter' || event.key === ' ') releaseList(event.target);
     };
     window.__orcaWhatsAppFastResponseCleanup?.();
     removeOwn();
+    document.addEventListener('pointerdown', onPointerdown, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeydown, true);
     window.__orcaWhatsAppFastResponseObserver?.disconnect();
@@ -150,10 +278,11 @@ export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
       if (records.length > 0 && records.every(isOwnMutation)) return;
       render();
     });
-    window.__orcaWhatsAppFastResponseObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-testid'] });
+    window.__orcaWhatsAppFastResponseObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-testid', 'data-icon', 'aria-label', 'style', 'hidden', 'aria-hidden'] });
     document.addEventListener('readystatechange', onReadyStateChange);
     window.__orcaWhatsAppFastResponseCleanup = () => {
       window.__orcaWhatsAppFastResponseObserver?.disconnect();
+      document.removeEventListener('pointerdown', onPointerdown, true);
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('keydown', onKeydown, true);
       document.removeEventListener('readystatechange', onReadyStateChange);
@@ -164,39 +293,22 @@ export function buildCompactWhatsAppScript(hideArchivedChats = false): string {
 }
 
 export async function applyCompactWhatsAppAdapter(
-  webContents: Pick<
-    WebContents,
-    'executeJavaScriptInIsolatedWorld' | 'insertCSS' | 'removeInsertedCSS'
-  >,
+  webContents: Parameters<typeof applyCompactWhatsAppAdapterPresentation>[0],
   previousCssKey: string | null,
   isCurrent: () => boolean = () => true,
   hideArchivedChats = false
 ): Promise<{ cssKey: string; mode: CompactWhatsAppMode } | null> {
-  if (previousCssKey) {
-    await webContents.removeInsertedCSS(previousCssKey).catch(() => {})
-  }
-  const cssKey = await webContents.insertCSS(compactWhatsAppCss)
-  if (!isCurrent()) {
-    await webContents.removeInsertedCSS(cssKey).catch(() => {})
-    return null
-  }
-  try {
-    const script = buildCompactWhatsAppScript(hideArchivedChats)
-    const mode = await webContents.executeJavaScriptInIsolatedWorld(999, [{ code: script }], false)
-    if (!isCompactWhatsAppMode(mode)) {
-      throw new Error('whatsapp_fast_response_adapter_invalid')
-    }
-    if (!isCurrent()) {
-      await webContents.removeInsertedCSS(cssKey).catch(() => {})
-      return null
-    }
-    return { cssKey, mode }
-  } catch (error) {
-    await webContents.removeInsertedCSS(cssKey).catch(() => {})
-    throw error
-  }
+  return applyCompactWhatsAppAdapterPresentation(
+    webContents,
+    previousCssKey,
+    buildCompactWhatsAppScript(hideArchivedChats),
+    isCurrent
+  )
 }
 
-export function isCompactWhatsAppMode(value: unknown): value is CompactWhatsAppMode {
-  return value === 'loading' || value === 'qr' || value === 'list' || value === 'conversation'
+export async function clearCompactWhatsAppAdapter(
+  webContents: Parameters<typeof clearCompactWhatsAppAdapterPresentation>[0],
+  cssKey: string | null
+): Promise<void> {
+  return clearCompactWhatsAppAdapterPresentation(webContents, cssKey)
 }

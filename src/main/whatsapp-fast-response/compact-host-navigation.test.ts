@@ -108,7 +108,11 @@ describe('WhatsAppFastResponseHost navigation', () => {
     )
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2))
     await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
-    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual([
+      'loading',
+      'loading',
+      'ready'
+    ])
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2)
   })
@@ -149,10 +153,14 @@ describe('WhatsAppFastResponseHost navigation', () => {
     )?.[1]
     start?.({}, 'https://web.whatsapp.com/redirect', false, true)
     fail?.({}, -3, 'ERR_ABORTED', 'https://web.whatsapp.com/redirect', true)
-    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'loading'])
     finish?.()
     await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
-    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading', 'ready'])
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual([
+      'loading',
+      'loading',
+      'ready'
+    ])
   })
   it('publishes a recoverable error for a real main-frame load failure', () => {
     const host = new WhatsAppFastResponseHost(store as never)
@@ -179,7 +187,11 @@ describe('WhatsAppFastResponseHost navigation', () => {
     start?.({}, 'https://web.whatsapp.com/chats', false, true)
     rejectLoad?.(new Error('stale'))
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual([
+      'loading',
+      'loading',
+      'loading'
+    ])
   })
   it('ignores a cancelled initial load rejection after a newer main-frame navigation', async () => {
     let rejectLoad: ((reason?: unknown) => void) | undefined
@@ -198,7 +210,11 @@ describe('WhatsAppFastResponseHost navigation', () => {
     start?.({}, 'https://web.whatsapp.com/chats', false, true)
     rejectLoad?.(Object.assign(new Error('ERR_ABORTED (-3)'), { code: 'ERR_ABORTED', errno: -3 }))
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual(['loading'])
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual([
+      'loading',
+      'loading',
+      'loading'
+    ])
   })
   it('ignores an initial load fulfillment after a newer main-frame navigation', async () => {
     let resolveLoad: (() => void) | undefined
@@ -224,7 +240,7 @@ describe('WhatsAppFastResponseHost navigation', () => {
     finish?.()
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(1))
   })
-  it('waits for a new finish before retrying an adapter failure', async () => {
+  it('retries a failed adapter on reattach without reloading the guest', async () => {
     mocks.webContents.insertCSS.mockRejectedValueOnce(new Error('adapter failed'))
     const host = new WhatsAppFastResponseHost(store as never)
     host.attach(sender as never, request)
@@ -233,11 +249,19 @@ describe('WhatsAppFastResponseHost navigation', () => {
     )?.[1]
     finish?.()
     await vi.waitFor(() => expect(sender.send.mock.calls.at(-1)?.[1].state).toBe('error'))
+    expect(mocks.view.setVisible).toHaveBeenLastCalledWith(false)
     host.attach(sender as never, request)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(1)
-    finish?.()
     await vi.waitFor(() => expect(mocks.webContents.insertCSS).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(host.snapshot()).toMatchObject({ loaded: true }))
+    expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+    expect(mocks.WebContentsView).toHaveBeenCalledTimes(1)
+    expect(mocks.webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(sender.send.mock.calls.map(([, state]) => state.state)).toEqual([
+      'loading',
+      'error',
+      'loading',
+      'ready'
+    ])
   })
   it('reconciles the initial load when finish-load is late', async () => {
     let resolveLoad: (() => void) | undefined

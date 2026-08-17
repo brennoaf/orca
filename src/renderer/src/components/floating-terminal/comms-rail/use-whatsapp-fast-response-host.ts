@@ -1,44 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type {
-  WhatsAppFastResponseAttach,
-  WhatsAppFastResponseSnapshot,
-  WhatsAppFastResponseVisibility
-} from '../../../../../shared/whatsapp-fast-response'
+import type { WhatsAppFastResponseSnapshot } from '../../../../../shared/whatsapp-fast-response'
+import { clearWhatsAppFastResponseViewportHidden } from './whatsapp-fast-response-viewport-state'
+import {
+  whatsappFastResponseIdentityKey,
+  whatsappFastResponseSnapshotState,
+  type WhatsAppFastResponseHostBinding,
+  type WhatsAppFastResponseHostState
+} from './whatsapp-fast-response-host-state'
+import { useWhatsAppFastResponseViewportSync } from './use-whatsapp-fast-response-viewport-sync'
 
-export type WhatsAppFastResponseHostBinding = {
-  identity: WhatsAppFastResponseVisibility
-  visible: boolean
-  collapsed?: boolean
-}
-
-export type WhatsAppFastResponseHostState =
-  | { kind: 'inactive' }
-  | { kind: 'loading' }
-  | { kind: 'ready' }
-  | { kind: 'crashed'; recoverable: boolean }
-  | { kind: 'error'; recoverable: boolean }
-
-function identityKey(identity: WhatsAppFastResponseVisibility): string {
-  return identity.target === 'attached'
-    ? `attached:${identity.requestId}:${identity.surfaceId}:${identity.mode}`
-    : `dock:${identity.generation}:${identity.revision}:${identity.tabId}`
-}
-
-function snapshotState(snapshot: WhatsAppFastResponseSnapshot): WhatsAppFastResponseHostState {
-  if (snapshot.crashed) {
-    return { kind: 'crashed', recoverable: true }
-  }
-  return snapshot.loaded ? { kind: 'ready' } : { kind: 'loading' }
-}
-
-function geometryKey(request: WhatsAppFastResponseAttach): string {
-  const { x, y, width, height } = request.rectCss
-  return `${identityKey(request)}:${x}:${y}:${width}:${height}:${request.rendererZoomFactor}`
-}
-
-function rendererZoomFactor(): number {
-  return Math.pow(1.2, window.api.ui.getZoomLevel())
-}
+export type { WhatsAppFastResponseHostBinding, WhatsAppFastResponseHostState }
 
 export function useWhatsAppFastResponseHost({
   binding,
@@ -54,6 +25,7 @@ export function useWhatsAppFastResponseHost({
   const ownerKeyRef = useRef<string | null>(null)
   const geometryKeyRef = useRef<string | null>(null)
   const visibleRef = useRef(false)
+  const viewportHiddenOwnerKeyRef = useRef<string | null>(null)
   const recoveryBindingKeyRef = useRef<string | null>(null)
   const recoveredOwnerKeyRef = useRef<string | null>(null)
   const bindingRef = useRef(binding)
@@ -62,128 +34,64 @@ export function useWhatsAppFastResponseHost({
   elementRef.current = element
 
   useEffect(() => {
-    const nextKey = binding ? identityKey(binding.identity) : null
+    const nextKey = binding ? whatsappFastResponseIdentityKey(binding.identity) : null
     if (recoveryBindingKeyRef.current === nextKey) {
       return
     }
     recoveryBindingKeyRef.current = nextKey
     recoveredOwnerKeyRef.current = null
   }, [binding])
-
   useLayoutEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
     }
   }, [])
-
   const applySnapshot = useCallback(
     (sequence: number, snapshot: WhatsAppFastResponseSnapshot): void => {
       if (mountedRef.current && sequence === sequenceRef.current) {
-        setState(snapshotState(snapshot))
+        setState(whatsappFastResponseSnapshotState(snapshot))
       }
     },
     []
   )
-
   const reportError = useCallback((sequence: number, ownerKey: string): void => {
     const currentBinding = bindingRef.current
     if (
       !mountedRef.current ||
       sequence !== sequenceRef.current ||
       !currentBinding ||
-      identityKey(currentBinding.identity) !== ownerKey
+      whatsappFastResponseIdentityKey(currentBinding.identity) !== ownerKey
     ) {
       return
     }
-    setState({
-      kind: 'error',
-      recoverable: true
-    })
+    setState({ kind: 'error', recoverable: true })
   }, [])
-
-  useLayoutEffect(() => {
-    const currentBinding = bindingRef.current
-    const currentElement = elementRef.current
-    if (!currentBinding || !currentElement || !currentBinding.visible) {
-      return
-    }
-    const sequence = ++sequenceRef.current
-    const ownerKey = identityKey(currentBinding.identity)
-    let disposed = false
-    let frame: number | null = null
-
-    const publish = (): void => {
-      const rect = currentElement.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) {
-        return
-      }
-      const request: WhatsAppFastResponseAttach = {
-        ...currentBinding.identity,
-        rectCss: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        rendererZoomFactor: rendererZoomFactor()
-      }
-      const nextGeometryKey = geometryKey(request)
-      const attach = ownerKeyRef.current !== ownerKey
-      if (!attach && geometryKeyRef.current === nextGeometryKey) {
-        return
-      }
-      const operation = attach
-        ? window.api.whatsappFastResponse.attach(request)
-        : window.api.whatsappFastResponse.updateBounds(request)
-      void operation.then(
-        (snapshot) => {
-          if (disposed || sequence !== sequenceRef.current) {
-            if (attach) {
-              void window.api.whatsappFastResponse.hide(currentBinding.identity).catch(() => void 0)
-            }
-            return
-          }
-          ownerKeyRef.current = ownerKey
-          geometryKeyRef.current = nextGeometryKey
-          visibleRef.current = true
-          applySnapshot(sequence, snapshot)
-        },
-        () => reportError(sequence, ownerKey)
-      )
-    }
-    const schedulePublish = (): void => {
-      if (frame !== null) {
-        cancelAnimationFrame(frame)
-      }
-      frame = requestAnimationFrame(() => {
-        frame = null
-        publish()
-      })
-    }
-    publish()
-    const observer = new ResizeObserver(schedulePublish)
-    observer.observe(currentElement)
-    window.addEventListener('resize', schedulePublish)
-    window.addEventListener('scroll', schedulePublish, true)
-    window.visualViewport?.addEventListener('resize', schedulePublish)
-    window.visualViewport?.addEventListener('scroll', schedulePublish)
-    return () => {
-      disposed = true
-      sequenceRef.current += 1
-      observer.disconnect()
-      if (frame !== null) {
-        cancelAnimationFrame(frame)
-      }
-      window.removeEventListener('resize', schedulePublish)
-      window.removeEventListener('scroll', schedulePublish, true)
-      window.visualViewport?.removeEventListener('resize', schedulePublish)
-      window.visualViewport?.removeEventListener('scroll', schedulePublish)
-    }
-  }, [applySnapshot, binding, element, recoveryEpoch, reportError])
-
+  useWhatsAppFastResponseViewportSync({
+    binding,
+    element,
+    recoveryEpoch,
+    bindingRef,
+    elementRef,
+    sequenceRef,
+    ownerKeyRef,
+    geometryKeyRef,
+    visibleRef,
+    viewportHiddenOwnerKeyRef,
+    applySnapshot,
+    reportError
+  })
   useEffect(() => {
     if (!binding) {
       setState({ kind: 'inactive' })
       return
     }
-    const ownerKey = identityKey(binding.identity)
-    if (ownerKeyRef.current !== ownerKey || binding.visible === visibleRef.current) {
+    const ownerKey = whatsappFastResponseIdentityKey(binding.identity)
+    if (
+      ownerKeyRef.current !== ownerKey ||
+      binding.visible === visibleRef.current ||
+      viewportHiddenOwnerKeyRef.current === ownerKey
+    ) {
       return
     }
     const sequence = ++sequenceRef.current
@@ -206,7 +114,6 @@ export function useWhatsAppFastResponseHost({
       }
     )
   }, [applySnapshot, binding, reportError])
-
   useEffect(
     () =>
       window.api.whatsappFastResponse.onStateChanged((event) => {
@@ -214,20 +121,26 @@ export function useWhatsAppFastResponseHost({
         if (!currentBinding) {
           return
         }
-        const eventOwnerKey = identityKey(event.identity)
-        const currentOwnerKey = identityKey(currentBinding.identity)
+        const eventOwnerKey = whatsappFastResponseIdentityKey(event.identity)
+        const currentOwnerKey = whatsappFastResponseIdentityKey(currentBinding.identity)
         if (currentOwnerKey !== eventOwnerKey) {
           return
         }
         ownerKeyRef.current = currentOwnerKey
         if (event.state === 'loading' || event.state === 'ready') {
-          setState({ kind: event.state })
+          setState({ kind: event.state, contentMode: event.contentMode })
           return
         }
         if (event.state === 'crashed') {
           ownerKeyRef.current = null
           geometryKeyRef.current = null
           visibleRef.current = false
+          if (viewportHiddenOwnerKeyRef.current === eventOwnerKey) {
+            viewportHiddenOwnerKeyRef.current = null
+          }
+          if (event.identity.target === 'attached') {
+            clearWhatsAppFastResponseViewportHidden(event.identity)
+          }
           setState({ kind: 'crashed', recoverable: event.recoverable })
           if (event.recoverable && recoveredOwnerKeyRef.current !== eventOwnerKey) {
             recoveredOwnerKeyRef.current = eventOwnerKey
@@ -235,28 +148,32 @@ export function useWhatsAppFastResponseHost({
           }
           return
         }
-        setState({
-          kind: 'error',
-          recoverable: event.recoverable
-        })
+        setState({ kind: 'error', recoverable: event.recoverable })
       }),
     []
   )
-
   useEffect(
     () => () => {
       const currentBinding = bindingRef.current
-      if (!currentBinding || ownerKeyRef.current !== identityKey(currentBinding.identity)) {
+      if (
+        !currentBinding ||
+        ownerKeyRef.current !== whatsappFastResponseIdentityKey(currentBinding.identity)
+      ) {
         return
       }
       sequenceRef.current += 1
       ownerKeyRef.current = null
       geometryKeyRef.current = null
       visibleRef.current = false
+      if (
+        viewportHiddenOwnerKeyRef.current ===
+        whatsappFastResponseIdentityKey(currentBinding.identity)
+      ) {
+        return
+      }
       void window.api.whatsappFastResponse.hide(currentBinding.identity).catch(() => void 0)
     },
     []
   )
-
   return state
 }

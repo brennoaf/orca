@@ -19,13 +19,14 @@ describe('CompactWhatsAppAttention', () => {
   it('publishes initial unread attention without notifying and keeps it through a failed poll', async () => {
     const executeJavaScriptInIsolatedWorld = vi
       .fn<() => Promise<unknown>>()
-      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({ hasUnread: true, mode: 'list' })
       .mockRejectedValueOnce(new Error('guest unavailable'))
     const onUnread = vi.fn()
     const publish = vi.fn()
     const attention = createCompactWhatsAppAttentionController({
       isCurrent: () => true,
       isFocused: () => false,
+      onContentMode: vi.fn(),
       onUnread,
       publish
     })
@@ -50,15 +51,16 @@ describe('CompactWhatsAppAttention', () => {
   it('notifies only after an observed false-to-true transition', async () => {
     const executeJavaScriptInIsolatedWorld = vi
       .fn<() => Promise<unknown>>()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({ hasUnread: false, mode: 'list' })
+      .mockResolvedValueOnce({ hasUnread: true, mode: 'conversation' })
+      .mockResolvedValueOnce({ hasUnread: true, mode: 'conversation' })
+      .mockResolvedValueOnce({ hasUnread: false, mode: 'conversation' })
+      .mockResolvedValueOnce({ hasUnread: true, mode: 'conversation' })
     const onUnread = vi.fn()
     const attention = createCompactWhatsAppAttentionController({
       isCurrent: () => true,
       isFocused: () => false,
+      onContentMode: vi.fn(),
       onUnread,
       publish: vi.fn()
     })

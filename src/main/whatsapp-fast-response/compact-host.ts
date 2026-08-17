@@ -3,69 +3,66 @@ import type { WebContents, WebContentsView } from 'electron'
 import type { Store } from '../persistence'
 import type {
   WhatsAppFastResponseAttach,
+  WhatsAppFastResponseContentMode,
   WhatsAppFastResponseSnapshot,
   WhatsAppFastResponseState,
   WhatsAppFastResponseVisibility
 } from '../../shared/whatsapp-fast-response'
-import { applyCompactWhatsAppAdapter } from './compact-dom-adapter'
+import type { CompactWhatsAppMode } from './compact-dom-adapter'
+import { assertCurrentOwner, ownerIdentity, visibilityIdentity } from './compact-host-identities'
 import {
-  AdapterReconcileQueue,
-  AdapterApplicationState,
-  contentBoundsForFastResponse,
-  finishAdapterRevision,
-  InitialLoadAttempt,
-  isAbortedNavigationError,
-  assertCurrentOwner,
-  ownerIdentity,
-  visibilityIdentity
-} from './compact-host-identities'
-import type { WhatsAppFastResponseOwner } from './compact-host-identities'
-import {
-  resolveWhatsAppFastResponsePartition,
   reapplyWhatsAppFastResponsePreferences,
   WhatsAppFastResponsePreferences
 } from './compact-host-session'
 import { createCompactWhatsAppAttentionController } from './compact-host-attention'
 import type { CompactWhatsAppAttention } from './compact-host-attention'
 import { publishCompactWhatsAppState } from './compact-host-publication'
-import { createCompactWhatsAppView } from './compact-host-view'
-const WHATSAPP_URL = 'https://web.whatsapp.com/'
-export class WhatsAppFastResponseHost {
-  private view: WebContentsView | null = null
-  private owner: WhatsAppFastResponseOwner | null = null
-  private loaded = false
-  private crashed = false
-  private visible = false
+import { WhatsAppFastResponseHostOwnerLifecycle } from './compact-host-owner-lifecycle'
+
+export class WhatsAppFastResponseHost extends WhatsAppFastResponseHostOwnerLifecycle {
   private readonly attention: CompactWhatsAppAttention
-  private adapterCssKey: string | null = null
   private readonly preferences: WhatsAppFastResponsePreferences
-  private readonly adapterState = new AdapterApplicationState()
-  private readonly initialLoad = new InitialLoadAttempt()
-  private readonly adapterReconciler = new AdapterReconcileQueue()
   constructor(
-    private readonly store: Store,
+    store: Store,
     onUnread: () => void = () => {},
     isFastResponseFocused: () => boolean = () => false
   ) {
+    super(store)
     this.preferences = new WhatsAppFastResponsePreferences(store, () => this.reapplyPreferences())
     this.attention = createCompactWhatsAppAttentionController({
       isCurrent: (view, revision) => this.adapterState.isFinished(this.view, view, revision),
       isFocused: isFastResponseFocused,
+      onContentMode: (mode) => this.updateContentMode(mode),
       onUnread,
       publish: (state) => this.publish(state)
     })
   }
   attach(sender: WebContents, request: WhatsAppFastResponseAttach): WhatsAppFastResponseSnapshot {
+    if (request.target === 'browser') {
+      throw new Error('whatsapp_fast_response_browser_transition_required')
+    }
     const window = BrowserWindow.fromWebContents(sender)
     if (!window || window.isDestroyed()) {
       throw new Error('whatsapp_fast_response_owner_denied')
     }
+    const bounds = this.boundsForCurrentOwner(sender, window, request)
+    const returningFromBrowser = this.owner?.target === 'browser'
+    this.transitionRevision += 1
     const view = this.ensureView()
+    if (this.loaded && this.adapterState.finished !== this.adapterState.revision) {
+      this.adapterState.finish()
+    }
+    view.setVisible(false)
+    view.setBounds(bounds)
     this.detach()
     window.contentView.addChildView(view)
-    view.setBounds(contentBoundsForFastResponse(window.getContentBounds(), request))
-    const closed = () => this.handleOwnerDestroyed(window)
-    window.once('closed', closed)
+    const closed =
+      request.target === 'attached' && request.mode === 'attached-dom'
+        ? null
+        : () => this.handleOwnerDestroyed(window)
+    if (closed) {
+      window.once('closed', closed)
+    }
     this.owner = {
       target: request.target,
       identity: ownerIdentity(request),
@@ -75,10 +72,19 @@ export class WhatsAppFastResponseHost {
       window,
       closed
     }
+    if (returningFromBrowser) {
+      this.contentMode = 'loading'
+    }
     this.visible = true
-    view.setVisible(true)
-    if (this.loaded && this.adapterState.applied !== this.adapterState.revision) {
+    view.setVisible(this.adapterState.applied === this.adapterState.revision)
+    if (this.adapterState.failed === this.adapterState.revision) {
+      this.adapterState.finish()
+    }
+    if (this.adapterState.canApply(this.view, view)) {
       this.requestAdapterReconcile(view)
+    }
+    if (this.shouldRetryPageLoad()) {
+      this.retryFailedPageForOwner(view)
     }
     this.publish(
       this.loaded && this.adapterState.applied === this.adapterState.revision
@@ -90,19 +96,54 @@ export class WhatsAppFastResponseHost {
     this.attention.schedule(view, this.visible, this.adapterState.applied)
     return this.snapshot()
   }
+  async attachBrowser(
+    sender: WebContents,
+    request: Extract<WhatsAppFastResponseAttach, { target: 'browser' }>
+  ): Promise<WhatsAppFastResponseSnapshot> {
+    const transition = this.transitionRevision + 1
+    this.transitionRevision = transition
+    const window = BrowserWindow.fromWebContents(sender)
+    if (!window || window.isDestroyed()) {
+      throw new Error('whatsapp_fast_response_owner_denied')
+    }
+    const view = this.ensureView()
+    return this.attachBrowserView({
+      view,
+      prepareOwner: () => {
+        this.detach()
+        this.owner = {
+          target: request.target,
+          identity: ownerIdentity(request),
+          webContentsId: sender.id,
+          sender,
+          request: visibilityIdentity(request),
+          window,
+          closed: null
+        }
+      },
+      isCurrent: () => this.isCurrentBrowserTransition(transition, view, request),
+      addView: () => {
+        view.setBounds(this.boundsForCurrentOwner(sender, window, request))
+        window.contentView.addChildView(view)
+      },
+      snapshot: () => this.snapshot()
+    })
+  }
   update(sender: WebContents, request: WhatsAppFastResponseAttach): WhatsAppFastResponseSnapshot {
     assertCurrentOwner(this.owner, sender, request)
     const window = BrowserWindow.fromWebContents(sender)
     if (!window || window.isDestroyed()) {
       throw new Error('whatsapp_fast_response_owner_denied')
     }
-    this.view?.setBounds(contentBoundsForFastResponse(window.getContentBounds(), request))
+    this.view?.setBounds(this.boundsForCurrentOwner(sender, window, request))
+    this.view?.setVisible(this.visible && this.canShowOwner())
+    this.publishPresentationState()
     return this.snapshot()
   }
   show(sender: WebContents, request: WhatsAppFastResponseVisibility): WhatsAppFastResponseSnapshot {
     assertCurrentOwner(this.owner, sender, request)
     this.visible = true
-    this.view?.setVisible(true)
+    this.view?.setVisible(this.canShowOwner())
     if (this.view) {
       this.attention.schedule(this.view, this.visible, this.adapterState.applied)
     }
@@ -123,6 +164,20 @@ export class WhatsAppFastResponseHost {
   ): WhatsAppFastResponseSnapshot {
     return this.hide(sender, request)
   }
+  releaseBrowser(sender: WebContents, request: WhatsAppFastResponseVisibility): void {
+    if (
+      request.target !== 'browser' ||
+      this.owner?.target !== 'browser' ||
+      this.owner.identity !== ownerIdentity(request) ||
+      this.owner.webContentsId !== sender.id
+    ) {
+      return
+    }
+    this.transitionRevision += 1
+    this.visible = false
+    this.view?.setVisible(false)
+    this.detach()
+  }
   shutdown(): void {
     this.preferences.dispose()
     this.detach()
@@ -131,78 +186,29 @@ export class WhatsAppFastResponseHost {
     this.view?.webContents.close()
     this.view = null
     this.loaded = false
+    this.pageLoadFailed = false
+    this.pageLoadAborted = false
+    this.pendingMainNavigations = 0
     this.crashed = false
     this.visible = false
+    this.contentMode = 'loading'
     this.attention.reset()
     this.attention.stop()
   }
   snapshot(): WhatsAppFastResponseSnapshot {
     return this.attention.hostSnapshot([
       this.owner !== null,
+      this.contentMode,
       this.crashed,
       this.loaded,
       this.visible
     ])
   }
-  private ensureView(): WebContentsView {
-    if (this.view && !this.view.webContents.isDestroyed()) {
-      return this.view
-    }
-    const partition = resolveWhatsAppFastResponsePartition(this.store)
-    const view = createCompactWhatsAppView({
-      partition,
-      didFinishLoad: (view) => this.finishCurrentRevision(view, true),
-      didStartNavigation: (_view, isInPlace, isMainFrame) => {
-        if (!isMainFrame || isInPlace) {
-          return
-        }
-        this.invalidateAdapter()
-        this.initialLoad.associateNavigation(this.adapterState.revision)
-        void this.removeAdapterCss()
-      },
-      didFailLoad: (view, errorCode, isMainFrame) => {
-        if (!isMainFrame || this.view !== view || errorCode === -3) {
-          return
-        }
-        this.loaded = false
-        this.publish('error')
-      },
-      renderProcessGone: (view) => {
-        if (this.view !== view) {
-          return
-        }
-        this.crashed = true
-        this.invalidateAdapter()
-        this.attention.reset()
-        void this.removeAdapterCss()
-        this.visible = false
-        this.publish('crashed')
-        this.detach()
-        view.webContents.close()
-        this.view = null
-      }
-    })
-    this.view = view
-    const attempt = this.initialLoad.begin(this.adapterState.revision)
-    void view.webContents
-      .loadURL(WHATSAPP_URL)
-      .then(() => {
-        if (this.view === view && this.initialLoad.isCurrent(attempt, this.adapterState.revision)) {
-          this.finishCurrentRevision(view)
-        }
-      })
-      .catch((error: unknown) => {
-        if (this.view === view && this.initialLoad.isCurrent(attempt, this.adapterState.revision)) {
-          if (isAbortedNavigationError(error)) {
-            return
-          }
-          this.loaded = false
-          this.publish('error')
-        }
-      })
-    return view
-  }
   private reapplyPreferences(): void {
+    if (!this.isCompactOwner()) {
+      return
+    }
+    this.view?.setVisible(false)
     reapplyWhatsAppFastResponsePreferences({
       view: this.view,
       loaded: this.loaded,
@@ -211,86 +217,38 @@ export class WhatsAppFastResponseHost {
       reconcile: (view) => this.requestAdapterReconcile(view)
     })
   }
-  private detach(): void {
+  private publishPresentationState(): void {
+    this.publish(this.crashed ? 'crashed' : this.loaded ? 'ready' : 'loading')
+  }
+  private retryFailedPageForOwner(view: WebContentsView): void {
     const owner = this.owner
-    if (!owner) {
-      return
-    }
-    owner.window.removeListener('closed', owner.closed)
-    if (this.view && !owner.window.isDestroyed()) {
-      owner.window.contentView.removeChildView(this.view)
-    }
-    this.owner = null
+    this.retryFailedPage(view, () => this.owner === owner)
   }
-  private handleOwnerDestroyed(window: BrowserWindow): void {
-    if (this.owner?.window !== window) {
-      return
-    }
-    this.owner = null
-    this.visible = false
-    this.view?.setVisible(false)
-    if (this.view) {
-      this.attention.schedule(this.view, this.visible, this.adapterState.applied)
-    }
+  protected scheduleAttention(view: WebContentsView): void {
+    this.attention.schedule(view, this.visible, this.adapterState.applied)
   }
-  private requestAdapterReconcile(view: WebContentsView): void {
-    this.adapterReconciler.request(
-      () => this.reconcileAdapter(view),
-      () => this.adapterState.canApply(this.view, view)
-    )
+  protected resetAttention(): void {
+    this.attention.reset()
   }
-  private finishCurrentRevision(view: WebContentsView, force = false): void {
-    if (finishAdapterRevision(this.adapterState, this.view, view, force)) {
-      this.requestAdapterReconcile(view)
-    }
-  }
-  private async reconcileAdapter(view: WebContentsView): Promise<void> {
-    if (!this.adapterState.canApply(this.view, view)) {
-      return
-    }
-    const revision = this.adapterState.revision
-    try {
-      const adapter = await applyCompactWhatsAppAdapter(
-        view.webContents,
-        this.adapterCssKey,
-        () => this.adapterState.isCurrent(this.view, view, revision),
-        this.preferences.hideArchivedChats
-      )
-      if (!adapter) {
-        return
-      }
-      if (!this.adapterState.isFinished(this.view, view, revision)) {
-        await view.webContents.removeInsertedCSS(adapter.cssKey).catch(() => {})
-        return
-      }
-      this.adapterCssKey = adapter.cssKey
-      this.adapterState.applied = revision
-      this.loaded = true
-      this.crashed = false
-      this.publish('ready')
-      this.attention.schedule(view, this.visible, this.adapterState.applied)
-    } catch {
-      if (this.adapterState.isFinished(this.view, view, revision)) {
-        this.loaded = false
-        this.adapterState.failed = revision
-        this.publish('error')
-      }
-    }
-  }
-  private invalidateAdapter(): void {
-    this.adapterState.invalidate()
-    this.adapterReconciler.reset()
-    this.loaded = false
+  protected stopAttention(): void {
     this.attention.stop()
   }
-  private async removeAdapterCss(): Promise<void> {
-    const key = this.adapterCssKey
-    this.adapterCssKey = null
-    if (key && this.view && !this.view.webContents.isDestroyed()) {
-      await this.view.webContents.removeInsertedCSS(key).catch(() => {})
+  protected hideArchivedChats(): boolean {
+    return this.preferences.hideArchivedChats
+  }
+  protected publish(state: WhatsAppFastResponseState): void {
+    publishCompactWhatsAppState(this.owner, this.attention.snapshot(), this.contentMode, state)
+  }
+  private updateContentMode(mode: CompactWhatsAppMode): void {
+    const contentMode = compactContentMode(mode)
+    if (contentMode === this.contentMode) {
+      return
     }
+    this.contentMode = contentMode
+    this.publishPresentationState()
   }
-  private publish(state: WhatsAppFastResponseState): void {
-    publishCompactWhatsAppState(this.owner, this.attention.snapshot(), state)
-  }
+}
+
+function compactContentMode(mode: CompactWhatsAppMode): WhatsAppFastResponseContentMode {
+  return mode === 'loading' || mode === 'qr' ? mode : 'compact'
 }

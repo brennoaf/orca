@@ -1,14 +1,18 @@
 import type { WebContentsView } from 'electron'
 import type {
   WhatsAppFastResponseAttention,
+  WhatsAppFastResponseContentMode,
   WhatsAppFastResponseSnapshot,
   WhatsAppFastResponseState
 } from '../../shared/whatsapp-fast-response'
+import { isCompactWhatsAppMode } from './compact-dom-adapter'
+import type { CompactWhatsAppMode } from './compact-dom-adapter'
 import { sendToTrustedUIRenderer } from '../ipc/ui'
 
 type CompactWhatsAppAttentionDependencies = {
   isCurrent: (view: WebContentsView, revision: number) => boolean
   isFocused: () => boolean
+  onContentMode: (mode: CompactWhatsAppMode) => void
   onUnread: () => void
   publish: (state: WhatsAppFastResponseState) => void
 }
@@ -20,12 +24,12 @@ export class CompactWhatsAppAttentionPolling {
     view,
     delay,
     isCurrent,
-    onAttention
+    onSample
   }: {
     view: WebContentsView
     delay: number
     isCurrent: () => boolean
-    onAttention: (hasUnread: boolean) => void
+    onSample: (hasUnread: boolean, mode: CompactWhatsAppMode) => void
   }): void {
     this.stop()
     if (!isCurrent()) {
@@ -33,7 +37,7 @@ export class CompactWhatsAppAttentionPolling {
     }
     this.timer = setTimeout(() => {
       this.timer = null
-      void this.read({ view, delay, isCurrent, onAttention })
+      void this.read({ view, delay, isCurrent, onSample })
     }, delay)
   }
 
@@ -48,12 +52,12 @@ export class CompactWhatsAppAttentionPolling {
     view,
     delay,
     isCurrent,
-    onAttention
+    onSample
   }: {
     view: WebContentsView
     delay: number
     isCurrent: () => boolean
-    onAttention: (hasUnread: boolean) => void
+    onSample: (hasUnread: boolean, mode: CompactWhatsAppMode) => void
   }): Promise<void> {
     if (!isCurrent()) {
       return
@@ -63,7 +67,7 @@ export class CompactWhatsAppAttentionPolling {
         999,
         [
           {
-            code: "document.documentElement.getAttribute('data-orca-whatsapp-has-unread') === 'true'"
+            code: "({hasUnread:document.documentElement.getAttribute('data-orca-whatsapp-has-unread')==='true',mode:document.documentElement.getAttribute('data-orca-whatsapp-mode')})"
           }
         ],
         false
@@ -72,11 +76,11 @@ export class CompactWhatsAppAttentionPolling {
         (value) => ({ ok: true as const, value }),
         () => ({ ok: false as const })
       )
-    if (result.ok && isCurrent()) {
-      onAttention(result.value === true)
+    if (result.ok && isCurrent() && isAttentionSample(result.value)) {
+      onSample(result.value.hasUnread, result.value.mode)
     }
     if (isCurrent()) {
-      this.schedule({ view, delay, isCurrent, onAttention })
+      this.schedule({ view, delay, isCurrent, onSample })
     }
   }
 }
@@ -96,13 +100,14 @@ export class CompactWhatsAppAttention {
     return { hasUnread: this.hasUnreadValue }
   }
 
-  hostSnapshot([attached, crashed, loaded, visible]: readonly [
+  hostSnapshot([attached, contentMode, crashed, loaded, visible]: readonly [
     boolean,
+    WhatsAppFastResponseContentMode,
     boolean,
     boolean,
     boolean
   ]): WhatsAppFastResponseSnapshot {
-    return { attention: this.snapshot(), attached, crashed, loaded, visible }
+    return { attention: this.snapshot(), attached, contentMode, crashed, loaded, visible }
   }
 
   schedule(view: WebContentsView, visible: boolean, revision: number): void {
@@ -110,7 +115,10 @@ export class CompactWhatsAppAttention {
       view,
       delay: visible ? 2000 : 7000,
       isCurrent: () => this.dependencies.isCurrent(view, revision),
-      onAttention: (hasUnread) => this.set(hasUnread)
+      onSample: (hasUnread, mode) => {
+        this.dependencies.onContentMode(mode)
+        this.set(hasUnread)
+      }
     })
   }
 
@@ -152,4 +160,14 @@ export function createCompactWhatsAppAttentionController(
   dependencies: CompactWhatsAppAttentionDependencies
 ): CompactWhatsAppAttention {
   return new CompactWhatsAppAttention(dependencies)
+}
+
+function isAttentionSample(
+  value: unknown
+): value is { hasUnread: boolean; mode: CompactWhatsAppMode } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const sample = value as { hasUnread?: unknown; mode?: unknown }
+  return typeof sample.hasUnread === 'boolean' && isCompactWhatsAppMode(sample.mode)
 }

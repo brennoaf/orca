@@ -1,4 +1,5 @@
 import { WebContentsView } from 'electron'
+import { configureCommunicationWebNavigation } from '../communication-web-external-navigation'
 import { isWhatsAppUrl } from './compact-host-identities'
 
 export function createCompactWhatsAppView({
@@ -17,17 +18,7 @@ export function createCompactWhatsAppView({
   const view = new WebContentsView({
     webPreferences: { contextIsolation: true, nodeIntegration: false, partition, sandbox: true }
   })
-  view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  view.webContents.on('will-navigate', (event, url) => {
-    if (!isWhatsAppUrl(url)) {
-      event.preventDefault()
-    }
-  })
-  view.webContents.on('will-redirect', (event, url) => {
-    if (!isWhatsAppUrl(url)) {
-      event.preventDefault()
-    }
-  })
+  configureCommunicationWebNavigation(view.webContents, isWhatsAppUrl)
   view.webContents.on('did-finish-load', () => didFinishLoad(view))
   view.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) =>
     didStartNavigation(view, isInPlace, isMainFrame)

@@ -21,11 +21,13 @@ describe('publishCompactWhatsAppState', () => {
         closed: () => {}
       },
       { hasUnread: true },
+      'compact',
       'ready'
     )
 
     expect(send).toHaveBeenCalledWith('whatsappFastResponse:stateChanged', {
       attention: { hasUnread: true },
+      contentMode: 'compact',
       identity: {
         target: 'attached',
         appId: 'whatsapp-web',
@@ -57,6 +59,7 @@ describe('publishCompactWhatsAppState', () => {
         closed: () => {}
       },
       { hasUnread: true },
+      'qr',
       'ready'
     )
 
