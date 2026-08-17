@@ -6,13 +6,14 @@ import type {
   FloatingCommsDetachRequest,
   FloatingCommsDiscordCommand,
   FloatingCommsMeasureRequest,
-  FloatingCommsMinimizeDetachedRequest,
+  FloatingCommsResizeRequest,
   FloatingCommsOpenRequest,
   FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
 import {
   FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH,
-  FLOATING_COMMS_SURFACE_MAX_HEIGHT
+  FLOATING_COMMS_SURFACE_MAX_HEIGHT,
+  FLOATING_COMMS_SURFACE_MIN_HEIGHT
 } from '../../shared/floating-comms-surface'
 import {
   FLOATING_WORKSPACE_APPS,
@@ -40,7 +41,7 @@ function isAppId(value: unknown): value is FloatingWorkspaceAppId {
 
 const PositiveSafeInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const FloatingCommsAppId = z.custom<FloatingWorkspaceAppId>(isAppId)
-const FloatingCommsMode = z.enum(['attached-native', 'attached-dom', 'detached'])
+const FloatingCommsMode = z.enum(['attached-native', 'attached-dom'])
 const FloatingCommsIdentityFields = {
   appId: FloatingCommsAppId,
   requestId: PositiveSafeInteger,
@@ -62,7 +63,11 @@ const FloatingCommsOpenRequestSchema: z.ZodType<FloatingCommsOpenRequest> = z
     requestId: PositiveSafeInteger,
     anchor: FloatingCommsAnchor,
     workspace: FloatingCommsAnchor,
-    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
+    height: z
+      .number()
+      .finite()
+      .min(FLOATING_COMMS_SURFACE_MIN_HEIGHT)
+      .max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
   })
   .strict()
 const FloatingCommsUpdateRequestSchema: z.ZodType<FloatingCommsUpdateRequest> = z
@@ -70,7 +75,11 @@ const FloatingCommsUpdateRequestSchema: z.ZodType<FloatingCommsUpdateRequest> = 
     ...FloatingCommsIdentityFields,
     anchor: FloatingCommsAnchor,
     workspace: FloatingCommsAnchor,
-    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT),
+    height: z
+      .number()
+      .finite()
+      .min(FLOATING_COMMS_SURFACE_MIN_HEIGHT)
+      .max(FLOATING_COMMS_SURFACE_MAX_HEIGHT),
     geometryRequestId: PositiveSafeInteger.nullable()
   })
   .strict()
@@ -79,9 +88,15 @@ const FloatingCommsCloseAttachedRequestSchema: z.ZodType<FloatingCommsCloseAttac
 const FloatingCommsMeasureRequestSchema: z.ZodType<FloatingCommsMeasureRequest> = z
   .object({
     ...FloatingCommsIdentityFields,
-    height: z.number().finite().positive().max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
+    height: z
+      .number()
+      .finite()
+      .min(FLOATING_COMMS_SURFACE_MIN_HEIGHT)
+      .max(FLOATING_COMMS_SURFACE_MAX_HEIGHT)
   })
   .strict()
+const FloatingCommsResizeRequestSchema: z.ZodType<FloatingCommsResizeRequest> =
+  FloatingCommsMeasureRequestSchema
 const FloatingCommsSessionStateSchema = z.discriminatedUnion('appId', [
   z
     .object({
@@ -100,8 +115,6 @@ const FloatingCommsDetachRequestSchema: z.ZodType<FloatingCommsDetachRequest> = 
   })
   .strict()
   .refine((request) => request.appId === request.sessionState.appId)
-const FloatingCommsMinimizeDetachedRequestSchema: z.ZodType<FloatingCommsMinimizeDetachedRequest> =
-  FloatingCommsDetachRequestSchema
 const FloatingCommsAppRequestSchema = z.object({ appId: FloatingCommsAppId }).strict()
 const FloatingCommsDiscordCommandIdentity = {
   appId: z.literal('discord'),
@@ -141,7 +154,7 @@ const FloatingCommsActionSchema: z.ZodType<FloatingCommsAction> = z.discriminate
     .object({
       type: z.literal('open-settings'),
       ...FloatingCommsIdentityFields,
-      provider: z.enum(['discord', 'slack'])
+      provider: z.literal('discord')
     })
     .strict()
 ])
@@ -218,7 +231,17 @@ export function registerFloatingCommsSurfaceHandlers(): void {
     ) {
       throw new Error('floating_comms_measure_denied')
     }
-    floatingCommsSurfaceController.resize(request.data, request.data.height)
+    floatingCommsSurfaceController.measure(event.sender, request.data, request.data.height)
+  })
+  ipcMain.handle('floatingComms:resize', (event, value: unknown) => {
+    const request = FloatingCommsResizeRequestSchema.safeParse(value)
+    if (
+      !request.success ||
+      !floatingCommsSurfaceController.isAttachedSender(event.sender, request.data)
+    ) {
+      throw new Error('floating_comms_resize_denied')
+    }
+    floatingCommsSurfaceController.resize(request.data, request.data.height, true)
   })
   ipcMain.handle('floatingComms:detach', (event, value: unknown) => {
     const request = FloatingCommsDetachRequestSchema.safeParse(value)
@@ -231,30 +254,6 @@ export function registerFloatingCommsSurfaceHandlers(): void {
     }
     const sessionState = floatingCommsSurfaceController.takeAttachedForDock(request.data)
     return communicationsDockController.openOrFocus(request.data.appId, sessionState)
-  })
-  ipcMain.handle('floatingComms:minimizeDetached', (event, value: unknown) => {
-    const request = FloatingCommsMinimizeDetachedRequestSchema.safeParse(value)
-    if (
-      !request.success ||
-      !floatingCommsSurfaceController.isDetachedSender(event.sender, request.data)
-    ) {
-      throw new Error('floating_comms_minimize_denied')
-    }
-    floatingCommsSurfaceController.minimizeDetached(request.data)
-  })
-  ipcMain.handle('floatingComms:focusDetached', (event, value: unknown) => {
-    const request = FloatingCommsAppRequestSchema.safeParse(value)
-    if (!isTrustedUIRenderer(event.sender) || !request.success) {
-      throw new Error('floating_comms_focus_denied')
-    }
-    return floatingCommsSurfaceController.focusDetached(request.data.appId)
-  })
-  ipcMain.handle('floatingComms:closeDetached', (event, value: unknown) => {
-    const request = FloatingCommsAppRequestSchema.safeParse(value)
-    if (!isTrustedUIRenderer(event.sender) || !request.success) {
-      throw new Error('floating_comms_close_detached_denied')
-    }
-    floatingCommsSurfaceController.closeDetached(request.data.appId)
   })
   ipcMain.handle('floatingComms:disable', (event, value: unknown) => {
     const request = FloatingCommsAppRequestSchema.safeParse(value)

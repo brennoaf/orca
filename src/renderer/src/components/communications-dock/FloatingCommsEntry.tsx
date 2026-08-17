@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
+import { flushSync } from 'react-dom'
 import type { CommunicationsDockSnapshot } from '../../../../shared/communications-dock'
 import { CommunicationsDockRoot } from './CommunicationsDockRoot'
 
@@ -36,7 +37,11 @@ export function FloatingCommsEntry({
     return <div className="h-screen bg-background" />
   }
   return entry.mode === 'dock' ? (
-    <CommunicationsDockRoot initialSnapshot={entry.snapshot} reportError={reportError} />
+    <CommunicationsDockRoot
+      initialSnapshot={entry.snapshot}
+      reportError={reportError}
+      onExit={() => flushSync(() => setEntry(null))}
+    />
   ) : (
     surface
   )

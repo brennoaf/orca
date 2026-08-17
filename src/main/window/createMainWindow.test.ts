@@ -11,6 +11,7 @@ const {
   notificationShowMock,
   powerMonitorOnMock,
   powerMonitorRemoveListenerMock,
+  acquireSandboxPreloadPathMock,
   isMock,
   macosTahoeMock
 } = vi.hoisted(() => {
@@ -28,6 +29,10 @@ const {
     notificationShowMock,
     powerMonitorOnMock: vi.fn(),
     powerMonitorRemoveListenerMock: vi.fn(),
+    acquireSandboxPreloadPathMock: vi.fn((_directory: string, name: string) => ({
+      path: `C:\\out\\sandbox-preload\\generations\\${'a'.repeat(64)}\\${name}.js`,
+      release: vi.fn()
+    })),
     isMock: { dev: false },
     macosTahoeMock: { value: false }
   }
@@ -58,6 +63,10 @@ vi.mock('./macos-tahoe-release', () => ({
 
 vi.mock('../app-icon', () => ({
   getAppIconPath: vi.fn(() => 'icon')
+}))
+
+vi.mock('../sandbox-preload-path', () => ({
+  acquireSandboxPreloadPath: acquireSandboxPreloadPathMock
 }))
 
 vi.mock('../browser/browser-manager', () => ({
@@ -101,6 +110,7 @@ describe('createMainWindow', () => {
     notificationShowMock.mockClear()
     powerMonitorOnMock.mockReset()
     powerMonitorRemoveListenerMock.mockReset()
+    acquireSandboxPreloadPathMock.mockClear()
     isMock.dev = false
     macosTahoeMock.value = false
     vi.mocked(ipcMain.on).mockReset()
@@ -109,6 +119,17 @@ describe('createMainWindow', () => {
     vi.mocked(ipcMain.removeHandler).mockReset()
     resetExpectedTeardownStateForTest()
     vi.useRealTimers()
+  })
+
+  it('fails before creating the main window when the sandbox preload is unavailable', () => {
+    acquireSandboxPreloadPathMock.mockImplementationOnce(() => {
+      throw new Error('sandbox_preload_manifest_invalid:browser-window-close-preload')
+    })
+
+    expect(() => createMainWindow(null)).toThrow(
+      'sandbox_preload_manifest_invalid:browser-window-close-preload'
+    )
+    expect(browserWindowMock).not.toHaveBeenCalled()
   })
 
   it('can defer renderer loading until startup IPC handlers are registered', () => {

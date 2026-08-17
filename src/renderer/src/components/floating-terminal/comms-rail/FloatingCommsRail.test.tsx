@@ -51,8 +51,28 @@ vi.mock('@/components/ui/popover', () => ({
     </div>
   ),
   PopoverAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="popover-content">{children}</div>
+  PopoverContent: ({
+    children,
+    className,
+    collisionBoundary,
+    portalContainer,
+    style
+  }: {
+    children: React.ReactNode
+    className?: string
+    collisionBoundary?: HTMLElement | null
+    portalContainer?: HTMLElement | null
+    style?: React.CSSProperties
+  }) => (
+    <div
+      data-testid="popover-content"
+      data-collision-body={collisionBoundary === document.body}
+      data-portal-body={portalContainer === document.body}
+      className={className}
+      style={style}
+    >
+      {children}
+    </div>
   )
 }))
 
@@ -69,27 +89,6 @@ function identity(
   surfaceId = requestId
 ): FloatingCommsSurfaceIdentity {
   return { appId, requestId, surfaceId, mode }
-}
-
-function presentation(value: FloatingCommsSurfaceIdentity): FloatingCommsSurfacePresentation {
-  return {
-    ...value,
-    discord: {
-      connection: 'connected',
-      channelId: null,
-      channelName: null,
-      selfUserId: null,
-      participants: [],
-      credentialsConfigured: true,
-      lastError: null
-    },
-    overlayOpen: false,
-    sessionState:
-      value.appId === 'whatsapp-web'
-        ? { appId: 'whatsapp-web', selectedConversationId: null, draft: '' }
-        : { appId: value.appId },
-    visible: true
-  }
 }
 
 function dockSnapshot(appId: FloatingWorkspaceAppId): CommunicationsDockSnapshot {
@@ -151,8 +150,17 @@ describe('FloatingCommsRail', () => {
     offReattached = vi.fn()
     Object.assign(window, {
       api: {
+        ui: { getZoomLevel: vi.fn(() => 0) },
         whatsappFastResponse: {
-          attach: vi.fn(),
+          attach: vi.fn(() =>
+            Promise.resolve({
+              attention: { hasUnread: false },
+              attached: true,
+              crashed: false,
+              loaded: false,
+              visible: true
+            })
+          ),
           updateBounds: vi.fn(),
           show: vi.fn(),
           hide: vi.fn(() =>
@@ -172,12 +180,9 @@ describe('FloatingCommsRail', () => {
             Promise.resolve({ identity: request })
           ),
           closeAttached: vi.fn(() => Promise.resolve()),
+          resize: vi.fn(() => Promise.resolve()),
           detach: vi.fn((request: FloatingCommsSurfaceIdentity) =>
-            Promise.resolve(presentation({ ...request, mode: 'detached' }))
-          ),
-          minimizeDetached: vi.fn(() => Promise.resolve()),
-          focusDetached: vi.fn((request: { appId: FloatingWorkspaceAppId }) =>
-            Promise.resolve(presentation(identity(request.appId, 1, 'detached')))
+            Promise.resolve(dockSnapshot(request.appId))
           ),
           disable: vi.fn(() => Promise.resolve()),
           listPresentations: vi.fn(() => Promise.resolve(initialPresentations)),
@@ -248,6 +253,15 @@ describe('FloatingCommsRail', () => {
     expect(container.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
       'true'
     )
+    expect(container.querySelector('[data-testid="popover-content"]')).toMatchObject({
+      dataset: expect.objectContaining({ collisionBody: 'true', portalBody: 'true' })
+    })
+    expect(container.querySelector('[data-testid="popover-content"]')?.className).toContain(
+      'h-[min(420px,var(--radix-popover-content-available-height))]'
+    )
+    expect(container.querySelector('[data-testid="popover-content"]')?.className).not.toContain(
+      'max-h-'
+    )
     const detachButton = container.querySelector('button[aria-label="Detach overlay"]')
     if (!(detachButton instanceof HTMLButtonElement)) {
       throw new Error('Detach action was not rendered')
@@ -264,6 +278,68 @@ describe('FloatingCommsRail', () => {
       }
     })
     expect(window.api.floatingComms.closeAttached).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
+      'false'
+    )
+    expect(
+      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('false')
+    const detachedRail = button(container, 'Slack')
+    expect(detachedRail.getAttribute('data-surface-mode')).toBe('detached')
+    await act(async () => detachedRail.click())
+    expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'slack' })
+    expect(window.api.floatingComms.open).toHaveBeenCalledOnce()
+  })
+
+  it('does not let a stale detach response clear a newer attached owner', async () => {
+    let resolveDetach: (snapshot: CommunicationsDockSnapshot) => void = () => undefined
+    let resolveOpen: (result: { identity: FloatingCommsSurfaceIdentity }) => void = () => undefined
+    vi.mocked(window.api.floatingCommsDock.detach).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDetach = resolve
+      })
+    )
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    await act(async () => button(container, 'Slack').click())
+    const first = identity('slack', 1, 'attached-dom')
+    const detachButton = container.querySelector('button[aria-label="Detach overlay"]')
+    if (!(detachButton instanceof HTMLButtonElement)) {
+      throw new Error('Detach action was not rendered')
+    }
+    act(() => detachButton.click())
+    act(() =>
+      surfaceChanged?.({
+        appId: 'slack',
+        previous: first,
+        current: null,
+        reason: 'detached',
+        sessionState: { appId: 'slack' }
+      })
+    )
+    vi.mocked(window.api.floatingComms.open).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOpen = resolve
+      })
+    )
+    act(() => button(container, 'Slack').click())
+    await act(async () => resolveDetach(dockSnapshot('slack')))
+
+    expect(window.api.floatingComms.open).toHaveBeenCalledTimes(2)
+    expect(button(container, 'Slack').getAttribute('data-surface-mode')).toBe('closed')
+    expect(window.api.floatingCommsDock.openOrFocus).not.toHaveBeenCalled()
+    await act(async () => resolveOpen({ identity: identity('slack', 3, 'attached-dom') }))
+    expect(button(container, 'Slack').getAttribute('data-surface-mode')).toBe('attached')
+    expect(container.querySelector('[data-testid="popover-root"]')?.getAttribute('data-open')).toBe(
+      'true'
+    )
+    expect(
+      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
+    ).toBe('true')
+    await act(async () => button(container, 'Slack').click())
+    expect(window.api.floatingComms.closeAttached).toHaveBeenCalledWith(
+      identity('slack', 3, 'attached-dom')
+    )
   })
 
   it('hydrates a visible dock and activates a different app without opening attached', async () => {
@@ -272,6 +348,7 @@ describe('FloatingCommsRail', () => {
     await act(async () => await Promise.resolve())
     const discord = button(container, 'Discord')
     expect(discord.getAttribute('data-surface-mode')).toBe('detached')
+    expect(discord.getAttribute('aria-label')).toContain('Focus Discord in communication dock')
     await act(async () => discord.click())
     expect(window.api.floatingCommsDock.openOrFocus).toHaveBeenCalledWith({ appId: 'discord' })
     expect(window.api.floatingComms.open).not.toHaveBeenCalled()
@@ -297,6 +374,89 @@ describe('FloatingCommsRail', () => {
     await act(async () => button(container, 'Slack').click())
     expect(window.api.floatingComms.open).toHaveBeenCalled()
     expect(window.api.floatingCommsDock.openOrFocus).not.toHaveBeenCalled()
+  })
+
+  it('disables popover transforms only for native attached DOM managers', async () => {
+    const container = mount()
+    await act(async () => await Promise.resolve())
+
+    await act(async () => button(container, 'Slack').click())
+    expect(container.querySelector('[data-testid="popover-content"]')?.className).toContain(
+      'data-[state=open]:animate-none data-[state=closed]:animate-none'
+    )
+    await act(async () => button(container, 'Slack').click())
+
+    await act(async () => button(container, 'WhatsApp Web').click())
+    expect(container.querySelector('[data-testid="popover-content"]')?.className).toContain(
+      'data-[state=open]:animate-none data-[state=closed]:animate-none'
+    )
+    await act(async () => button(container, 'WhatsApp Web').click())
+
+    await act(async () => button(container, 'Discord').click())
+    expect(container.querySelector('[data-testid="popover-content"]')?.className).not.toContain(
+      'animate-none'
+    )
+  })
+
+  it('attaches compact WhatsApp Web when the attached surface falls back to DOM', async () => {
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(12, 18, 300, 240))
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    await act(async () => button(container, 'WhatsApp Web').click())
+
+    expect(window.api.whatsappFastResponse.attach).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'attached',
+        appId: 'whatsapp-web',
+        requestId: 1,
+        surfaceId: 1,
+        mode: 'attached-dom'
+      })
+    )
+    bounds.mockRestore()
+  })
+
+  it('resizes only the attached WhatsApp DOM surface within the viewport and shared bounds', async () => {
+    HTMLElement.prototype.setPointerCapture = vi.fn()
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 320, 480))
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    await act(async () => button(container, 'WhatsApp Web').click())
+    const handle = container.querySelector('[aria-label="Resize fast response"]')
+    if (!(handle instanceof HTMLDivElement)) {
+      throw new Error('Fast response resize handle was not rendered')
+    }
+    await act(async () => {
+      handle.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientY: 0 })
+      )
+      handle.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: 400 })
+      )
+    })
+    expect(window.api.floatingComms.resize).not.toHaveBeenCalled()
+    await act(async () => {
+      handle.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientY: 400 })
+      )
+    })
+    expect(window.api.floatingComms.resize).toHaveBeenCalledWith({
+      ...identity('whatsapp-web', 1, 'attached-dom'),
+      height: 480
+    })
+    bounds.mockRestore()
+  })
+
+  it('does not render a resize handle or call resize for disallowed attached surfaces', async () => {
+    const container = mount()
+    await act(async () => await Promise.resolve())
+    await act(async () => button(container, 'Discord').click())
+    expect(container.querySelector('[aria-label="Resize fast response"]')).toBeNull()
+    expect(window.api.floatingComms.resize).not.toHaveBeenCalled()
   })
 
   it('does not open attached while initial presence is unresolved', async () => {
@@ -343,73 +503,6 @@ describe('FloatingCommsRail', () => {
     expect(offPresence).toHaveBeenCalledOnce()
     expect(offReattached).toHaveBeenCalledOnce()
     expect(container.childElementCount).toBe(0)
-  })
-
-  it('focuses an existing detached manager without opening or locking input', async () => {
-    initialPresentations = [presentation(identity('discord', 7, 'detached', 70))]
-    const container = mount()
-    await act(async () => await Promise.resolve())
-    const discord = button(container, 'Discord')
-    expect(discord.getAttribute('data-surface-mode')).toBe('detached')
-    expect(discord.getAttribute('aria-label')).toContain('Focus Discord detached overlay')
-    expect(container.textContent).toContain('Focus Discord detached overlay')
-    await act(async () => discord.click())
-    expect(window.api.floatingComms.focusDetached).toHaveBeenCalledWith({ appId: 'discord' })
-    expect(window.api.floatingComms.open).not.toHaveBeenCalled()
-    expect(
-      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
-    ).toBe('false')
-  })
-
-  it('shows multiple detached presentation indicators', async () => {
-    initialPresentations = [
-      presentation(identity('slack', 2, 'detached', 20)),
-      presentation(identity('discord', 3, 'detached', 30))
-    ]
-    const container = mount()
-    await act(async () => await Promise.resolve())
-    expect(container.querySelectorAll('[data-surface-mode="detached"]')).toHaveLength(2)
-  })
-
-  it('unlocks input when an attached native manager becomes detached', async () => {
-    const floatingComms = window.api.floatingComms
-    vi.mocked(floatingComms.open).mockResolvedValue({
-      identity: identity('discord', 1, 'attached-native', 10)
-    })
-    const container = mount()
-    await act(async () => await Promise.resolve())
-    await act(async () => button(container, 'Discord').click())
-    expect(
-      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
-    ).toBe('true')
-    act(() =>
-      surfaceChanged?.({
-        appId: 'discord',
-        previous: identity('discord', 1, 'attached-native', 10),
-        current: identity('discord', 1, 'detached', 10),
-        reason: 'detached',
-        sessionState: { appId: 'discord' }
-      })
-    )
-    expect(
-      container.querySelector('[data-testid="webview-input"]')?.getAttribute('data-input-locked')
-    ).toBe('false')
-  })
-
-  it('ignores a stale close transition for a newer detached surface', async () => {
-    initialPresentations = [presentation(identity('slack', 5, 'detached', 50))]
-    const container = mount()
-    await act(async () => await Promise.resolve())
-    act(() =>
-      surfaceChanged?.({
-        appId: 'slack',
-        previous: identity('slack', 4, 'detached', 40),
-        current: null,
-        reason: 'closed',
-        sessionState: null
-      })
-    )
-    expect(button(container, 'Slack').getAttribute('data-surface-mode')).toBe('detached')
   })
 
   it('closes an attached manager when the panel becomes hidden', async () => {

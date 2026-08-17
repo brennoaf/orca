@@ -14,11 +14,11 @@ describe('placeFloatingCommsSurface', () => {
         contentBounds,
         workAreas,
         anchor,
-        workspace,
+        workspace: { ...workspace, height: 400 },
         zoomFactor: 1,
         measuredHeight: 300
       })
-    ).toEqual({ x: 172, y: 190, width: 320, height: 300 })
+    ).toEqual({ x: 172, y: 190, width: 320, height: 420 })
   })
 
   it('uses the whole right placement when the left side does not fit', () => {
@@ -31,7 +31,7 @@ describe('placeFloatingCommsSurface', () => {
         zoomFactor: 1,
         measuredHeight: 300
       })
-    ).toEqual({ x: 628, y: 190, width: 320, height: 300 })
+    ).toEqual({ x: 628, y: 190, width: 320, height: 420 })
   })
 
   it('returns no placement when neither side fits despite available screen space', () => {
@@ -76,7 +76,7 @@ describe('placeFloatingCommsSurface', () => {
         zoomFactor: 1,
         measuredHeight: 300
       })
-    ).toEqual({ x: 72, y: 740, width: 320, height: 300 })
+    ).toEqual({ x: 72, y: 740, width: 320, height: 420 })
   })
 
   it('supports negative display coordinates without leaving the Orca content bounds', () => {
@@ -111,7 +111,7 @@ describe('placeFloatingCommsSurface', () => {
           zoomFactor,
           measuredHeight: 200
         })
-      ).toEqual({ x: expectedX, y: expectedY, width: 320, height: 200 })
+      ).toEqual({ x: expectedX, y: expectedY, width: 320, height: 420 })
     }
   )
 
@@ -126,6 +126,19 @@ describe('placeFloatingCommsSurface', () => {
         measuredHeight: 300
       })
     ).toBeNull()
+  })
+
+  it('uses available height when it is between the minimum and preferred height', () => {
+    expect(
+      placeFloatingCommsSurface({
+        contentBounds: { ...contentBounds, height: 500 },
+        workAreas,
+        anchor,
+        workspace: { ...workspace, height: 400 },
+        zoomFactor: 1,
+        measuredHeight: 520
+      })
+    ).toEqual({ x: 172, y: 50, width: 320, height: 500 })
   })
 
   it('rejects an anchor outside the workspace shell', () => {
@@ -145,7 +158,7 @@ describe('placeFloatingCommsSurface', () => {
 describe('clampFloatingCommsSurfaceHeight', () => {
   it('rounds rendered height and clamps growth to the surface maximum', () => {
     expect(clampFloatingCommsSurfaceHeight(419.6)).toBe(420)
-    expect(clampFloatingCommsSurfaceHeight(431)).toBe(420)
-    expect(clampFloatingCommsSurfaceHeight(Number.NaN)).toBe(1)
+    expect(clampFloatingCommsSurfaceHeight(431)).toBe(431)
+    expect(clampFloatingCommsSurfaceHeight(Number.NaN)).toBe(420)
   })
 })

@@ -9,18 +9,15 @@ import {
 } from 'react'
 import type { CommunicationsDockPresence } from '../../../../../shared/communications-dock'
 import type { FloatingCommsSurfaceIdentity } from '../../../../../shared/floating-comms-surface'
+import { FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT } from '../../../../../shared/floating-comms-surface'
 import type {
   FloatingWorkspaceApp,
   FloatingWorkspaceAppId
 } from '../../../../../shared/floating-workspace-apps'
 import { Popover } from '@/components/ui/popover'
 import { useAppStore } from '@/store'
-import {
-  createCommunicationManagerSessionSnapshot,
-  createCommunicationManagerSessionState,
-  listEnabledCommunicationManagers
-} from './communication-managers'
-import { FloatingCommsRailItem } from './FloatingCommsRailItem'
+import { listEnabledCommunicationManagers } from './communication-managers'
+import { FloatingCommsRailEntries } from './FloatingCommsRailEntries'
 import { useWhatsAppFastResponseAttention } from './use-whatsapp-fast-response-attention'
 import { closeFloatingCommsAttachedSurface } from './close-floating-comms-attached-surface'
 import {
@@ -53,6 +50,7 @@ export function FloatingCommsRail({
   const [attachedIdentity, setAttachedIdentity] = useState<FloatingCommsSurfaceIdentity | null>(
     null
   )
+  const [attachedHeight, setAttachedHeight] = useState(FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT)
   const [dockPresence, setDockPresence] = useState<CommunicationsDockPresence | null>(null)
   const [reattachAppId, setReattachAppId] = useState<FloatingWorkspaceAppId | null>(null)
   const whatsappHasUnread = useWhatsAppFastResponseAttention()
@@ -62,6 +60,7 @@ export function FloatingCommsRail({
   const pendingAppIdRef = useRef<FloatingWorkspaceAppId | null>(null)
   const presenceSequenceRef = useRef(0)
   const requestSequenceRef = useRef(0)
+  const operationRevisionRef = useRef(0)
   attachedIdentityRef.current = attachedIdentity
   openAppIdRef.current = openAppId
   const releaseAttached = useCallback(
@@ -105,6 +104,7 @@ export function FloatingCommsRail({
   )
   const openAttachedApp = useCallback(
     (appId: FloatingWorkspaceAppId): void => {
+      operationRevisionRef.current += 1
       if (attachedIdentityRef.current?.appId === appId) {
         closeAttached()
         return
@@ -128,6 +128,7 @@ export function FloatingCommsRail({
             (pendingAppIdRef.current === appId || openAppIdRef.current === appId)
           ) {
             pendingAppIdRef.current = null
+            setAttachedHeight(result.height ?? FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT)
             openAppIdRef.current = appId
             attachedIdentityRef.current = result.identity
             setAttachedIdentity(result.identity)
@@ -299,101 +300,24 @@ export function FloatingCommsRail({
       }}
     >
       <div className="flex w-10 shrink-0 flex-col border-r bg-background/95">
-        {entries.map(({ app, manager }) => {
-          const presentation = presentations.get(app.id)
-          const legacyDetached = presentation?.mode === 'detached'
-          const docked = dockPresence?.location === 'dock'
-          const detached = docked || legacyDetached
-          const attached = attachedIdentity?.appId === app.id
-          const domAttached = attached && attachedIdentity.mode === 'attached-dom'
-          return (
-            <FloatingCommsRailItem
-              key={app.id}
-              app={app}
-              manager={manager}
-              attached={attached}
-              domAttached={domAttached}
-              detached={detached}
-              hasUnread={app.id === 'whatsapp-web' && whatsappHasUnread}
-              initialSessionState={
-                pendingSessions.get(app.id) ?? createCommunicationManagerSessionState(app.id)
-              }
-              portalContainer={panelRef.current}
-              buttonRef={(element) => {
-                if (element) {
-                  buttonRefs.current.set(app.id, element)
-                } else {
-                  buttonRefs.current.delete(app.id)
-                }
-              }}
-              onSessionStateChange={(sessionState) => {
-                pendingSessions.set(app.id, sessionState)
-              }}
-              onSelect={() => {
-                if (docked) {
-                  const presenceSequence = presenceSequenceRef.current
-                  void window.api.floatingCommsDock
-                    .openOrFocus({ appId: app.id })
-                    .then((snapshot) => {
-                      if (presenceSequenceRef.current === presenceSequence) {
-                        presenceSequenceRef.current += 1
-                        setDockPresence({
-                          exists: true,
-                          visible: snapshot.visible,
-                          location: 'dock',
-                          activeAppId: app.id
-                        })
-                      }
-                    })
-                    .catch((error: unknown) =>
-                      reportFloatingCommsError('focus communication dock', error)
-                    )
-                  return
-                }
-                if (legacyDetached) {
-                  void window.api.floatingComms
-                    .focusDetached({ appId: app.id })
-                    .catch((error: unknown) => reportFloatingCommsError('focus detached', error))
-                  return
-                }
-                if (!dockPresence) {
-                  return
-                }
-                openAttachedApp(app.id)
-              }}
-              onDetach={(sessionState) => {
-                if (
-                  !attachedIdentity ||
-                  attachedIdentity.appId !== app.id ||
-                  attachedIdentity.mode !== 'attached-dom'
-                ) {
-                  return
-                }
-                pendingSessions.set(app.id, sessionState)
-                const sessions = createCommunicationManagerSessionSnapshot(entries, pendingSessions)
-                const presenceSequence = presenceSequenceRef.current
-                void window.api.floatingCommsDock
-                  .detach({ appId: app.id, identity: attachedIdentity, sessionState, sessions })
-                  .then((snapshot) => {
-                    if (presenceSequenceRef.current === presenceSequence) {
-                      presenceSequenceRef.current += 1
-                      setDockPresence({
-                        exists: true,
-                        visible: snapshot.visible,
-                        location: 'dock',
-                        activeAppId: app.id
-                      })
-                    }
-                  })
-                  .catch((error: unknown) => reportFloatingCommsError('detach', error))
-              }}
-              onOpenApp={() => {
-                closeAttached()
-                onOpenApp(app)
-              }}
-            />
-          )
-        })}
+        <FloatingCommsRailEntries
+          entries={entries}
+          attachedIdentity={attachedIdentity}
+          attachedHeight={attachedHeight}
+          dockPresence={dockPresence}
+          whatsappHasUnread={whatsappHasUnread}
+          panelDocument={panelRef.current?.ownerDocument ?? null}
+          buttonRefs={buttonRefs}
+          pendingSessions={pendingSessions}
+          attachedIdentityRef={attachedIdentityRef}
+          presenceSequenceRef={presenceSequenceRef}
+          operationRevisionRef={operationRevisionRef}
+          setDockPresence={setDockPresence}
+          openAttachedApp={openAttachedApp}
+          releaseAttached={releaseAttached}
+          closeAttached={closeAttached}
+          onOpenApp={onOpenApp}
+        />
       </div>
     </Popover>
   )

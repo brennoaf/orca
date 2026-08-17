@@ -25,6 +25,8 @@ function MockPresentation({
     tooltip: string
     content: React.ReactNode
     sessionState: FloatingCommsSessionState
+    headerActions?: React.ReactNode
+    hideFooter?: boolean
   }) => React.ReactNode
 }): React.JSX.Element {
   const sessionState = initialSessionState ?? { appId: 'discord' }
@@ -51,7 +53,12 @@ function MockPresentation({
         status: { kind: 'idle' },
         tooltip: sessionState.appId,
         content: <div data-manager={sessionState.appId} />,
-        sessionState
+        sessionState,
+        headerActions:
+          sessionState.appId === 'discord' ? (
+            <button type="button">Voice status</button>
+          ) : undefined,
+        hideFooter: sessionState.appId === 'discord'
       })}
     </>
   )
@@ -114,6 +121,13 @@ function createSnapshot(collapsed = false, revision = 1): CommunicationsDockSnap
 describe('CommunicationsDockRoot', () => {
   let current: CommunicationsDockSnapshot
   let snapshotListener: ((snapshot: CommunicationsDockSnapshot) => void) | null
+  const offSnapshotChanged = vi.fn()
+  const offWhatsAppStateChanged = vi.fn()
+  const slackFastResponse = {
+    hide: vi.fn(() =>
+      Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
+    )
+  }
   const api = {
     ready: vi.fn(),
     ack: vi.fn(() => Promise.resolve()),
@@ -133,7 +147,7 @@ describe('CommunicationsDockRoot', () => {
     updateRatio: vi.fn(),
     onSnapshotChanged: vi.fn((listener: (snapshot: CommunicationsDockSnapshot) => void) => {
       snapshotListener = listener
-      return vi.fn()
+      return offSnapshotChanged
     })
   }
 
@@ -155,6 +169,10 @@ describe('CommunicationsDockRoot', () => {
     api.ready.mockImplementation(() => Promise.resolve(current))
     api.getSnapshot.mockImplementation(() => Promise.resolve(current))
     api.setNavbarHeight.mockImplementation(() => Promise.resolve(current))
+    api.activateTab.mockImplementation(() => Promise.resolve(current))
+    api.activateLeaf.mockImplementation(() => Promise.resolve(current))
+    api.updateRatio.mockImplementation(() => Promise.resolve(current))
+    api.reattachDock.mockImplementation(() => Promise.resolve())
     api.setCollapsed.mockImplementation((request: { collapsed: boolean }) => {
       current = createSnapshot(request.collapsed, current.revision + 1)
       snapshotListener?.(current)
@@ -173,8 +191,10 @@ describe('CommunicationsDockRoot', () => {
         whatsappFastResponse: {
           hide: vi.fn(() =>
             Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
-          )
+          ),
+          onStateChanged: vi.fn(() => offWhatsAppStateChanged)
         },
+        slackFastResponse,
         floatingCommsDock: api
       }
     })
@@ -182,8 +202,45 @@ describe('CommunicationsDockRoot', () => {
 
   afterEach(cleanup)
 
+  it('keeps the vacant dock header draggable while tabs and controls remain interactive', async () => {
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+
+    const header = document.querySelector('header')
+    const spacer = document.querySelector('[data-communications-dock-drag-spacer]')
+    const tablist = screen.getByRole('tablist')
+    const tab = screen.getByRole('tab', { name: 'WhatsApp Web, Slack, Discord' })
+    if (!(header instanceof HTMLElement) || !(spacer instanceof HTMLElement)) {
+      throw new Error('Dock header drag regions were not rendered')
+    }
+    const tabNoDrag = tablist.closest('[data-no-drag]')
+    if (!(tabNoDrag instanceof HTMLElement)) {
+      throw new Error('Dock tabs no-drag region was not rendered')
+    }
+
+    expect(header.hasAttribute('data-drag-region')).toBe(true)
+    expect(spacer.hasAttribute('data-drag-region')).toBe(true)
+    expect(spacer.closest('[data-no-drag]')).toBeNull()
+    expect(tabNoDrag.hasAttribute('data-no-drag')).toBe(true)
+    expect(
+      screen.getByRole('button', { name: 'Collapse dock' }).closest('[data-no-drag]')
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Back to panel' }).closest('[data-no-drag]')
+    ).toBeTruthy()
+
+    fireEvent.click(tab)
+    await vi.waitFor(() =>
+      expect(api.activateTab).toHaveBeenCalledWith({ generation: 4, revision: 1, tabId: 'all' })
+    )
+  })
+
   it('collapses without unmounting managers and persists later session changes', async () => {
-    render(<CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} />)
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
     await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
     expect(managerLifecycle.mounts).toBe(3)
     const managers = Array.from(document.querySelectorAll('[data-manager]'))
@@ -226,13 +283,114 @@ describe('CommunicationsDockRoot', () => {
         tabs: current.layout.tabs.map((tab) => ({ ...tab, activeLeafAppId: 'slack' }))
       }
     }
-    render(<CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} />)
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
     await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
     expect(whatsappHostVisibility.value).toBe(true)
   })
 
+  it('renders only the active Discord voice action in the dock header and omits its footer', async () => {
+    current = {
+      ...current,
+      layout: {
+        ...current.layout,
+        tabs: current.layout.tabs.map((tab) => ({ ...tab, activeLeafAppId: 'discord' }))
+      }
+    }
+
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+
+    expect(screen.getByRole('button', { name: 'Voice status' }).closest('header')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Discord' }).closest('header')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Open Discord' })).toHaveLength(1)
+    const actions = screen.getByRole('region', { name: 'Discord controls' })
+    expect(actions.className).toContain('overflow-x-auto')
+    expect(actions.className).not.toContain('overflow-hidden')
+    expect(actions.tabIndex).toBe(0)
+    expect(actions.contains(screen.getByRole('button', { name: 'Voice status' }))).toBe(true)
+    expect(actions.contains(screen.getByRole('button', { name: 'Open Discord' }))).toBe(true)
+    expect(actions.contains(screen.getByRole('button', { name: 'Collapse dock' }))).toBe(false)
+    expect(actions.contains(screen.getByRole('button', { name: 'Back to panel' }))).toBe(false)
+    expect(actions.firstElementChild?.className).toContain('w-max')
+    expect(actions.firstElementChild?.className).toContain('shrink-0')
+  })
+
+  it('hides the active Slack host before tab, leaf, split, collapse, and reattach mutations', async () => {
+    current = {
+      ...current,
+      layout: {
+        ...current.layout,
+        tabs: current.layout.tabs.map((tab) => ({ ...tab, activeLeafAppId: 'slack' }))
+      }
+    }
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+
+    fireEvent.click(screen.getByRole('tab', { name: 'WhatsApp Web, Slack, Discord' }))
+    await vi.waitFor(() => expect(api.activateTab).toHaveBeenCalled())
+    expect(slackFastResponse.hide).toHaveBeenCalledBefore(api.activateTab)
+
+    fireEvent.pointerDown(document.querySelector('[data-communications-dock-leaf="slack"]')!)
+    await vi.waitFor(() => expect(api.activateLeaf).toHaveBeenCalled())
+    expect(slackFastResponse.hide).toHaveBeenCalledBefore(api.activateLeaf)
+
+    const horizontalDivider = screen
+      .getAllByRole('separator')
+      .find((divider) => divider.getAttribute('aria-orientation') === 'vertical')
+    if (!horizontalDivider) {
+      throw new Error('Horizontal dock divider was not rendered')
+    }
+    fireEvent.keyDown(horizontalDivider, { key: 'ArrowRight' })
+    await vi.waitFor(() => expect(api.updateRatio).toHaveBeenCalled())
+    expect(slackFastResponse.hide).toHaveBeenCalledBefore(api.updateRatio)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse dock' }))
+    await vi.waitFor(() => expect(api.setCollapsed).toHaveBeenCalled())
+    expect(slackFastResponse.hide).toHaveBeenCalledBefore(api.setCollapsed)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to panel' }))
+    await vi.waitFor(() => expect(api.reattachDock).toHaveBeenCalled())
+    expect(slackFastResponse.hide).toHaveBeenCalledBefore(api.reattachDock)
+    expect(window.api.whatsappFastResponse.hide).not.toHaveBeenCalled()
+  })
+
+  it('hides WhatsApp only when it owns the active leaf and skips hide without a host', async () => {
+    const view = render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+
+    fireEvent.click(screen.getByRole('tab', { name: 'WhatsApp Web, Slack, Discord' }))
+    await vi.waitFor(() => expect(api.activateTab).toHaveBeenCalled())
+    expect(window.api.whatsappFastResponse.hide).toHaveBeenCalledOnce()
+    expect(slackFastResponse.hide).not.toHaveBeenCalled()
+
+    view.unmount()
+    current = createSnapshot(true)
+    render(
+      <CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} onExit={vi.fn()} />
+    )
+    await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
+    fireEvent.click(screen.getByRole('tab', { name: 'WhatsApp Web, Slack, Discord' }))
+    await vi.waitFor(() => expect(api.activateTab).toHaveBeenCalledTimes(2))
+    expect(window.api.whatsappFastResponse.hide).toHaveBeenCalledOnce()
+    expect(slackFastResponse.hide).not.toHaveBeenCalled()
+  })
+
   it('reattaches with the current dock identity after multiple layout revisions', async () => {
-    render(<CommunicationsDockRoot initialSnapshot={current} reportError={vi.fn()} />)
+    const view = render(
+      <CommunicationsDockRoot
+        initialSnapshot={current}
+        reportError={vi.fn()}
+        onExit={() => view.unmount()}
+      />
+    )
     await vi.waitFor(() => expect(api.ack).toHaveBeenCalledWith({ generation: 4, revision: 1 }))
     current = createSnapshot(false, 8)
     act(() => snapshotListener?.(createSnapshot(false, 2)))
@@ -243,6 +401,9 @@ describe('CommunicationsDockRoot', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to panel' }))
 
+    expect(managerLifecycle.unmounts).toBe(3)
+    expect(offSnapshotChanged).toHaveBeenCalledOnce()
+    expect(offWhatsAppStateChanged).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(api.reattachDock).toHaveBeenCalledTimes(2))
     expect(api.reattachDock).toHaveBeenNthCalledWith(1, { generation: 4, revision: 8 })
     expect(api.reattachDock).toHaveBeenNthCalledWith(2, { generation: 4, revision: 8 })

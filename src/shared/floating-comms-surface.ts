@@ -2,12 +2,17 @@ import type { CommunicationProviderId } from './communication-integrations'
 import type { DiscordVoiceSnapshot } from './discord-voice'
 import type { FloatingWorkspaceAppId } from './floating-workspace-apps'
 
-export const FLOATING_COMMS_SURFACE_MAX_HEIGHT = 420
+export const FLOATING_COMMS_SURFACE_MIN_HEIGHT = 420
+export const FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT = 520
+export const FLOATING_COMMS_SURFACE_MAX_HEIGHT = 720
 export const FLOATING_COMMS_SESSION_DRAFT_MAX_LENGTH = 4_096
 
 export function clampFloatingCommsSurfaceHeight(height: number): number {
-  const rounded = Number.isFinite(height) ? Math.round(height) : 1
-  return Math.min(Math.max(rounded, 1), FLOATING_COMMS_SURFACE_MAX_HEIGHT)
+  const rounded = Number.isFinite(height) ? Math.round(height) : FLOATING_COMMS_SURFACE_MIN_HEIGHT
+  return Math.min(
+    Math.max(rounded, FLOATING_COMMS_SURFACE_MIN_HEIGHT),
+    FLOATING_COMMS_SURFACE_MAX_HEIGHT
+  )
 }
 
 export type FloatingCommsAnchorRect = {
@@ -17,7 +22,7 @@ export type FloatingCommsAnchorRect = {
   height: number
 }
 
-export type FloatingCommsSurfaceMode = 'attached-native' | 'attached-dom' | 'detached'
+export type FloatingCommsSurfaceMode = 'attached-native' | 'attached-dom'
 
 export type FloatingCommsRequestIdentity = {
   appId: FloatingWorkspaceAppId
@@ -48,6 +53,7 @@ export type FloatingCommsGeometryRequest = FloatingCommsSurfaceIdentity & {
 
 export type FloatingCommsOpenResult = {
   identity: FloatingCommsSurfaceIdentity
+  height?: number
 }
 
 export type FloatingCommsCloseAttachedRequest = FloatingCommsSurfaceIdentity
@@ -55,6 +61,7 @@ export type FloatingCommsCloseAttachedRequest = FloatingCommsSurfaceIdentity
 export type FloatingCommsMeasureRequest = FloatingCommsSurfaceIdentity & {
   height: number
 }
+export type FloatingCommsResizeRequest = FloatingCommsMeasureRequest
 
 export type FloatingCommsSurfaceVisibility = FloatingCommsSurfaceIdentity & {
   visible: boolean
@@ -75,23 +82,18 @@ export type FloatingCommsDetachRequest = FloatingCommsSurfaceIdentity & {
   sessionState: FloatingCommsSessionState
 }
 
-export type FloatingCommsMinimizeDetachedRequest = FloatingCommsDetachRequest
-
-export type FloatingCommsFocusDetachedRequest = {
+export type FloatingCommsAppRequest = {
   appId: FloatingWorkspaceAppId
 }
 
-export type FloatingCommsCloseDetachedRequest = FloatingCommsFocusDetachedRequest
+export type FloatingCommsDisableRequest = FloatingCommsAppRequest
 
-export type FloatingCommsDisableRequest = FloatingCommsFocusDetachedRequest
-
-export type FloatingCommsPresentationTarget = FloatingCommsFocusDetachedRequest
+export type FloatingCommsPresentationTarget = FloatingCommsAppRequest
 
 export type FloatingCommsSurfaceChangedReason =
   | 'opened'
   | 'fallback'
   | 'detached'
-  | 'minimized'
   | 'closed'
   | 'disabled'
   | 'crashed'
@@ -109,6 +111,7 @@ export type FloatingCommsSurfacePresentation = FloatingCommsSurfaceIdentity & {
   overlayOpen: boolean
   sessionState: FloatingCommsSessionState
   visible: boolean
+  height?: number
 }
 
 export type FloatingCommsAction = FloatingCommsSurfaceIdentity &

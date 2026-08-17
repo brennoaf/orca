@@ -65,6 +65,13 @@ const DiscordSchema: z.ZodType<CommunicationsDockDiscordCommand> = z.discriminat
     .strict(),
   z.object({ ...DiscordIdentity, method: z.literal('leave-call') }).strict(),
   z
+    .object({
+      ...DiscordIdentity,
+      method: z.literal('select-voice-channel'),
+      channelId: z.string().min(1)
+    })
+    .strict(),
+  z
     .object({ ...DiscordIdentity, method: z.literal('set-overlay-open'), open: z.boolean() })
     .strict()
 ])
@@ -74,7 +81,7 @@ const ActionSchema: z.ZodType<CommunicationsDockAction> = z.discriminatedUnion('
     .object({
       ...VersionedApp,
       type: z.literal('open-settings'),
-      provider: z.enum(['discord', 'slack'])
+      provider: z.literal('discord')
     })
     .strict()
 ])

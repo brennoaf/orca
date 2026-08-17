@@ -1,6 +1,7 @@
 import type { Rectangle } from 'electron'
 import {
   FLOATING_COMMS_SURFACE_MAX_HEIGHT,
+  FLOATING_COMMS_SURFACE_MIN_HEIGHT,
   type FloatingCommsAnchorRect
 } from '../../shared/floating-comms-surface'
 
@@ -17,8 +18,8 @@ export function placeFloatingCommsSurface(args: {
 }): Rectangle | null {
   const zoom = Number.isFinite(args.zoomFactor) && args.zoomFactor > 0 ? args.zoomFactor : 1
   const width = FLOATING_COMMS_SURFACE_WIDTH
-  const height = Math.min(
-    Math.max(1, Math.round(args.measuredHeight)),
+  const preferredHeight = Math.min(
+    Math.max(FLOATING_COMMS_SURFACE_MIN_HEIGHT, Math.round(args.measuredHeight)),
     FLOATING_COMMS_SURFACE_MAX_HEIGHT
   )
   const anchorRight = args.anchor.x + args.anchor.width
@@ -89,9 +90,11 @@ export function placeFloatingCommsSurface(args: {
       }
       const safeTop = Math.max(args.contentBounds.y, workArea.y)
       const safeBottom = Math.min(contentBottom, workArea.y + workArea.height)
-      if (safeBottom - safeTop < height) {
+      const availableHeight = safeBottom - safeTop
+      if (availableHeight < FLOATING_COMMS_SURFACE_MIN_HEIGHT) {
         continue
       }
+      const height = Math.min(preferredHeight, availableHeight)
       const y = Math.round(Math.min(Math.max(anchorY, safeTop), safeBottom - height))
       return { x, y, width, height }
     }

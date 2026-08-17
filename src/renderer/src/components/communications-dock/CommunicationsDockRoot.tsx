@@ -1,16 +1,12 @@
-import { ChevronDown, ChevronUp, Minimize2 } from 'lucide-react'
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CommunicationProviderId } from '../../../../shared/communication-integrations'
 import type {
-  CommunicationsDockDiscordCommand,
   CommunicationsDockIdentity,
   CommunicationsDockSnapshot
 } from '../../../../shared/communications-dock'
 import { listCommunicationsDockApps } from '../../../../shared/communications-dock'
 import type { DiscordVoiceSnapshot } from '../../../../shared/discord-voice'
 import type { FloatingWorkspaceAppId } from '../../../../shared/floating-workspace-apps'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   CommunicationManagerRuntimeProvider,
   type CommunicationManagerRuntime
@@ -21,70 +17,20 @@ import {
   appIdForCommunicationProvider,
   CommunicationsDockManagerHosts
 } from './CommunicationsDockManagerHosts'
-import { CommunicationsDockNavbar } from './CommunicationsDockNavbar'
+import { CommunicationsDockHeader } from './CommunicationsDockHeader'
 import { CommunicationsDockSplitLayout } from './CommunicationsDockSplitLayout'
 import { useCommunicationsDockBridge } from './useCommunicationsDockBridge'
-
-const DRAG = { WebkitAppRegion: 'drag' } as CSSProperties
-const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties
-
-function readBooleanParam(params: unknown, key: 'muted' | 'deafened'): boolean {
-  if (params && typeof params === 'object' && key in params && typeof params[key] === 'boolean') {
-    return params[key]
-  }
-  throw new Error(`communications_dock_invalid_${key}`)
-}
-
-function discordCommand(
-  identity: CommunicationsDockIdentity,
-  method: string,
-  params?: unknown
-): CommunicationsDockDiscordCommand {
-  const base = { ...identity, appId: 'discord' as const }
-  if (method === 'discordVoice.setSelfMute') {
-    return { ...base, method: 'set-self-mute', muted: readBooleanParam(params, 'muted') }
-  }
-  if (method === 'discordVoice.setSelfDeaf') {
-    return { ...base, method: 'set-self-deaf', deafened: readBooleanParam(params, 'deafened') }
-  }
-  if (method === 'discordVoice.leaveCall') {
-    return { ...base, method: 'leave-call' }
-  }
-  if (method === 'discordVoice.reconnect') {
-    return { ...base, method: 'reconnect' }
-  }
-  throw new Error(`communications_dock_unknown_discord_command:${method}`)
-}
-
-function IconAction({
-  label,
-  onClick,
-  children
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
+import { useCommunicationsDockNavbarHeight } from './useCommunicationsDockNavbarHeight'
+import { communicationsDockDiscordCommand } from './communications-dock-discord-command'
 
 export function CommunicationsDockRoot({
   initialSnapshot,
-  reportError
+  reportError,
+  onExit
 }: {
   initialSnapshot: CommunicationsDockSnapshot
   reportError: (operation: string, error: unknown) => void
+  onExit: () => void
 }): React.JSX.Element {
   const { snapshot, ready, run, runVoid } = useCommunicationsDockBridge(
     initialSnapshot,
@@ -96,6 +42,7 @@ export function CommunicationsDockRoot({
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
   const [whatsappHasUnread, setWhatsappHasUnread] = useState(false)
+  const [headerActionsTarget, setHeaderActionsTarget] = useState<HTMLDivElement | null>(null)
   const headerRef = useRef<HTMLDivElement | null>(null)
   const identity = useMemo(
     () => ({ generation: snapshot.generation, revision: snapshot.revision }),
@@ -126,34 +73,87 @@ export function CommunicationsDockRoot({
     }),
     [activeTab.id, snapshot, visibleApps]
   )
-  const hideWhatsAppBeforeRun = useCallback(
+  const slackHost = useMemo(
+    () => ({
+      identity: {
+        target: 'dock' as const,
+        appId: 'slack' as const,
+        generation: snapshot.generation,
+        revision: snapshot.revision,
+        tabId: activeTab.id,
+        activeLeafAppId: 'slack' as const
+      },
+      visible: snapshot.visible && !snapshot.layout.collapsed && visibleApps.has('slack')
+    }),
+    [activeTab.id, snapshot, visibleApps]
+  )
+  const discordWebHost = useMemo(
+    () => ({
+      identity: {
+        target: 'dock' as const,
+        appId: 'discord' as const,
+        generation: snapshot.generation,
+        revision: snapshot.revision,
+        tabId: activeTab.id,
+        activeLeafAppId: 'discord' as const
+      },
+      visible: snapshot.visible && !snapshot.layout.collapsed && visibleApps.has('discord')
+    }),
+    [activeTab.id, snapshot, visibleApps]
+  )
+  const visibleHost = useMemo(() => {
+    if (activeTab.activeLeafAppId === 'whatsapp-web' && whatsappHost.visible) {
+      return {
+        hide: (): Promise<unknown> => window.api.whatsappFastResponse.hide(whatsappHost.identity),
+        errorOperation: 'hide compact WhatsApp Web'
+      }
+    }
+    if (activeTab.activeLeafAppId === 'slack' && slackHost.visible) {
+      return {
+        hide: (): Promise<unknown> => window.api.slackFastResponse.hide(slackHost.identity),
+        errorOperation: 'hide Slack'
+      }
+    }
+    if (
+      activeTab.activeLeafAppId === 'discord' &&
+      discordWebHost.visible &&
+      window.api.discordWebFastResponse
+    ) {
+      return {
+        hide: (): Promise<unknown> =>
+          window.api.discordWebFastResponse.hide(discordWebHost.identity),
+        errorOperation: 'hide Discord Web'
+      }
+    }
+    return null
+  }, [activeTab.activeLeafAppId, discordWebHost, slackHost, whatsappHost])
+  const hideVisibleHostBefore = useCallback(
+    (afterHide: () => void): void => {
+      if (!visibleHost) {
+        afterHide()
+        return
+      }
+      void visibleHost
+        .hide()
+        .then(afterHide)
+        .catch((error: unknown) => reportError(visibleHost.errorOperation, error))
+    },
+    [reportError, visibleHost]
+  )
+  const hideVisibleHostBeforeRun = useCallback(
     (
       operation: string,
       request: (identity: CommunicationsDockIdentity) => Promise<CommunicationsDockSnapshot>
     ): void => {
-      if (!whatsappHost.visible) {
-        run(operation, request)
-        return
-      }
-      void window.api.whatsappFastResponse
-        .hide(whatsappHost.identity)
-        .then(() => run(operation, request))
-        .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+      hideVisibleHostBefore(() => run(operation, request))
     },
-    [reportError, run, whatsappHost]
+    [hideVisibleHostBefore, run]
   )
-  const hideWhatsAppBeforeRunVoid = useCallback(
+  const hideVisibleHostBeforeRunVoid = useCallback(
     (operation: string, request: (identity: CommunicationsDockIdentity) => Promise<void>): void => {
-      if (!whatsappHost.visible) {
-        runVoid(operation, request)
-        return
-      }
-      void window.api.whatsappFastResponse
-        .hide(whatsappHost.identity)
-        .then(() => runVoid(operation, request))
-        .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+      hideVisibleHostBefore(() => runVoid(operation, request))
     },
-    [reportError, runVoid, whatsappHost]
+    [hideVisibleHostBefore, runVoid]
   )
 
   const setContentTarget = useCallback(
@@ -174,25 +174,7 @@ export function CommunicationsDockRoot({
     []
   )
 
-  useLayoutEffect(() => {
-    if (!ready) {
-      return
-    }
-    const header = headerRef.current
-    if (!header) {
-      return
-    }
-    const publishHeight = (): void => {
-      const height = Math.round(header.getBoundingClientRect().height)
-      run('resize dock navbar', (current) =>
-        window.api.floatingCommsDock.setNavbarHeight({ ...current, height })
-      )
-    }
-    publishHeight()
-    const observer = new ResizeObserver(publishHeight)
-    observer.observe(header)
-    return () => observer.disconnect()
-  }, [ready, run])
+  useCommunicationsDockNavbarHeight(ready, headerRef, run)
 
   useLayoutEffect(
     () =>
@@ -209,7 +191,9 @@ export function CommunicationsDockRoot({
       commandDiscord: (method: string, params?: unknown): Promise<DiscordVoiceSnapshot> =>
         method === 'discordVoice.getState'
           ? window.api.floatingCommsDock.getDiscordState({ ...identity, appId: 'discord' })
-          : window.api.floatingCommsDock.discordCommand(discordCommand(identity, method, params)),
+          : window.api.floatingCommsDock.discordCommand(
+              communicationsDockDiscordCommand(identity, method, params)
+            ),
       loadIntegrationStatuses: () => window.api.floatingCommsDock.getIntegrationStatuses(),
       openSettings: (provider: CommunicationProviderId) => {
         void window.api.floatingCommsDock
@@ -232,95 +216,66 @@ export function CommunicationsDockRoot({
     [identity, overlayOpen, reportError]
   )
 
-  const collapseLabel = snapshot.layout.collapsed
-    ? translate('communicationsDock.show', 'Show dock content')
-    : translate('communicationsDock.collapse', 'Collapse dock')
-  const reattachLabel = translate('communicationsDock.reattach', 'Back to panel')
-
   return (
     <CommunicationManagerRuntimeProvider runtime={runtime}>
       <CommunicationsDockDragLayer
         tabs={snapshot.layout.tabs}
         onMoveApp={(request) =>
-          hideWhatsAppBeforeRun('move communication app', (current) =>
+          hideVisibleHostBeforeRun('move communication app', (current) =>
             window.api.floatingCommsDock.moveApp({ ...current, ...request })
           )
         }
         onMoveTab={(request) =>
-          hideWhatsAppBeforeRun('move communication tab', (current) =>
+          hideVisibleHostBeforeRun('move communication tab', (current) =>
             window.api.floatingCommsDock.moveTab({ ...current, ...request })
           )
         }
         onCreateTab={(request) =>
-          hideWhatsAppBeforeRun('create communication tab', (current) =>
+          hideVisibleHostBeforeRun('create communication tab', (current) =>
             window.api.floatingCommsDock.createTab({ ...current, ...request })
           )
         }
         onReorderTab={(tabId, index) =>
-          hideWhatsAppBeforeRun('reorder communication tabs', (current) =>
+          hideVisibleHostBeforeRun('reorder communication tabs', (current) =>
             window.api.floatingCommsDock.reorderTab({ ...current, tabId, index })
           )
         }
       >
         <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
-          <header
-            ref={headerRef}
-            className="flex min-h-10 shrink-0 items-center gap-1 border-b border-border bg-card px-1"
-            data-drag-region
-            style={DRAG}
-          >
-            <div className="flex min-w-0 flex-1" data-no-drag style={NO_DRAG}>
-              <CommunicationsDockNavbar
-                tabs={snapshot.layout.tabs}
-                activeTabId={snapshot.layout.activeTabId}
-                whatsappHasUnread={whatsappHasUnread}
-                onActivateTab={(tabId) =>
-                  hideWhatsAppBeforeRun('activate communication tab', (current) =>
-                    window.api.floatingCommsDock.activateTab({ ...current, tabId })
-                  )
-                }
-                onActivateLeaf={(tabId, appId) =>
-                  hideWhatsAppBeforeRun('activate communication app', (current) =>
-                    window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
-                  )
-                }
-              />
-            </div>
-            <div className="flex shrink-0 items-center" data-no-drag style={NO_DRAG}>
-              <IconAction
-                label={collapseLabel}
-                onClick={() => {
-                  const collapsed = !snapshot.layout.collapsed
-                  setLiveMessage(
-                    collapsed
-                      ? translate(
-                          'communicationsDock.collapsedStatus',
-                          'Communication dock collapsed'
-                        )
-                      : translate(
-                          'communicationsDock.expandedStatus',
-                          'Communication dock expanded'
-                        )
-                  )
-                  hideWhatsAppBeforeRun('toggle communication dock', (current) =>
-                    window.api.floatingCommsDock.setCollapsed({ ...current, collapsed })
-                  )
-                }}
-              >
-                {snapshot.layout.collapsed ? <ChevronDown /> : <ChevronUp />}
-              </IconAction>
-              <IconAction
-                label={reattachLabel}
-                onClick={() =>
-                  hideWhatsAppBeforeRunVoid('reattach communication dock', (current) =>
-                    window.api.floatingCommsDock.reattachDock(current)
-                  )
-                }
-              >
-                <Minimize2 />
-              </IconAction>
-            </div>
-          </header>
+          <CommunicationsDockHeader
+            snapshot={snapshot}
+            activeTab={activeTab}
+            whatsappHasUnread={whatsappHasUnread}
+            headerRef={headerRef}
+            setHeaderActionsTarget={setHeaderActionsTarget}
+            onActivateTab={(tabId) =>
+              hideVisibleHostBeforeRun('activate communication tab', (current) =>
+                window.api.floatingCommsDock.activateTab({ ...current, tabId })
+              )
+            }
+            onActivateLeaf={(tabId, appId) =>
+              hideVisibleHostBeforeRun('activate communication app', (current) =>
+                window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
+              )
+            }
+            onToggle={() => {
+              const collapsed = !snapshot.layout.collapsed
+              setLiveMessage(
+                collapsed
+                  ? translate('communicationsDock.collapsedStatus', 'Communication dock collapsed')
+                  : translate('communicationsDock.expandedStatus', 'Communication dock expanded')
+              )
+              hideVisibleHostBeforeRun('toggle communication dock', (current) =>
+                window.api.floatingCommsDock.setCollapsed({ ...current, collapsed })
+              )
+            }}
+            onReattach={() => {
+              onExit()
+              hideVisibleHostBeforeRunVoid('reattach communication dock', (current) =>
+                window.api.floatingCommsDock.reattachDock(current)
+              )
+            }}
+          />
           <main
             className={snapshot.layout.collapsed ? 'hidden' : 'flex min-h-0 flex-1'}
             inert={snapshot.layout.collapsed}
@@ -341,12 +296,12 @@ export function CommunicationsDockRoot({
                     activeLeafAppId={tab.activeLeafAppId}
                     setContentTarget={setContentTarget}
                     onActivateLeaf={(tabId, appId) =>
-                      hideWhatsAppBeforeRun('activate communication app', (current) =>
+                      hideVisibleHostBeforeRun('activate communication app', (current) =>
                         window.api.floatingCommsDock.activateLeaf({ ...current, tabId, appId })
                       )
                     }
                     onUpdateRatio={(request) =>
-                      run('resize communication split', (current) =>
+                      hideVisibleHostBeforeRun('resize communication split', (current) =>
                         window.api.floatingCommsDock.updateRatio({ ...current, ...request })
                       )
                     }
@@ -360,6 +315,10 @@ export function CommunicationsDockRoot({
             visibleApps={visibleApps}
             sessions={snapshot.sessions}
             whatsappHost={whatsappHost}
+            slackHost={slackHost}
+            discordWebHost={discordWebHost}
+            headerActionsTarget={headerActionsTarget}
+            headerActionsAppId={activeTab.activeLeafAppId}
             onSessionStateChange={(sessionState) =>
               run('update communication session', (current) =>
                 window.api.floatingCommsDock.updateSession({ ...current, sessionState })
@@ -375,6 +334,32 @@ export function CommunicationsDockRoot({
                     )
                   )
                   .catch((error: unknown) => reportError('hide compact WhatsApp Web', error))
+                return
+              }
+              if (appId === 'slack' && slackHost.visible) {
+                void window.api.slackFastResponse
+                  .hide(slackHost.identity)
+                  .then(() =>
+                    runVoid('open communication app', (current) =>
+                      window.api.floatingCommsDock.action({ ...current, type: 'open-app', appId })
+                    )
+                  )
+                  .catch((error: unknown) => reportError('hide Slack', error))
+                return
+              }
+              if (
+                appId === 'discord' &&
+                discordWebHost.visible &&
+                window.api.discordWebFastResponse
+              ) {
+                void window.api.discordWebFastResponse
+                  .hide(discordWebHost.identity)
+                  .then(() =>
+                    runVoid('open communication app', (current) =>
+                      window.api.floatingCommsDock.action({ ...current, type: 'open-app', appId })
+                    )
+                  )
+                  .catch((error: unknown) => reportError('hide Discord Web', error))
                 return
               }
               runVoid('open communication app', (current) =>

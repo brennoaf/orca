@@ -211,7 +211,7 @@ export function bindFloatingCommsGeometryListeners({
   screen.on('display-added', move)
   screen.on('display-removed', move)
   screen.on('display-metrics-changed', updateDisplayMetrics)
-  owner.once('closed', destroy)
+  owner.webContents.once('destroyed', destroy)
   app.once('before-quit', destroy)
   return () => {
     owner.removeListener('move', move)
@@ -219,7 +219,7 @@ export function bindFloatingCommsGeometryListeners({
     owner.removeListener('maximize', refresh)
     owner.removeListener('unmaximize', refresh)
     owner.webContents.removeListener('zoom-changed', refresh)
-    owner.removeListener('closed', destroy)
+    owner.webContents.removeListener('destroyed', destroy)
     app.removeListener('before-quit', destroy)
     screen.removeListener('display-added', move)
     screen.removeListener('display-removed', move)

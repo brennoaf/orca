@@ -23,7 +23,6 @@ const LEGACY_LAYOUT_FILE = 'floating-comms-detached-layout.json'
 export const COMMUNICATIONS_DOCK_MIN_WIDTH = 320
 export const COMMUNICATIONS_DOCK_MIN_HEIGHT = 240
 export const COMMUNICATIONS_DOCK_MAX_WIDTH = 1_200
-export const COMMUNICATIONS_DOCK_MAX_HEIGHT = 1_000
 export const COMMUNICATIONS_DOCK_DEFAULT_WIDTH = 420
 export const COMMUNICATIONS_DOCK_DEFAULT_HEIGHT = 640
 
@@ -55,8 +54,7 @@ export function normalizeCommunicationsDockBounds(value: unknown): Communication
     height === null ||
     width < COMMUNICATIONS_DOCK_MIN_WIDTH ||
     width > COMMUNICATIONS_DOCK_MAX_WIDTH ||
-    height < COMMUNICATIONS_DOCK_MIN_HEIGHT ||
-    height > COMMUNICATIONS_DOCK_MAX_HEIGHT
+    height < COMMUNICATIONS_DOCK_MIN_HEIGHT
   ) {
     return null
   }

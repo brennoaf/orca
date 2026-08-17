@@ -5,6 +5,7 @@ import type {
   FloatingCommsSurfaceIdentity,
   FloatingCommsSurfacePresentation
 } from '../../shared/floating-comms-surface'
+import { FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT } from '../../shared/floating-comms-surface'
 import { sendToTrustedUIRenderer, getTrustedUIRendererWindow } from '../ipc/ui'
 import { getDiscordVoiceSnapshot } from '../messaging/discord-voice-service'
 import { getDiscordVoiceOverlayState } from './discord-voice-window'
@@ -12,14 +13,16 @@ import { getDiscordVoiceOverlayState } from './discord-voice-window'
 export function createFloatingCommsPresentation(
   identity: FloatingCommsSurfaceIdentity,
   sessionState: FloatingCommsSessionState,
-  visible: boolean
+  visible: boolean,
+  height = FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT
 ): FloatingCommsSurfacePresentation {
   return {
     ...identity,
     discord: getDiscordVoiceSnapshot(),
     overlayOpen: getDiscordVoiceOverlayState().open,
     sessionState,
-    visible
+    visible,
+    height
   }
 }
 

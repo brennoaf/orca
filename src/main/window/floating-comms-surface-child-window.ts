@@ -5,6 +5,24 @@ import type { FloatingCommsSurfaceIdentity } from '../../shared/floating-comms-s
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
 import { floatingCommsSurfaceWindowOptions } from './floating-comms-surface-window-options'
 
+type FloatingCommsSurfaceFocusLifecycle = {
+  activate: (owner: BrowserWindow) => void
+  deactivate: () => void
+}
+
+const focusLifecycles = new WeakMap<BrowserWindow, FloatingCommsSurfaceFocusLifecycle>()
+
+export function activateFloatingCommsSurfaceChildWindow(
+  window: BrowserWindow,
+  owner: BrowserWindow
+): void {
+  focusLifecycles.get(window)?.activate(owner)
+}
+
+export function deactivateFloatingCommsSurfaceChildWindow(window: BrowserWindow): void {
+  focusLifecycles.get(window)?.deactivate()
+}
+
 export function shouldUseFloatingCommsDomFallback(): boolean {
   return (
     process.platform === 'linux' &&
@@ -23,6 +41,7 @@ export function createFloatingCommsSurfaceChildWindow(
   parent: BrowserWindow,
   lifecycle: {
     close: (identity: FloatingCommsSurfaceIdentity) => void
+    current: () => FloatingCommsSurfaceIdentity | null
     isCurrent: (window: BrowserWindow) => boolean
     loaded: (window: BrowserWindow) => FloatingCommsSurfaceIdentity | null
     loadFailed?: (window: BrowserWindow, error: unknown) => void
@@ -39,10 +58,39 @@ export function createFloatingCommsSurfaceChildWindow(
     callback(false)
   )
   window.webContents.session.setPermissionCheckHandler(() => false)
-  window.on('blur', () => {
+  let owner: BrowserWindow | null = null
+  let surfaceWasFocused = false
+  const closeWhenOwnerFocused = (): void => {
+    if (!surfaceWasFocused || window.isDestroyed() || window.isFocused()) {
+      return
+    }
     const visibleRequest = lifecycle.isCurrent(window) ? lifecycle.visible() : null
     if (visibleRequest) {
-      lifecycle.close(visibleRequest)
+      const currentRequest = lifecycle.current()
+      if (currentRequest) {
+        lifecycle.close(currentRequest)
+      }
+    }
+  }
+  const deactivate = (): void => {
+    owner?.removeListener('focus', closeWhenOwnerFocused)
+    owner = null
+    surfaceWasFocused = false
+  }
+  focusLifecycles.set(window, {
+    activate: (nextOwner) => {
+      if (owner !== nextOwner) {
+        owner?.removeListener('focus', closeWhenOwnerFocused)
+        owner = nextOwner
+        owner.on('focus', closeWhenOwnerFocused)
+      }
+      surfaceWasFocused = false
+    },
+    deactivate
+  })
+  window.on('focus', () => {
+    if (lifecycle.isCurrent(window)) {
+      surfaceWasFocused = true
     }
   })
   window.on('show', () => {
@@ -85,6 +133,8 @@ export function createFloatingCommsSurfaceChildWindow(
     }
   })
   window.on('closed', () => {
+    deactivate()
+    focusLifecycles.delete(window)
     lifecycle.closed(window)
   })
   void loadFloatingCommsSurface(window).catch((error: unknown) => {

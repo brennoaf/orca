@@ -260,8 +260,12 @@ export class CommunicationsDockController extends CommunicationsDockWindowState 
       return
     }
     this.desiredVisible = false
-    this.window?.hide()
-    this.bumpRevision()
+    const window = this.window
+    this.window = null
+    this.loaded = false
+    this.ready = false
+    this.collapse = null
+    destroyCommunicationsDockWindow(window)
     this.emitSnapshot()
   }
   private requireWindowSender(sender: WebContents): void {

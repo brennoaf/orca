@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
     options: Electron.BrowserWindowConstructorOptions
     destroyed = false
     visible = false
+    focused = false
     webContents = new FakeWebContents()
     hide = vi.fn(() => {
       const wasVisible = this.visible
@@ -57,7 +58,10 @@ const mocks = vi.hoisted(() => {
         this.emit('show')
       }
     })
-    focus = vi.fn()
+    focus = vi.fn(() => {
+      this.focused = true
+      this.emit('focus')
+    })
     showInactive = vi.fn(() => {
       const wasVisible = this.visible
       this.visible = true
@@ -66,6 +70,11 @@ const mocks = vi.hoisted(() => {
       }
     })
     setBounds = vi.fn()
+    setParentWindow = vi.fn()
+    setResizable = vi.fn()
+    setMinimizable = vi.fn()
+    setMaximizable = vi.fn()
+    setAlwaysOnTop = vi.fn()
     bounds: Electron.Rectangle
     contentBounds: Electron.Rectangle
     loadURL = vi.fn()
@@ -82,6 +91,9 @@ const mocks = vi.hoisted(() => {
     }
     isVisible(): boolean {
       return this.visible
+    }
+    isFocused(): boolean {
+      return this.focused
     }
     getContentBounds(): Electron.Rectangle {
       return this.contentBounds
@@ -139,6 +151,7 @@ import {
   isFloatingCommsSurfaceVisible,
   openFloatingCommsSurface,
   resizeFloatingCommsSurface,
+  takeFloatingCommsSurfaceWindow,
   updateFloatingCommsSurface
 } from './floating-comms-surface-window'
 
@@ -190,6 +203,8 @@ describe('floating communications BrowserWindow', () => {
     destroyFloatingCommsSurface()
     mocks.FakeWindow.instances.length = 0
     vi.clearAllMocks()
+    mocks.parent.handlers.clear()
+    mocks.parent.webContents.handlers.clear()
     mocks.parent.bounds = { x: 100, y: 40, width: 1_000, height: 720 }
     mocks.parent.contentBounds = { x: 100, y: 50, width: 1_000, height: 700 }
     mocks.parent.webContents.zoomFactor = 1
@@ -204,14 +219,19 @@ describe('floating communications BrowserWindow', () => {
   })
 
   it('reuses one hardened child and tears it down with its parent', () => {
+    for (let index = 0; index < 9; index += 1) {
+      mocks.parent.on('closed', () => undefined)
+    }
     openFloatingCommsSurface(owner, request)
     openFloatingCommsSurface(owner, { ...request, appId: 'slack', requestId: 2 })
+    expect(mocks.parent.handlers.get('closed') ?? []).toHaveLength(9)
+    expect(mocks.parent.webContents.handlers.get('destroyed') ?? []).toHaveLength(1)
     expect(mocks.FakeWindow.instances).toHaveLength(1)
     const child = surface()
     expect(child.options).toMatchObject({
       parent: mocks.parent,
       width: 320,
-      height: 420,
+      height: 720,
       modal: false,
       frame: false,
       transparent: true,
@@ -231,13 +251,79 @@ describe('floating communications BrowserWindow', () => {
     child.webContents.emit('did-finish-load')
     resizeFloatingCommsSurface(2, 300)
     child.emit('blur')
-    expect(child.hide).toHaveBeenCalled()
-    mocks.parent.emit('closed')
+    expect(child.hide).not.toHaveBeenCalled()
+    child.focused = false
+    mocks.parent.emit('focus')
+    expect(child.hide).toHaveBeenCalledOnce()
+    mocks.parent.webContents.emit('destroyed')
     expect(child.destroy).toHaveBeenCalledOnce()
+    expect(mocks.parent.handlers.get('focus') ?? []).toHaveLength(0)
     expect(mocks.parent.handlers.get('move') ?? []).toHaveLength(0)
     expect(mocks.parent.handlers.get('resize') ?? []).toHaveLength(0)
     expect(mocks.screen.handlers.get('display-metrics-changed') ?? []).toHaveLength(0)
     expect(mocks.app.handlers.get('before-quit') ?? []).toHaveLength(0)
+  })
+
+  it('leaves a detached surface unchanged when its former owner regains focus', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    child.hide.mockClear()
+
+    expect(takeFloatingCommsSurfaceWindow(identityFor('discord', 1))).toBe(child)
+    child.focused = false
+    mocks.parent.emit('focus')
+
+    expect(child.hide).not.toHaveBeenCalled()
+    child.destroy()
+    expect(mocks.parent.handlers.get('focus') ?? []).toHaveLength(0)
+  })
+
+  it('resets focus admission for a reused surface request', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    child.hide.mockClear()
+
+    openFloatingCommsSurface(owner, { ...request, appId: 'slack', requestId: 2 })
+    child.focused = false
+    mocks.parent.emit('focus')
+    expect(child.hide).not.toHaveBeenCalled()
+
+    child.focus()
+    child.focused = false
+    mocks.parent.emit('focus')
+    expect(child.hide).toHaveBeenCalledOnce()
+  })
+
+  it('moves focus dismissal to a reattached owner', () => {
+    openFloatingCommsSurface(owner, request)
+    const child = surface()
+    child.webContents.emit('did-finish-load')
+    resizeFloatingCommsSurface(1, 300)
+    expect(takeFloatingCommsSurfaceWindow(identityFor('discord', 1))).toBe(child)
+    const nextOwner = new mocks.FakeWindow({})
+    mocks.trustedOwner = nextOwner
+    child.hide.mockClear()
+
+    openFloatingCommsSurface(
+      nextOwner as unknown as Electron.BrowserWindow,
+      { ...request, appId: 'slack', requestId: 2 },
+      identityFor('slack', 2),
+      undefined,
+      child as unknown as Electron.BrowserWindow
+    )
+    resizeFloatingCommsSurface(2, 300)
+    child.focused = false
+    mocks.parent.emit('focus')
+    expect(child.hide).not.toHaveBeenCalled()
+    nextOwner.emit('focus')
+    expect(child.hide).toHaveBeenCalledOnce()
+    child.destroy()
+    expect(mocks.parent.handlers.get('focus') ?? []).toHaveLength(0)
+    expect(nextOwner.handlers.get('focus') ?? []).toHaveLength(0)
   })
 
   it('waits for measured content before showing and focuses only on first reveal', () => {

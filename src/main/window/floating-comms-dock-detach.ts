@@ -2,7 +2,7 @@ import type {
   FloatingCommsDetachRequest,
   FloatingCommsSessionState
 } from '../../shared/floating-comms-surface'
-import type { FloatingCommsAttachedRecord } from './floating-comms-detached-surface-controller'
+import type { FloatingCommsAttachedRecord } from './floating-comms-attached-record'
 import { destroyAttachedFloatingCommsWindow } from './floating-comms-attached-window'
 import { emitFloatingCommsSurfaceChange } from './floating-comms-surface-presentation'
 

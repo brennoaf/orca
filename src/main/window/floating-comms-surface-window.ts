@@ -1,14 +1,19 @@
 import type { BrowserWindow, WebContents } from 'electron'
-import {
-  clampFloatingCommsSurfaceHeight,
-  type FloatingCommsOpenRequest,
-  type FloatingCommsSurfaceIdentity,
-  type FloatingCommsUpdateRequest
+import type {
+  FloatingCommsOpenRequest,
+  FloatingCommsSurfaceIdentity,
+  FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
 import { getTrustedUIRendererWindow } from '../ipc/ui'
-import { createFloatingCommsSurfaceChildWindow } from './floating-comms-surface-child-window'
+import { registerNativeAppearanceWindow } from '../native-appearance-windows'
+import {
+  activateFloatingCommsSurfaceChildWindow,
+  createFloatingCommsSurfaceChildWindow,
+  deactivateFloatingCommsSurfaceChildWindow
+} from './floating-comms-surface-child-window'
 import { createFloatingCommsAttachedGeometry } from './floating-comms-attached-geometry'
 import { openFloatingCommsAttachedSurface } from './floating-comms-attached-open'
+import { createFloatingCommsSurfaceResizeCoordinator } from './floating-comms-surface-resize'
 
 export { shouldUseFloatingCommsDomFallback } from './floating-comms-surface-child-window'
 
@@ -90,6 +95,20 @@ const attachedGeometry = createFloatingCommsAttachedGeometry({
   setVisible: (identity) => void (visibleRequest = identity)
 })
 
+const attachedResize = createFloatingCommsSurfaceResizeCoordinator({
+  geometry: attachedGeometry,
+  identity: () => currentIdentity,
+  isMeasured: () => surfaceMeasured,
+  loaded: () => surfaceLoaded,
+  matchesIdentity,
+  owner: () => floatingCommsOwner,
+  request: () => currentRequest,
+  setMeasured: (measured) => void (surfaceMeasured = measured),
+  setRequest: (request) => void (currentRequest = request),
+  setVisible: (identity) => void (visibleRequest = identity),
+  window: () => floatingCommsWindow
+})
+
 export const getFloatingCommsSurfaceIdentity = (): FloatingCommsSurfaceIdentity | null =>
   currentIdentity
 
@@ -139,8 +158,9 @@ function createFloatingCommsWindow(
   parent: BrowserWindow,
   loadFailed?: (window: BrowserWindow, error: unknown) => void
 ): BrowserWindow {
-  return createFloatingCommsSurfaceChildWindow(parent, {
+  const window = createFloatingCommsSurfaceChildWindow(parent, {
     close: (identity) => closeFloatingCommsSurface(identity),
+    current: () => currentIdentity,
     isCurrent: isCurrentWindow,
     loaded: () => {
       surfaceLoaded = true
@@ -166,6 +186,8 @@ function createFloatingCommsWindow(
     },
     visible: () => visibleRequest
   })
+  registerNativeAppearanceWindow(window)
+  return window
 }
 
 export function openFloatingCommsSurface(
@@ -185,6 +207,7 @@ export function openFloatingCommsSurface(
 ): boolean {
   lifecycleHandlers = handlers
   return openFloatingCommsAttachedSurface(owner, request, requestIdentity, reusableWindow, {
+    activateWindow: activateFloatingCommsSurfaceChildWindow,
     createWindow: createFloatingCommsWindow,
     currentRequest: () => currentRequest,
     destroy: destroyFloatingCommsSurface,
@@ -246,47 +269,7 @@ export function resizeFloatingCommsSurface(
   requestIdentity: FloatingCommsSurfaceIdentity | number,
   height: number
 ): void {
-  const request = currentRequest
-  const admittedIdentity =
-    typeof requestIdentity === 'number'
-      ? currentIdentity?.requestId === requestIdentity
-      : matchesIdentity(requestIdentity)
-  if (!request || !admittedIdentity) {
-    return
-  }
-  const resizedRequest = { ...request, height: clampFloatingCommsSurfaceHeight(height) }
-  currentRequest = resizedRequest
-  const window = floatingCommsWindow
-  const firstMeasurement = Boolean(
-    !surfaceMeasured && surfaceLoaded && window && !window.isDestroyed()
-  )
-  if (firstMeasurement) {
-    surfaceMeasured = true
-  }
-  if (attachedGeometry.awaiting()) {
-    if (firstMeasurement) {
-      if (currentIdentity) {
-        attachedGeometry.recordFirstMeasurement(currentIdentity)
-      }
-    }
-    return
-  }
-  const owner = floatingCommsOwner
-  if (!owner || attachedGeometry.reposition(owner) !== true) {
-    return
-  }
-  if (firstMeasurement && window && !window.isDestroyed()) {
-    visibleRequest = currentIdentity
-    if (window.isVisible()) {
-      window.webContents.send('floatingComms:visibilityChanged', {
-        ...visibleRequest,
-        visible: true
-      })
-    } else {
-      window.show()
-    }
-    window.focus()
-  }
+  attachedResize.resize(requestIdentity, height)
 }
 
 export function takeFloatingCommsSurfaceWindow(
@@ -296,6 +279,9 @@ export function takeFloatingCommsSurfaceWindow(
     return null
   }
   const window = floatingCommsWindow
+  if (window && !window.isDestroyed()) {
+    deactivateFloatingCommsSurfaceChildWindow(window)
+  }
   floatingCommsWindow = null
   releaseFloatingCommsOwnership()
   return window && !window.isDestroyed() ? window : null

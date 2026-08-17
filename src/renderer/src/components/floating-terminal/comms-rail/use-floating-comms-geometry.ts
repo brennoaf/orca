@@ -5,6 +5,7 @@ import type {
   FloatingCommsSurfaceIdentity,
   FloatingCommsUpdateRequest
 } from '../../../../../shared/floating-comms-surface'
+import { FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT } from '../../../../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../../../../shared/floating-workspace-apps'
 
 type CurrentRef<T> = {
@@ -29,7 +30,7 @@ export function createFloatingCommsOpenRequest(
       width: workspaceRect.width,
       height: workspaceRect.height
     },
-    height: 420
+    height: FLOATING_COMMS_SURFACE_DEFAULT_HEIGHT
   }
 }
 

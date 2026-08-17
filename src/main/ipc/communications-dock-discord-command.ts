@@ -2,6 +2,7 @@ import type { CommunicationsDockDiscordCommand } from '../../shared/communicatio
 import {
   leaveDiscordVoiceCall,
   reconnectDiscordVoiceService,
+  selectDiscordVoiceChannel,
   setDiscordVoiceSelfDeaf,
   setDiscordVoiceSelfMute
 } from '../messaging/discord-voice-service'
@@ -21,6 +22,8 @@ export async function runCommunicationsDockDiscordCommand(
     await setDiscordVoiceSelfDeaf(command.deafened)
   } else if (command.method === 'leave-call') {
     await leaveDiscordVoiceCall()
+  } else if (command.method === 'select-voice-channel') {
+    await selectDiscordVoiceChannel(command.channelId)
   } else if (command.open) {
     createOrFocusDiscordVoiceWindow()
   } else {

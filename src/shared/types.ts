@@ -57,6 +57,7 @@ import type { CodexResetCreditAttemptLedger } from './codex-reset-credit-attempt
 import type { TaskSourceContext } from './task-source-context'
 import type { SetupRunnerShell } from './setup-runner-command'
 import type { AiVaultSessionTitle } from './ai-vault-session-title'
+import type { InterfaceTheme } from './interface-theme'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
@@ -2758,6 +2759,7 @@ export type GlobalSettings = {
   branchPrefixCustom: string
   enableGitHubAttribution: boolean
   theme: 'system' | 'dark' | 'light'
+  interfaceTheme?: InterfaceTheme
   /** Controls the left sidebar surface without changing terminal brightness. */
   leftSidebarAppearanceMode: LeftSidebarAppearanceMode
   leftSidebarTintColor?: string

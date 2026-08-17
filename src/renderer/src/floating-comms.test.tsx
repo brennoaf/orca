@@ -41,13 +41,35 @@ function presentation(
   }
 }
 
+function dockSnapshot(appId: 'discord' | 'slack' | 'whatsapp-web'): CommunicationsDockSnapshot {
+  return {
+    generation: 1,
+    revision: 1,
+    visible: true,
+    sessions: { [appId]: { appId } },
+    layout: {
+      version: 1,
+      bounds: { x: 0, y: 0, width: 420, height: 640 },
+      tabs: [
+        {
+          id: appId,
+          layout: { type: 'leaf', appId },
+          activeLeafAppId: appId
+        }
+      ],
+      activeTabId: appId,
+      collapsed: false
+    }
+  }
+}
+
 const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   getIntegrationStatuses: vi.fn(() => new Promise<never>(() => undefined)),
   measure: vi.fn(() => Promise.resolve()),
+  resize: vi.fn(() => Promise.resolve()),
   action: vi.fn(() => Promise.resolve()),
-  detach: vi.fn<() => Promise<FloatingCommsSurfacePresentation>>(),
-  minimizeDetached: vi.fn(() => Promise.resolve()),
+  detach: vi.fn<() => Promise<CommunicationsDockSnapshot>>(),
   discordCommand: vi.fn(),
   stateChanged: null as ((identity: FloatingCommsSurfaceIdentity) => void) | null,
   surfaceChanged: null as ((event: FloatingCommsSurfaceChanged) => void) | null,
@@ -76,11 +98,13 @@ function MockPresentation({
   isPopoverOpen,
   initialSessionState,
   onSessionStateChange,
+  discordWebHost,
   children
 }: {
   isPopoverOpen: boolean
   initialSessionState?: FloatingCommsSessionState
   onSessionStateChange?: (sessionState: FloatingCommsSessionState) => void
+  discordWebHost?: { identity: FloatingCommsSurfaceIdentity; visible: boolean }
   children: (value: {
     status: { kind: 'idle' }
     tooltip: string
@@ -92,7 +116,13 @@ function MockPresentation({
   return children({
     status: { kind: 'idle' },
     tooltip: 'Manager',
-    content: <div data-testid="manager-content" data-visible={isPopoverOpen} />,
+    content: (
+      <div
+        data-testid="manager-content"
+        data-visible={isPopoverOpen}
+        data-discord-host-mode={discordWebHost?.identity.mode}
+      />
+    ),
     sessionState: initialSessionState ?? { appId: 'discord' }
   })
 }
@@ -130,7 +160,8 @@ describe('floating communications renderer root', () => {
         whatsappFastResponse: {
           hide: vi.fn(() =>
             Promise.resolve({ attached: true, crashed: false, loaded: true, visible: false })
-          )
+          ),
+          onStateChanged: vi.fn(() => vi.fn())
         },
         settings: {
           getSync: vi.fn(() => null),
@@ -141,9 +172,9 @@ describe('floating communications renderer root', () => {
           getState: mocks.getState,
           getIntegrationStatuses: mocks.getIntegrationStatuses,
           measure: mocks.measure,
+          resize: mocks.resize,
           action: mocks.action,
           detach: mocks.detach,
-          minimizeDetached: mocks.minimizeDetached,
           discordCommand: mocks.discordCommand,
           onStateChanged: vi.fn((callback: typeof mocks.stateChanged) => {
             mocks.stateChanged = callback
@@ -181,9 +212,11 @@ describe('floating communications renderer root', () => {
         }
       }
     })
-    mocks.getState.mockResolvedValue(presentation(identity('discord', 'detached')))
-    mocks.detach.mockResolvedValue(presentation(identity('discord', 'detached')))
-    mocks.discordCommand.mockResolvedValue(presentation(identity('discord', 'detached')).discord)
+    mocks.getState.mockResolvedValue(presentation(identity('discord', 'attached-native')))
+    mocks.detach.mockResolvedValue(dockSnapshot('discord'))
+    mocks.discordCommand.mockResolvedValue(
+      presentation(identity('discord', 'attached-native')).discord
+    )
     mocks.stateChanged = null
     mocks.surfaceChanged = null
     mocks.visibilityChanged = null
@@ -225,26 +258,40 @@ describe('floating communications renderer root', () => {
     expect(document.querySelector('[role="tab"][aria-label="Slack"]')).toBeTruthy()
   })
 
-  it('renders a draggable detached header and minimizes back to the panel', async () => {
+  it.each(['attached-native', 'attached-dom'] as const)(
+    'binds Discord Web for authorized %s mode',
+    async (mode) => {
+      mocks.getState.mockResolvedValue(presentation(identity('discord', mode)))
+      await act(async () => {
+        await import('./floating-comms')
+      })
+      await vi.waitFor(() =>
+        expect(
+          document
+            .querySelector('[data-testid="manager-content"]')
+            ?.getAttribute('data-discord-host-mode')
+        ).toBe(mode)
+      )
+    }
+  )
+
+  it('does not bind Discord Web for an unauthorized attached mode', async () => {
+    const unauthorized = {
+      ...identity('discord', 'attached-dom'),
+      mode: 'attached-window'
+    } as unknown as FloatingCommsSurfaceIdentity
+    mocks.getState.mockResolvedValue(presentation(unauthorized))
     await act(async () => {
       await import('./floating-comms')
     })
     await vi.waitFor(() =>
       expect(document.querySelector('[data-testid="manager-content"]')).toBeTruthy()
     )
-    const back = document.querySelector('button[aria-label="Back to panel"]')
-    if (!(back instanceof HTMLButtonElement)) {
-      throw new Error('Back to panel action was not rendered')
-    }
-    expect(back.closest('[data-drag-region="true"]')).toBeTruthy()
-    expect(back.getAttribute('data-no-drag')).toBe('true')
-    expect(mocks.resizeObserverCount).toBe(0)
-    expect(mocks.measure).not.toHaveBeenCalled()
-    await act(async () => back.click())
-    expect(mocks.minimizeDetached).toHaveBeenCalledWith({
-      ...identity('discord', 'detached'),
-      sessionState: { appId: 'discord' }
-    })
+    expect(
+      document
+        .querySelector('[data-testid="manager-content"]')
+        ?.hasAttribute('data-discord-host-mode')
+    ).toBe(false)
   })
 
   it('detaches an attached manager with the latest in-memory WhatsApp session', async () => {
@@ -256,12 +303,7 @@ describe('floating communications renderer root', () => {
         draft: 'first'
       })
     )
-    mocks.detach.mockResolvedValue(
-      presentation(
-        { ...attached, mode: 'detached' },
-        { appId: 'whatsapp-web', selectedConversationId: 4, draft: 'latest' }
-      )
-    )
+    mocks.detach.mockResolvedValue(dockSnapshot('whatsapp-web'))
     await act(async () => {
       await import('./floating-comms')
     })
@@ -288,6 +330,45 @@ describe('floating communications renderer root', () => {
     })
   })
 
+  it('persists an attached WhatsApp resize only when its pointer drag ends', async () => {
+    const attached = identity('whatsapp-web', 'attached-native')
+    mocks.getState.mockResolvedValue(presentation(attached))
+    HTMLElement.prototype.setPointerCapture = vi.fn()
+    await act(async () => {
+      await import('./floating-comms')
+    })
+    await vi.waitFor(() =>
+      expect(document.querySelector('[aria-label="Resize fast response"]')).toBeTruthy()
+    )
+    const handle = document.querySelector('[aria-label="Resize fast response"]') as HTMLDivElement
+    mocks.resize.mockClear()
+    await act(async () => {
+      handle.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientY: 0 })
+      )
+      handle.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: 400 })
+      )
+    })
+    expect(mocks.resize).not.toHaveBeenCalled()
+    await act(async () => {
+      handle.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientY: 400 })
+      )
+    })
+    expect(mocks.resize).toHaveBeenCalledExactlyOnceWith({ ...attached, height: 720 })
+    await act(async () => {
+      handle.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 2, clientY: 0 })
+      )
+      handle.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientY: -400 })
+      )
+      handle.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 2 }))
+    })
+    expect(mocks.resize).toHaveBeenCalledTimes(1)
+  })
+
   it('refreshes and measures a reopened attached WhatsApp surface after it is hidden', async () => {
     const first = identity('whatsapp-web', 'attached-native', 1, 10)
     const second = identity('whatsapp-web', 'attached-native', 2, 20)
@@ -297,7 +378,7 @@ describe('floating communications renderer root', () => {
       await import('./floating-comms')
     })
     await vi.waitFor(() => expect(mocks.visibilityChanged).not.toBeNull())
-    await vi.waitFor(() => expect(mocks.measure).toHaveBeenCalledWith({ ...first, height: 420 }))
+    await vi.waitFor(() => expect(mocks.measure).toHaveBeenCalledWith({ ...first, height: 520 }))
     const refreshesBeforeReopen = mocks.getState.mock.calls.length
     mocks.getState.mockResolvedValue(presentation(second, session))
 
@@ -306,7 +387,7 @@ describe('floating communications renderer root', () => {
 
     await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(refreshesBeforeReopen + 1))
     await vi.waitFor(() =>
-      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 420 })
+      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 520 })
     )
   })
 
@@ -327,135 +408,7 @@ describe('floating communications renderer root', () => {
 
     await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(refreshesBeforeReopen + 1))
     await vi.waitFor(() =>
-      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 420 })
+      expect(mocks.measure).toHaveBeenLastCalledWith({ ...second, height: 520 })
     )
-  })
-
-  it('keeps detached identity hidden on minimize and resumes after attached readoption', async () => {
-    const detached = identity('discord', 'detached')
-    await act(async () => {
-      await import('./floating-comms')
-    })
-    await vi.waitFor(() => expect(mocks.visibilityChanged).not.toBeNull())
-    const content = document.querySelector('[data-testid="manager-content"]')
-    expect(content?.getAttribute('data-visible')).toBe('true')
-    act(() => mocks.visibilityChanged?.({ ...detached, visible: false }))
-    expect(content?.getAttribute('data-visible')).toBe('false')
-    act(() => mocks.visibilityChanged?.({ ...detached, visible: true }))
-    expect(content?.getAttribute('data-visible')).toBe('true')
-    const back = document.querySelector('button[aria-label="Back to panel"]')
-    if (!(back instanceof HTMLButtonElement)) {
-      throw new Error('Back to panel action was not rendered')
-    }
-    await act(async () => back.click())
-    const requestsBeforeMinimize = mocks.getState.mock.calls.length
-    act(() => mocks.visibilityChanged?.({ ...detached, visible: false }))
-    expect(content?.getAttribute('data-visible')).toBe('false')
-    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeMinimize)
-
-    const returned = identity('discord', 'attached-native', 1, 20)
-    mocks.getState.mockResolvedValue({ ...presentation(returned), visible: false })
-    await act(async () =>
-      mocks.surfaceChanged?.({
-        appId: 'discord',
-        previous: detached,
-        current: returned,
-        reason: 'minimized',
-        sessionState: { appId: 'discord' }
-      })
-    )
-    await vi.waitFor(() => expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeMinimize + 1))
-    expect(content?.getAttribute('data-visible')).toBe('false')
-    act(() => mocks.visibilityChanged?.({ ...returned, visible: true }))
-    expect(content?.getAttribute('data-visible')).toBe('true')
-
-    const openApp = Array.from(document.querySelectorAll('button')).find((candidate) =>
-      candidate.textContent?.includes('Open Discord')
-    )
-    if (!openApp) {
-      throw new Error('Open Discord action was not rendered')
-    }
-    await act(async () => openApp.click())
-    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...returned })
-  })
-
-  it('accepts exact authoritative surface transitions and keeps actions on the current identity', async () => {
-    const attached = identity('discord', 'attached-native', 1, 10)
-    const detached = identity('discord', 'detached', 1, 20)
-    const returned = identity('discord', 'attached-native', 1, 30)
-    mocks.getState.mockResolvedValue(presentation(attached))
-    await act(async () => {
-      await import('./floating-comms')
-    })
-    await vi.waitFor(() =>
-      expect(document.querySelector('[data-testid="manager-content"]')).toBeTruthy()
-    )
-    const openApp = (): HTMLButtonElement => {
-      const button = Array.from(document.querySelectorAll('button')).find((candidate) =>
-        candidate.textContent?.includes('Open Discord')
-      )
-      if (!button) {
-        throw new Error('Open Discord action was not rendered')
-      }
-      return button
-    }
-    await act(async () => openApp().click())
-    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...attached })
-
-    mocks.getState.mockResolvedValue(presentation(detached))
-    const requestsBeforeStateEvent = mocks.getState.mock.calls.length
-    act(() => mocks.stateChanged?.(detached))
-    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent)
-    await act(async () =>
-      mocks.surfaceChanged?.({
-        appId: 'discord',
-        previous: attached,
-        current: detached,
-        reason: 'detached',
-        sessionState: { appId: 'discord' }
-      })
-    )
-    await vi.waitFor(() =>
-      expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent + 1)
-    )
-    await act(async () => openApp().click())
-    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...detached })
-
-    mocks.getState.mockResolvedValue(presentation(returned))
-    await act(async () =>
-      mocks.surfaceChanged?.({
-        appId: 'discord',
-        previous: detached,
-        current: returned,
-        reason: 'minimized',
-        sessionState: { appId: 'discord' }
-      })
-    )
-    await vi.waitFor(() =>
-      expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStateEvent + 2)
-    )
-    await act(async () => openApp().click())
-    expect(mocks.action).toHaveBeenLastCalledWith({ type: 'open-app', ...returned })
-
-    const requestsBeforeStaleEvents = mocks.getState.mock.calls.length
-    act(() =>
-      mocks.surfaceChanged?.({
-        appId: 'whatsapp-web',
-        previous: null,
-        current: identity('whatsapp-web', 'detached', 2, 40),
-        reason: 'detached',
-        sessionState: { appId: 'whatsapp-web', selectedConversationId: null, draft: '' }
-      })
-    )
-    act(() =>
-      mocks.surfaceChanged?.({
-        appId: 'discord',
-        previous: attached,
-        current: detached,
-        reason: 'detached',
-        sessionState: { appId: 'discord' }
-      })
-    )
-    expect(mocks.getState).toHaveBeenCalledTimes(requestsBeforeStaleEvents)
   })
 })

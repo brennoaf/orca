@@ -3,56 +3,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   class FakeWindow {
     destroyed = false
-    hidden = false
+    focused = true
     minimized = false
-    visible = true
-    loadFailed: ((window: FakeWindow, error: unknown) => void) | null = null
-    webContents = {
-      send: vi.fn(),
-      isLoading: vi.fn(() => false),
-      isDestroyed: vi.fn(() => this.destroyed)
-    }
-    destroy = vi.fn(() => {
-      this.destroyed = true
-      this.visible = false
-    })
+    webContents = { send: vi.fn() }
     focus = vi.fn()
-    getBounds = vi.fn(() => ({ x: 100, y: 100, width: 420, height: 420 }))
-    hide = vi.fn(() => {
-      this.hidden = true
-      this.visible = false
-    })
     isDestroyed = vi.fn(() => this.destroyed)
+    isFocused = vi.fn(() => this.focused)
     isMinimized = vi.fn(() => this.minimized)
-    isVisible = vi.fn(() => this.visible)
     restore = vi.fn(() => {
       this.minimized = false
     })
-    show = vi.fn(() => {
-      this.hidden = false
-      this.visible = true
-    })
-    setAlwaysOnTop = vi.fn()
+    show = vi.fn()
   }
-
-  const bindings = new Map<FakeWindow, { release: ReturnType<typeof vi.fn>; lifecycle: unknown }>()
+  const mainWindow = new FakeWindow()
   return {
     FakeWindow,
-    bindings,
-    mainSend: vi.fn(),
-    mainWindow: new FakeWindow(),
+    mainWindow,
     attachedSender: null as unknown,
+    mainSend: vi.fn(),
     openNative: vi.fn(() => true),
     updateNative: vi.fn(() => true as boolean | null),
     closeAttached: vi.fn(),
-    resizeAttached: vi.fn(),
-    takeWindow: vi.fn(),
+    destroySurface: vi.fn(),
     destroyAttached: vi.fn(),
-    useDom: vi.fn(() => false),
-    unownedWindows: [] as InstanceType<typeof FakeWindow>[],
-    createUnowned: vi.fn(),
-    layoutSet: vi.fn(),
-    layoutFlush: vi.fn(async () => undefined)
+    resizeAttached: vi.fn(),
+    useDom: vi.fn(() => false)
   }
 })
 
@@ -73,268 +48,165 @@ vi.mock('../messaging/discord-voice-service', () => ({
   })
 }))
 vi.mock('./discord-voice-window', () => ({ getDiscordVoiceOverlayState: () => ({ open: false }) }))
-vi.mock('./floating-comms-detached-layout', () => ({
-  FLOATING_COMMS_DETACHED_DEFAULT_HEIGHT: 420,
-  FLOATING_COMMS_DETACHED_DEFAULT_WIDTH: 420,
-  FloatingCommsDetachedLayoutStore: class {
-    get = vi.fn(() => null)
-    set = mocks.layoutSet
-    flush = mocks.layoutFlush
-  }
-}))
-vi.mock('./floating-comms-detached-window', () => ({
-  bindFloatingCommsDetachedWindow: (
-    window: InstanceType<typeof mocks.FakeWindow>,
-    _bounds: unknown,
-    lifecycle: unknown
-  ) => {
-    const binding = { release: vi.fn(), lifecycle }
-    mocks.bindings.set(window, binding)
-    return binding
-  }
+vi.mock('./floating-comms-attached-window', () => ({
+  destroyAttachedFloatingCommsWindow: mocks.destroyAttached
 }))
 vi.mock('./floating-comms-surface-window', () => ({
   closeFloatingCommsSurface: mocks.closeAttached,
-  createUnownedFloatingCommsSurfaceWindow: mocks.createUnowned,
-  destroyFloatingCommsSurface: mocks.destroyAttached,
+  destroyFloatingCommsSurface: mocks.destroySurface,
   isFloatingCommsSurfaceRenderer: (sender: unknown) => sender === mocks.attachedSender,
   isFloatingCommsSurfaceVisible: () => true,
   openFloatingCommsSurface: mocks.openNative,
   resizeFloatingCommsSurface: mocks.resizeAttached,
   shouldUseFloatingCommsDomFallback: mocks.useDom,
-  takeFloatingCommsSurfaceWindow: mocks.takeWindow,
   updateFloatingCommsSurface: mocks.updateNative
 }))
 
-import type { FloatingCommsSurfaceIdentity } from '../../shared/floating-comms-surface'
 import { FloatingCommsSurfaceController } from './floating-comms-surface-controller'
 
 const owner = new mocks.FakeWindow() as unknown as Electron.BrowserWindow
 const geometry = {
   anchor: { x: 20, y: 20, width: 40, height: 40 },
   workspace: { x: 10, y: 10, width: 800, height: 600 },
-  height: 300
+  height: 520
 }
 const request = (appId: 'discord' | 'slack' | 'whatsapp-web', requestId: number) => ({
   appId,
   requestId,
   ...geometry
 })
-const session = (appId: 'discord' | 'slack' | 'whatsapp-web') =>
-  appId === 'whatsapp-web'
-    ? ({ appId, selectedConversationId: null, draft: '' } as const)
-    : ({ appId } as const)
-
-function detached(identity: FloatingCommsSurfaceIdentity) {
-  return { ...identity, sessionState: session(identity.appId) }
-}
 
 describe('FloatingCommsSurfaceController', () => {
   beforeEach(() => {
-    mocks.bindings.clear()
-    mocks.mainSend.mockReset()
-    mocks.openNative.mockReset().mockReturnValue(true)
-    mocks.updateNative.mockReset().mockReturnValue(true)
-    mocks.closeAttached.mockReset()
-    mocks.resizeAttached.mockReset()
-    mocks.takeWindow.mockReset()
-    mocks.destroyAttached.mockReset()
-    mocks.useDom.mockReset().mockReturnValue(false)
-    mocks.createUnowned.mockReset().mockImplementation((_owner, loadFailed) => {
-      const window = new mocks.FakeWindow()
-      window.loadFailed = loadFailed
-      mocks.unownedWindows.push(window)
-      return window
-    })
-    mocks.unownedWindows.length = 0
-    mocks.layoutSet.mockReset()
-    mocks.layoutFlush.mockReset().mockResolvedValue(undefined)
+    vi.clearAllMocks()
     mocks.attachedSender = null
-    mocks.mainWindow.destroyed = false
-    mocks.mainWindow.minimized = false
+    mocks.openNative.mockReturnValue(true)
+    mocks.updateNative.mockReturnValue(true)
+    mocks.useDom.mockReturnValue(false)
   })
 
-  it('keeps one attached surface and detached records for two apps with focus dedup', () => {
+  it('keeps one attached surface and closes the previous one before replacement', () => {
     const controller = new FloatingCommsSurfaceController()
-    const discordWindow = new mocks.FakeWindow()
-    const slackWindow = new mocks.FakeWindow()
-    const discordAttached = controller.open(owner, request('discord', 1)).identity
-    mocks.takeWindow.mockReturnValueOnce(discordWindow)
-    const discordDetached = controller.detachSurface(detached(discordAttached))
-    const slackAttached = controller.open(owner, request('slack', 2)).identity
-    mocks.takeWindow.mockReturnValueOnce(slackWindow)
-    const slackDetached = controller.detachSurface(detached(slackAttached))
-    expect(
-      controller
-        .listPresentations()
-        .map(({ appId }) => appId)
-        .sort()
-    ).toEqual(['discord', 'slack'])
-    const openCalls = mocks.openNative.mock.calls.length
-    expect(controller.open(owner, request('discord', 99)).identity).toMatchObject({
-      appId: 'discord',
-      surfaceId: discordDetached.surfaceId,
-      mode: 'detached'
-    })
-    expect(mocks.openNative).toHaveBeenCalledTimes(openCalls)
-    expect(discordWindow.focus).toHaveBeenCalledTimes(2)
-    expect(slackDetached.mode).toBe('detached')
+    const first = controller.open(owner, request('discord', 1)).identity
+    const second = controller.open(owner, request('slack', 2)).identity
+
+    expect(mocks.closeAttached).toHaveBeenCalledWith(first)
+    expect(controller.listPresentations()).toEqual([
+      expect.objectContaining({
+        appId: 'slack',
+        mode: 'attached-native',
+        surfaceId: second.surfaceId
+      })
+    ])
   })
 
-  it('reuses the native webContents through detach minimize and attached readoption', () => {
+  it('admits only the exact current native or DOM attached sender', () => {
     const controller = new FloatingCommsSurfaceController()
-    const window = new mocks.FakeWindow()
-    const attached = controller.open(owner, request('discord', 1)).identity
-    mocks.takeWindow.mockReturnValue(window)
-    const detachedPresentation = controller.detachSurface(detached(attached))
-    controller.minimizeDetached(detached(detachedPresentation))
-    const visibilityFalse = window.webContents.send.mock.calls.findLast(
-      ([channel, value]) =>
-        channel === 'floatingComms:visibilityChanged' &&
-        (value as { visible?: boolean }).visible === false
-    )
-    expect(visibilityFalse?.[1]).toMatchObject({
-      surfaceId: detachedPresentation.surfaceId,
-      mode: 'detached',
-      visible: false
-    })
+    const nativeSender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
+    const native = controller.open(owner, request('whatsapp-web', 1)).identity
+    mocks.attachedSender = nativeSender
+    expect(controller.isAttachedSender(nativeSender, native)).toBe(true)
+
+    controller.closeAttached(native)
+    mocks.useDom.mockReturnValue(true)
+    const dom = controller.open(owner, request('whatsapp-web', 2)).identity
+    expect(dom.mode).toBe('attached-dom')
     expect(
-      window.webContents.send.mock.calls.some(
-        ([channel, value]) =>
-          channel === 'floatingComms:surfaceChanged' &&
-          (value as { current?: unknown }).current === null
-      )
-    ).toBe(false)
-    expect(mocks.mainSend).toHaveBeenLastCalledWith(
-      'floatingComms:surfaceChanged',
-      expect.objectContaining({
-        previous: expect.objectContaining({ surfaceId: detachedPresentation.surfaceId }),
-        current: null,
-        reason: 'minimized'
-      })
-    )
-    const reopened = controller.open(owner, request('discord', 2)).identity
-    expect(mocks.openNative).toHaveBeenLastCalledWith(
-      owner,
-      expect.objectContaining({ requestId: 2 }),
-      reopened,
-      expect.any(Object),
-      window
-    )
-    const surfaceChange = window.webContents.send.mock.calls.findLast(
-      ([channel]) => channel === 'floatingComms:surfaceChanged'
-    )?.[1]
-    expect(surfaceChange).toMatchObject({
-      previous: { surfaceId: detachedPresentation.surfaceId, mode: 'detached' },
-      current: { surfaceId: reopened.surfaceId, mode: 'attached-native' }
-    })
-    expect(window.webContents.send).toHaveBeenCalledWith('floatingComms:visibilityChanged', {
-      ...reopened,
-      visible: true
-    })
-    expect(mocks.mainSend).toHaveBeenLastCalledWith(
-      'floatingComms:surfaceChanged',
-      expect.objectContaining({
-        previous: expect.objectContaining({ surfaceId: detachedPresentation.surfaceId }),
-        current: reopened
-      })
-    )
+      controller.isAttachedSender(owner.webContents as unknown as Electron.WebContents, dom)
+    ).toBe(true)
+    expect(controller.isAttachedSender(nativeSender, dom)).toBe(false)
   })
 
-  it('admits a reopened native sender only for its current identity', () => {
+  it('resizes only the current allowed DOM attached surface', () => {
+    const controller = new FloatingCommsSurfaceController()
+    mocks.useDom.mockReturnValue(true)
+    const whatsapp = controller.open(owner, request('whatsapp-web', 1)).identity
+    controller.resize(whatsapp, 720)
+    expect(mocks.resizeAttached).toHaveBeenCalledWith(whatsapp, 720)
+
+    controller.closeAttached(whatsapp)
+    const slack = controller.open(owner, request('slack', 2)).identity
+    controller.resize(slack, 420)
+    expect(mocks.resizeAttached).toHaveBeenLastCalledWith(slack, 420)
+
+    controller.closeAttached(slack)
+    mocks.useDom.mockReturnValue(false)
+    const native = controller.open(owner, request('whatsapp-web', 3)).identity
+    expect(() => controller.resize(native, 520)).toThrow('floating_comms_resize_denied')
+
+    controller.closeAttached(native)
+    mocks.useDom.mockReturnValue(true)
+    const discord = controller.open(owner, request('discord', 4)).identity
+    expect(() => controller.resize(discord, 520)).toThrow('floating_comms_resize_denied')
+    expect(mocks.resizeAttached).toHaveBeenCalledTimes(2)
+  })
+
+  it('admits one exact initial Discord native measurement without enabling resize', () => {
     const controller = new FloatingCommsSurfaceController()
     const sender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
-    const first = controller.open(owner, request('whatsapp-web', 1)).identity
+    const discord = controller.open(owner, request('discord', 1)).identity
     mocks.attachedSender = sender
-    controller.closeAttached(first)
-    const second = controller.open(owner, request('whatsapp-web', 2)).identity
 
-    expect(controller.isAttachedSender(sender, first)).toBe(false)
-    expect(controller.isAttachedSender(sender, second)).toBe(true)
-    controller.resize(second, 320)
-    expect(mocks.resizeAttached).toHaveBeenCalledWith(second, 320)
+    controller.measure(sender, discord, 520)
+
+    expect(mocks.resizeAttached).toHaveBeenCalledWith(discord, 520)
+    expect(() => controller.resize(discord, 520)).toThrow('floating_comms_resize_denied')
+    expect(() => controller.measure(sender, discord, 520)).toThrow('floating_comms_measure_denied')
   })
 
-  it('cleans a DOM detached window when loading rejects before registration', () => {
+  it('rejects Discord native measurements from stale senders and identities', () => {
     const controller = new FloatingCommsSurfaceController()
-    mocks.useDom.mockReturnValue(true)
-    const attached = controller.open(owner, request('slack', 1)).identity
-    mocks.createUnowned.mockImplementationOnce((_owner, loadFailed) => {
-      const window = new mocks.FakeWindow()
-      loadFailed(window, new Error('aborted'))
-      return window
-    })
-    expect(() => controller.detachSurface(detached(attached))).toThrow(
-      'floating_comms_detached_load_failed'
+    const sender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
+    const staleSender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
+    const discord = controller.open(owner, request('discord', 1)).identity
+    mocks.attachedSender = sender
+
+    expect(() => controller.measure(staleSender, discord, 520)).toThrow(
+      'floating_comms_measure_denied'
     )
+    expect(() => controller.measure(sender, { ...discord, requestId: 2 }, 520)).toThrow(
+      'floating_comms_measure_denied'
+    )
+    expect(() => controller.measure(sender, { ...discord, surfaceId: 0 }, 520)).toThrow(
+      'floating_comms_measure_denied'
+    )
+    expect(() => controller.measure(sender, { ...discord, appId: 'slack' }, 520)).toThrow(
+      'floating_comms_measure_denied'
+    )
+    expect(() => controller.measure(sender, { ...discord, mode: 'attached-dom' }, 520)).toThrow(
+      'floating_comms_measure_denied'
+    )
+    expect(mocks.resizeAttached).not.toHaveBeenCalled()
+  })
+
+  it('hands the attached session to the communications dock without a detached host', () => {
+    const controller = new FloatingCommsSurfaceController()
+    const attached = controller.open(owner, request('whatsapp-web', 1)).identity
+    const sessionState = {
+      appId: 'whatsapp-web' as const,
+      selectedConversationId: 7,
+      draft: 'draft'
+    }
+
+    expect(controller.takeAttachedForDock({ ...attached, sessionState })).toEqual(sessionState)
+    expect(mocks.destroyAttached).toHaveBeenCalledWith(attached)
     expect(controller.listPresentations()).toEqual([])
     expect(mocks.mainSend).toHaveBeenLastCalledWith(
       'floatingComms:surfaceChanged',
-      expect.objectContaining({ previous: attached, current: null, reason: 'crashed' })
+      expect.objectContaining({ previous: attached, current: null, reason: 'detached' })
     )
   })
 
-  it('removes an announced DOM detach on load rejection without affecting a newer generation', () => {
+  it('rejects stale commands and closes the attached surface after an allowed action', () => {
     const controller = new FloatingCommsSurfaceController()
-    mocks.useDom.mockReturnValue(true)
-    const firstAttached = controller.open(owner, request('slack', 1)).identity
-    controller.detachSurface(detached(firstAttached))
-    const firstWindow = mocks.unownedWindows[0]
-    if (!firstWindow?.loadFailed) {
-      throw new Error('Missing first load callback')
-    }
-    controller.closeDetached('slack')
-    const secondAttached = controller.open(owner, request('slack', 2)).identity
-    const secondDetached = controller.detachSurface(detached(secondAttached))
-    firstWindow.loadFailed(firstWindow, new Error('stale failure'))
-    expect(controller.getPresentation('slack')).toMatchObject({
-      surfaceId: secondDetached.surfaceId,
-      mode: 'detached'
-    })
-    const secondWindow = mocks.unownedWindows[1]
-    if (!secondWindow?.loadFailed) {
-      throw new Error('Missing second load callback')
-    }
-    secondWindow.loadFailed(secondWindow, new Error('load failure'))
-    expect(controller.getPresentation('slack')).toBeNull()
-    expect(mocks.bindings.get(secondWindow)?.release).toHaveBeenCalledOnce()
-  })
-
-  it('rejects stale sender identities and keeps detached actions open', () => {
-    const controller = new FloatingCommsSurfaceController()
-    const window = new mocks.FakeWindow()
+    const sender = new mocks.FakeWindow().webContents as unknown as Electron.WebContents
     const attached = controller.open(owner, request('discord', 1)).identity
-    mocks.takeWindow.mockReturnValue(window)
-    const current = controller.detachSurface(detached(attached))
-    const sender = window.webContents as unknown as Electron.WebContents
-    expect(controller.isDetachedSender(sender, current)).toBe(true)
-    expect(
-      controller.isDetachedSender(sender, { ...current, surfaceId: current.surfaceId + 1 })
-    ).toBe(false)
-    expect(controller.isDetachedSender(sender, { ...current, mode: 'attached-native' })).toBe(false)
-    controller.handleAction(sender, { ...current, type: 'open-app' })
-    expect(controller.getPresentation('discord')).not.toBeNull()
-    expect(mocks.closeAttached).not.toHaveBeenCalled()
-    expect(mocks.mainWindow.show).toHaveBeenCalled()
-    expect(mocks.mainWindow.focus).toHaveBeenCalled()
-  })
+    expect(() => controller.handleAction(sender, { ...attached, type: 'open-app' })).toThrow(
+      'floating_comms_action_stale'
+    )
 
-  it('destroys exact detached and reusable windows on disable and shutdown', async () => {
-    const controller = new FloatingCommsSurfaceController()
-    const discordWindow = new mocks.FakeWindow()
-    const slackWindow = new mocks.FakeWindow()
-    const discordAttached = controller.open(owner, request('discord', 1)).identity
-    mocks.takeWindow.mockReturnValueOnce(discordWindow)
-    const discordDetached = controller.detachSurface(detached(discordAttached))
-    controller.minimizeDetached(detached(discordDetached))
-    controller.disable('discord')
-    expect(discordWindow.destroy).toHaveBeenCalledOnce()
-    const slackAttached = controller.open(owner, request('slack', 2)).identity
-    mocks.takeWindow.mockReturnValueOnce(slackWindow)
-    controller.detachSurface(detached(slackAttached))
-    await controller.shutdown()
-    expect(slackWindow.destroy).toHaveBeenCalledOnce()
-    expect(controller.listPresentations()).toEqual([])
-    expect(mocks.layoutFlush).toHaveBeenCalledOnce()
+    mocks.attachedSender = sender
+    controller.handleAction(sender, { ...attached, type: 'open-app' })
+    expect(mocks.closeAttached).toHaveBeenCalledWith(expect.objectContaining(attached))
   })
 })

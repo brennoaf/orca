@@ -24,6 +24,7 @@ describe('CommunicationsDockLayoutStore', () => {
   let directory: string
 
   beforeEach(async () => {
+    mocks.display.workArea.height = 1_080
     directory = await mkdtemp(join(tmpdir(), 'orca-communications-dock-'))
   })
   afterEach(async () => {
@@ -79,5 +80,23 @@ describe('CommunicationsDockLayoutStore', () => {
   it('reads primary display bounds when opening without persisted layout', () => {
     const store = new CommunicationsDockLayoutStore(directory)
     expect(store.get().bounds).toEqual({ x: 750, y: 220, width: 420, height: 640 })
+  })
+
+  it('preserves detached heights above the former cap', () => {
+    mocks.display.workArea.height = 1_600
+    const normalized = normalizeCommunicationsDockLayout({
+      version: 1,
+      bounds: { x: 100, y: 80, width: 440, height: 1_440 },
+      tabs: [
+        {
+          id: 'whatsapp-web',
+          layout: { type: 'leaf', appId: 'whatsapp-web' },
+          activeLeafAppId: 'whatsapp-web'
+        }
+      ],
+      activeTabId: 'whatsapp-web',
+      collapsed: false
+    })
+    expect(normalized?.bounds.height).toBe(1_440)
   })
 })

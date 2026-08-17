@@ -11,6 +11,7 @@ import {
 } from './floating-comms-surface-geometry'
 
 export type FloatingCommsAttachedOpenHost = {
+  activateWindow: (window: BrowserWindow, owner: BrowserWindow) => void
   createWindow: (owner: BrowserWindow) => BrowserWindow
   currentRequest: () => FloatingCommsOpenRequest | null
   destroy: () => void
@@ -67,6 +68,7 @@ export function openFloatingCommsAttachedSurface(
     window = host.createWindow(owner)
     host.setWindow(window)
   }
+  host.activateWindow(window, owner)
   host.setReleaseListeners(
     bindFloatingCommsGeometryListeners({
       owner,

@@ -1,9 +1,8 @@
-import type { BrowserWindow, WebContents } from 'electron'
+import { app, type BrowserWindow, type WebContents } from 'electron'
 import type {
   FloatingCommsAction,
   FloatingCommsDetachRequest,
   FloatingCommsDiscordCommand,
-  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
   FloatingCommsSessionState,
@@ -12,15 +11,13 @@ import type {
   FloatingCommsUpdateRequest
 } from '../../shared/floating-comms-surface'
 import type { FloatingWorkspaceAppId } from '../../shared/floating-workspace-apps'
+import { clampFloatingCommsSurfaceHeight } from '../../shared/floating-comms-surface'
+import { FloatingCommsAttachedHeightStore } from './floating-comms-attached-height'
 import { sendToTrustedUIRenderer } from '../ipc/ui'
 import {
-  FloatingCommsDetachedSurfaceController,
-  type FloatingCommsAttachedRecord
-} from './floating-comms-detached-surface-controller'
-import {
   defaultFloatingCommsSessionState,
-  sendFloatingCommsVisibility
-} from './floating-comms-detached-record'
+  type FloatingCommsAttachedRecord
+} from './floating-comms-attached-record'
 import {
   closeFloatingCommsSurface,
   destroyFloatingCommsSurface,
@@ -37,8 +34,6 @@ import {
 } from './floating-comms-surface-identity'
 import { takeAttachedFloatingCommsForDock } from './floating-comms-dock-detach'
 import {
-  createFloatingCommsSurfaceChange,
-  createFloatingCommsPresentation,
   emitFloatingCommsSurfaceChange,
   restoreFloatingCommsMainWindow
 } from './floating-comms-surface-presentation'
@@ -48,38 +43,31 @@ import {
   listFloatingCommsSurfacePresentations
 } from './floating-comms-surface-presentations'
 
+const RESIZABLE_ATTACHED_APP_IDS = new Set<FloatingWorkspaceAppId>(['whatsapp-web', 'slack'])
+
 export class FloatingCommsSurfaceController {
   private attached: FloatingCommsAttachedRecord | null = null
   private nextSurfaceId = 0
-  private readonly detached = new FloatingCommsDetachedSurfaceController({
-    emitChange: (previous, current, reason, sessionState) =>
-      emitFloatingCommsSurfaceChange(previous, current, reason, sessionState),
-    identity: (request, mode) => this.identity(request, mode),
-    presentation: (identity, sessionState, visible) =>
-      createFloatingCommsPresentation(identity, sessionState, visible)
-  })
+  private attachedHeightStore: FloatingCommsAttachedHeightStore | null = null
 
   open(owner: BrowserWindow, request: FloatingCommsOpenRequest): FloatingCommsOpenResult {
-    if (this.detached.has(request.appId)) {
-      const { appId, requestId, surfaceId, mode } = this.detached.focus(request.appId)
-      return { identity: { appId, requestId, surfaceId, mode } }
-    }
+    request = { ...request, height: this.attachedHeights().get(request.appId) }
     if (
       this.attached?.identity.appId === request.appId &&
       this.attached.identity.requestId === request.requestId
     ) {
-      return { identity: this.attached.identity }
+      return { identity: this.attached.identity, height: this.attached.request.height }
     }
     if (this.attached) {
       this.closeAttached(this.attached.identity)
     }
-    const reusable = this.detached.takeReusable(request.appId)
     const nativeIdentity = this.identity(request, 'attached-native')
     const record: FloatingCommsAttachedRecord = {
       identity: nativeIdentity,
       owner,
       request,
-      sessionState: reusable?.sessionState ?? defaultFloatingCommsSessionState(request.appId)
+      sessionState: defaultFloatingCommsSessionState(request.appId),
+      hasInitialMeasurement: false
     }
     this.attached = record
     const openedNative =
@@ -92,29 +80,13 @@ export class FloatingCommsSurfaceController {
           onClosed: (identity) => this.handleAttachedClosed(identity),
           onFallback: (identity) => this.handleAttachedFallback(identity)
         },
-        reusable?.window
+        undefined
       )
     if (!openedNative) {
-      if (reusable) {
-        this.detached.restoreReusable(request.appId, reusable)
-      }
       record.identity = this.identity(request, 'attached-dom')
     }
-    const previousIdentity = reusable?.previousIdentity ?? null
-    if (openedNative && reusable) {
-      reusable.window.webContents.send(
-        'floatingComms:surfaceChanged',
-        createFloatingCommsSurfaceChange(
-          previousIdentity,
-          record.identity,
-          'opened',
-          record.sessionState
-        )
-      )
-      sendFloatingCommsVisibility(reusable.window, record.identity, true)
-    }
-    emitFloatingCommsSurfaceChange(previousIdentity, record.identity, 'opened', record.sessionState)
-    return { identity: record.identity }
+    emitFloatingCommsSurfaceChange(null, record.identity, 'opened', record.sessionState)
+    return { identity: record.identity, height: record.request.height }
   }
 
   update(owner: BrowserWindow, request: FloatingCommsUpdateRequest): FloatingCommsOpenResult {
@@ -122,12 +94,13 @@ export class FloatingCommsSurfaceController {
     if (record.owner !== owner) {
       throw new Error('floating_comms_update_owner_mismatch')
     }
+    const height = clampFloatingCommsSurfaceHeight(request.height)
     record.request = {
       appId: request.appId,
       requestId: request.requestId,
       anchor: request.anchor,
       workspace: request.workspace,
-      height: request.height
+      height
     }
     if (
       record.identity.mode === 'attached-native' &&
@@ -135,7 +108,7 @@ export class FloatingCommsSurfaceController {
     ) {
       throw new Error('floating_comms_update_stale')
     }
-    return { identity: this.attached?.identity ?? record.identity }
+    return { identity: this.attached?.identity ?? record.identity, height }
   }
 
   closeAttached(identity: FloatingCommsSurfaceIdentity): void {
@@ -148,18 +121,43 @@ export class FloatingCommsSurfaceController {
     emitFloatingCommsSurfaceChange(identity, null, 'closed', record.sessionState)
   }
 
-  resize(identity: FloatingCommsSurfaceIdentity, height: number): void {
-    this.requireAttached(identity)
-    resizeFloatingCommsSurface(identity, height)
+  measure(sender: WebContents, identity: FloatingCommsSurfaceIdentity, height: number): void {
+    if (!this.isAttachedSender(sender, identity)) {
+      throw new Error('floating_comms_measure_denied')
+    }
+    const record = this.requireAttached(identity)
+    const isInitialDiscordNativeMeasurement =
+      record.identity.mode === 'attached-native' &&
+      record.identity.appId === 'discord' &&
+      !record.hasInitialMeasurement
+    const isResizableDomMeasurement =
+      record.identity.mode === 'attached-dom' &&
+      RESIZABLE_ATTACHED_APP_IDS.has(record.identity.appId)
+    if (!isInitialDiscordNativeMeasurement && !isResizableDomMeasurement) {
+      throw new Error('floating_comms_measure_denied')
+    }
+    const nextHeight = clampFloatingCommsSurfaceHeight(height)
+    record.request = { ...record.request, height: nextHeight }
+    if (isInitialDiscordNativeMeasurement) {
+      record.hasInitialMeasurement = true
+    }
+    resizeFloatingCommsSurface(identity, nextHeight)
   }
 
-  detachSurface(request: FloatingCommsDetachRequest): FloatingCommsSurfacePresentation {
-    const record = this.requireAttached(request)
-    if (record.identity.appId !== request.sessionState.appId) {
-      throw new Error('floating_comms_session_app_mismatch')
+  resize(identity: FloatingCommsSurfaceIdentity, height: number, persist = false): void {
+    const record = this.requireAttached(identity)
+    if (
+      record.identity.mode !== 'attached-dom' ||
+      !RESIZABLE_ATTACHED_APP_IDS.has(record.identity.appId)
+    ) {
+      throw new Error('floating_comms_resize_denied')
     }
-    this.attached = null
-    return this.detached.detachSurface(record, request)
+    const nextHeight = clampFloatingCommsSurfaceHeight(height)
+    record.request = { ...record.request, height: nextHeight }
+    if (persist) {
+      this.attachedHeights().set(identity.appId, nextHeight)
+    }
+    resizeFloatingCommsSurface(identity, nextHeight)
   }
 
   takeAttachedForDock(request: FloatingCommsDetachRequest): FloatingCommsSessionState {
@@ -168,23 +166,7 @@ export class FloatingCommsSurfaceController {
     return takeAttachedFloatingCommsForDock(record, request)
   }
 
-  minimizeDetached(request: FloatingCommsMinimizeDetachedRequest): void {
-    if (request.appId !== request.sessionState.appId) {
-      throw new Error('floating_comms_session_app_mismatch')
-    }
-    this.detached.minimize(request)
-  }
-
-  focusDetached(appId: FloatingWorkspaceAppId): FloatingCommsSurfacePresentation {
-    return this.detached.focus(appId)
-  }
-
-  closeDetached(appId: FloatingWorkspaceAppId): void {
-    this.detached.close(appId)
-  }
-
   disable(appId: FloatingWorkspaceAppId): void {
-    this.detached.disable(appId)
     const attached = this.attached
     if (!attached || attached.identity.appId !== appId) {
       return
@@ -197,31 +179,29 @@ export class FloatingCommsSurfaceController {
   }
 
   listPresentations(): FloatingCommsSurfacePresentation[] {
-    return listFloatingCommsSurfacePresentations(this.detached, this.attached)
+    return listFloatingCommsSurfacePresentations(this.attached)
   }
 
   getPresentation(appId: FloatingWorkspaceAppId): FloatingCommsSurfacePresentation | null {
-    return getFloatingCommsSurfacePresentation(this.detached, this.attached, appId)
+    return getFloatingCommsSurfacePresentation(this.attached, appId)
   }
 
   getStateForSender(sender: WebContents): FloatingCommsSurfacePresentation | null {
-    return getFloatingCommsSurfaceStateForSender(this.detached, this.attached, sender)
+    return getFloatingCommsSurfaceStateForSender(this.attached, sender)
   }
 
   isAttachedSender(sender: WebContents, identity: FloatingCommsSurfaceIdentity): boolean {
-    return Boolean(
-      this.attached &&
-      sameFloatingCommsSurfaceIdentity(this.attached.identity, identity) &&
-      isFloatingCommsSurfaceRenderer(sender)
-    )
-  }
-
-  isDetachedSender(sender: WebContents, identity: FloatingCommsSurfaceIdentity): boolean {
-    return this.detached.isSender(sender, identity)
+    const attached = this.attached
+    if (!attached || !sameFloatingCommsSurfaceIdentity(attached.identity, identity)) {
+      return false
+    }
+    return attached.identity.mode === 'attached-dom'
+      ? attached.owner.webContents === sender
+      : isFloatingCommsSurfaceRenderer(sender)
   }
 
   isSurfaceSender(sender: WebContents, identity: FloatingCommsSurfaceIdentity): boolean {
-    return this.isAttachedSender(sender, identity) || this.isDetachedSender(sender, identity)
+    return this.isAttachedSender(sender, identity)
   }
 
   isAttachedAppFocusedVisible(appId: FloatingWorkspaceAppId): boolean {
@@ -230,7 +210,7 @@ export class FloatingCommsSurfaceController {
       attached &&
       attached.identity.appId === appId &&
       attached.owner.isFocused() &&
-      attached.identity.mode === 'attached-native'
+      (attached.identity.mode === 'attached-native' || attached.identity.mode === 'attached-dom')
     )
   }
 
@@ -240,9 +220,7 @@ export class FloatingCommsSurfaceController {
     }
     restoreFloatingCommsMainWindow()
     sendToTrustedUIRenderer('floatingComms:action', action)
-    if (action.mode !== 'detached') {
-      this.closeAttached(action)
-    }
+    this.closeAttached(action)
   }
 
   assertDiscordCommandSender(sender: WebContents, command: FloatingCommsDiscordCommand): void {
@@ -257,7 +235,7 @@ export class FloatingCommsSurfaceController {
     }
     this.attached = null
     destroyFloatingCommsSurface()
-    return this.detached.shutdown()
+    return Promise.resolve(this.attachedHeightStore?.flush()).then(() => undefined)
   }
 
   private handleAttachedClosed(identity: FloatingCommsSurfaceIdentity): void {
@@ -297,6 +275,11 @@ export class FloatingCommsSurfaceController {
     const identity = createFloatingCommsSurfaceIdentity(request, mode, this.nextSurfaceId)
     this.nextSurfaceId = identity.surfaceId
     return identity
+  }
+
+  private attachedHeights(): FloatingCommsAttachedHeightStore {
+    this.attachedHeightStore ??= new FloatingCommsAttachedHeightStore(app.getPath('userData'))
+    return this.attachedHeightStore
   }
 }
 

@@ -12,13 +12,17 @@ import {
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import type { Store } from '../persistence'
+import { registerNativeAppearanceWindow } from '../native-appearance-windows'
 import type * as WhatsAppFastResponseIpc from '../ipc/whatsapp-fast-response'
+import type * as SlackFastResponseIpc from '../ipc/slack-fast-response'
+import type * as DiscordWebFastResponseIpc from '../ipc/discord-web-fast-response'
 import { getAppIconPath } from '../app-icon'
 import { browserManager } from '../browser/browser-manager'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
 import { translateMain } from '../i18n/main-i18n'
 import { normalizeBrowserNavigationUrl } from '../../shared/browser-url'
 import { ORCA_BROWSER_GUEST_WEB_PREFERENCES } from '../../shared/browser-guest-web-preferences'
+import { acquireSandboxPreloadPath } from '../sandbox-preload-path'
 import { isCrashReportReason } from '../../shared/crash-reporting'
 import { markSystemSessionEnding } from '../crash-reporting/expected-teardown-state'
 import {
@@ -230,6 +234,12 @@ export function createMainWindow(
   store: Store | null,
   opts?: CreateMainWindowOptions
 ): BrowserWindow {
+  const browserWindowClosePreloadLease = acquireSandboxPreloadPath(
+    __dirname,
+    'browser-window-close-preload',
+    { retainGeneration: is.dev }
+  )
+  const browserWindowClosePreload = browserWindowClosePreloadLease.path
   const rawSavedBounds = store?.getUI().windowBounds
   // Why: reject min-size or substantially off-screen bounds so the titlebar stays reachable after display changes.
   const savedBounds =
@@ -269,45 +279,52 @@ export function createMainWindow(
   const platformBlurOptions =
     blur && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}
 
-  const mainWindow = new BrowserWindow({
-    width: savedBounds?.width ?? defaultBounds.width,
-    height: savedBounds?.height ?? defaultBounds.height,
-    ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y } : {}),
-    minWidth: MIN_WIDTH,
-    minHeight: MIN_HEIGHT,
-    title: opts?.title ?? 'Orca',
-    show: false,
-    // Why: macOS swallows the app-activating click by default, so clicking back into Orca needed a second click (Windows/Linux already deliver it).
-    acceptFirstMouse: true,
-    // Why: auto-hide the Windows/Linux menu bar to save a row (Alt reveals it); macOS uses the system menu bar anyway.
-    autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#ffffff',
-    // Why: macOS 'hiddenInset' keeps native traffic lights in our custom titlebar; Windows 'hidden' removes the OS title bar so it doesn't double up.
-    titleBarStyle:
-      process.platform === 'darwin'
-        ? 'hiddenInset'
-        : process.platform === 'win32'
-          ? 'hidden'
-          : undefined,
-    // Why: Linux ignores titleBarStyle 'hidden'; frame:false drops the native frame so we don't get a double title bar (renderer draws its own).
-    ...(process.platform === 'linux' ? { frame: false } : {}),
-    // Why: initial position for 1x zoom; syncTrafficLightPosition() adjusts on zoom change.
-    ...(process.platform === 'darwin'
-      ? {
-          trafficLightPosition: {
-            x: TRAFFIC_LIGHT_X,
-            y: TITLEBAR_CSS_CENTER - TRAFFIC_LIGHT_RADIUS
+  let mainWindow: BrowserWindow
+  try {
+    mainWindow = new BrowserWindow({
+      width: savedBounds?.width ?? defaultBounds.width,
+      height: savedBounds?.height ?? defaultBounds.height,
+      ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y } : {}),
+      minWidth: MIN_WIDTH,
+      minHeight: MIN_HEIGHT,
+      title: opts?.title ?? 'Orca',
+      show: false,
+      // Why: macOS swallows the app-activating click by default, so clicking back into Orca needed a second click (Windows/Linux already deliver it).
+      acceptFirstMouse: true,
+      // Why: auto-hide the Windows/Linux menu bar to save a row (Alt reveals it); macOS uses the system menu bar anyway.
+      autoHideMenuBar: true,
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#ffffff',
+      // Why: macOS 'hiddenInset' keeps native traffic lights in our custom titlebar; Windows 'hidden' removes the OS title bar so it doesn't double up.
+      titleBarStyle:
+        process.platform === 'darwin'
+          ? 'hiddenInset'
+          : process.platform === 'win32'
+            ? 'hidden'
+            : undefined,
+      // Why: Linux ignores titleBarStyle 'hidden'; frame:false drops the native frame so we don't get a double title bar (renderer draws its own).
+      ...(process.platform === 'linux' ? { frame: false } : {}),
+      // Why: initial position for 1x zoom; syncTrafficLightPosition() adjusts on zoom change.
+      ...(process.platform === 'darwin'
+        ? {
+            trafficLightPosition: {
+              x: TRAFFIC_LIGHT_X,
+              y: TITLEBAR_CSS_CENTER - TRAFFIC_LIGHT_RADIUS
+            }
           }
-        }
-      : {}),
-    icon: getAppIconPath(settings?.appIcon),
-    ...platformBlurOptions,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
-      webviewTag: true
-    }
-  })
+        : {}),
+      icon: getAppIconPath(settings?.appIcon),
+      ...platformBlurOptions,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        sandbox: true,
+        webviewTag: true
+      }
+    })
+  } catch (error) {
+    browserWindowClosePreloadLease.release()
+    throw error
+  }
+  registerNativeAppearanceWindow(mainWindow)
   const rendererWebContentsId = mainWindow.webContents.id
   // Why: native paste fallback is privileged IPC; only the top-level renderer may request it.
   setTrustedUIRendererWebContentsId(rendererWebContentsId)
@@ -462,7 +479,6 @@ export function createMainWindow(
   // so register it with the window's other navigation policy.
   registerPluginPanelNavigationGuard(mainWindow.webContents)
 
-  const browserWindowClosePreload = join(__dirname, 'browser-window-close-preload.js')
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     const src = typeof params.src === 'string' ? params.src : ''
     const normalizedSrc = normalizeBrowserNavigationUrl(src)
@@ -1132,6 +1148,7 @@ export function createMainWindow(
   ipcMain.on(confirmCloseChannel, onConfirmClose)
   ipcMain.on(closeRequestReceivedChannel, onCloseRequestReceived)
   mainWindow.on('closed', () => {
+    browserWindowClosePreloadLease.release()
     // Why: the dashboard pop-out is a companion of the main window — close it
     // alongside so it never orphans as a lone window after the app window is
     // gone (e.g. on macOS where the app stays alive after the window closes).
@@ -1141,6 +1158,12 @@ export function createMainWindow(
     const { shutdownWhatsAppFastResponseHost } =
       require('../ipc/whatsapp-fast-response') as typeof WhatsAppFastResponseIpc
     shutdownWhatsAppFastResponseHost()
+    const { shutdownSlackFastResponseHost } =
+      require('../ipc/slack-fast-response') as typeof SlackFastResponseIpc
+    shutdownSlackFastResponseHost()
+    const { shutdownDiscordWebFastResponseHost } =
+      require('../ipc/discord-web-fast-response') as typeof DiscordWebFastResponseIpc
+    shutdownDiscordWebFastResponseHost()
     closeDiscordVoiceWindow()
     clearInitialRevealFallbackTimer()
     clearQuitRendererAckTimer()

@@ -253,7 +253,7 @@ export function CommunicationsDockNavbar({
     <div
       role="tablist"
       aria-label={translate('communicationsDock.tabs', 'Communication layouts')}
-      className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1"
+      className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto px-1"
     >
       <DockTabInsertion index={0} />
       {tabs.map((tab, index) => (

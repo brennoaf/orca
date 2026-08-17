@@ -103,7 +103,7 @@ describe('communications dock controller lifecycle', () => {
     expect(screen.getPrimaryDisplay).not.toHaveBeenCalled()
   })
 
-  it('keeps a warm hidden dock available without another ready acknowledgement', async () => {
+  it('destroys the dock renderer on reattach and creates a fresh generation when reopened', async () => {
     const { CommunicationsDockController } = await import('./communications-dock-controller')
     const reattach = vi.fn()
     const controller = new CommunicationsDockController({ action: vi.fn(), reattach })
@@ -123,10 +123,11 @@ describe('communications dock controller lifecycle', () => {
       revision: 1
     })
     expect(reattach).toHaveBeenCalledTimes(1)
+    expect(createdDock.window.destroy).toHaveBeenCalledOnce()
     controller.openOrFocus('whatsapp-web')
-    expect(created).toHaveLength(1)
-    expect(createdDock.window.show).toHaveBeenCalledTimes(2)
-    expect(createdDock.window.focus).toHaveBeenCalledTimes(2)
+    expect(created).toHaveLength(2)
+    expect(created[1]?.window).not.toBe(createdDock.window)
+    expect(created[1]?.window.show).not.toHaveBeenCalled()
   })
 
   it('publishes the shown snapshot after the dock acknowledgement', async () => {
@@ -186,7 +187,7 @@ describe('communications dock controller lifecycle', () => {
     expect(reattach).toHaveBeenCalledOnce()
   })
 
-  it('returns every dock session when reattached and keeps the warm window in panel location', async () => {
+  it('returns every dock session when reattached and removes the dock presentation', async () => {
     const { CommunicationsDockController } = await import('./communications-dock-controller')
     const reattach = vi.fn()
     const controller = new CommunicationsDockController({ action: vi.fn(), reattach })
@@ -211,13 +212,13 @@ describe('communications dock controller lifecycle', () => {
       discord: { appId: 'discord' }
     })
     expect(controller.getPresence()).toEqual({
-      exists: true,
+      exists: false,
       visible: false,
-      location: 'panel',
-      activeAppId: 'whatsapp-web'
+      location: 'panel'
     })
+    expect(createdDock.window.destroy).toHaveBeenCalledOnce()
     controller.openOrFocus('whatsapp-web')
-    expect(created).toHaveLength(1)
+    expect(created).toHaveLength(2)
   })
 
   it('treats native close as reattach while collapse leaves the dock detached', async () => {
@@ -238,5 +239,30 @@ describe('communications dock controller lifecycle', () => {
     createdDock.lifecycle.hideRequested()
     expect(reattach).toHaveBeenCalledOnce()
     expect(controller.getPresence().location).toBe('panel')
+    expect(createdDock.window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('invalidates the dock sender before destroying its renderer', async () => {
+    const { CommunicationsDockController } = await import('./communications-dock-controller')
+    const controller = new CommunicationsDockController({ action: vi.fn(), reattach: vi.fn() })
+    controller.openOrFocus('whatsapp-web')
+    const createdDock = created[0]
+    createdDock.lifecycle.loaded()
+    controller.readyForSender(createdDock.window.webContents as unknown as WebContents, 1)
+    createdDock.window.destroy.mockImplementationOnce(() => {
+      expect(controller.isSender(createdDock.window.webContents as unknown as WebContents)).toBe(
+        false
+      )
+    })
+
+    controller.reattach(createdDock.window.webContents as unknown as WebContents, {
+      generation: 1,
+      revision: 1
+    })
+
+    expect(createdDock.window.destroy).toHaveBeenCalledOnce()
+    expect(() =>
+      controller.getSnapshotForSender(createdDock.window.webContents as unknown as WebContents)
+    ).toThrow('communications_dock_sender_denied')
   })
 })

@@ -32,6 +32,7 @@ const collapsedLayout: CommunicationsDockLayout = {
 
 function windowStub(): BrowserWindow {
   return {
+    getBounds: vi.fn(() => expandedBounds),
     setMinimumSize: vi.fn(),
     setBounds: vi.fn()
   } as unknown as BrowserWindow
@@ -55,5 +56,19 @@ describe('CommunicationsDockCollapseController', () => {
     controller.boundsChanged({ x: 260, y: 280, width: 420, height: 40 }, true)
 
     expect(controller.getBounds()).toEqual({ ...expandedBounds, x: 260, y: 280 })
+  })
+
+  it('restores an expanded height above 720 after collapsing to the navbar', () => {
+    const tallBounds = { ...expandedBounds, height: 960 }
+    const window = windowStub()
+    vi.mocked(window.getBounds).mockReturnValue(tallBounds)
+    const controller = new CommunicationsDockCollapseController(tallBounds)
+    const expandedLayout = { ...collapsedLayout, bounds: tallBounds, collapsed: false }
+
+    const collapsed = controller.setCollapsed(window, expandedLayout, true)
+    controller.setCollapsed(window, collapsed, false)
+
+    expect(window.setBounds).toHaveBeenNthCalledWith(1, { ...tallBounds, height: 40 }, false)
+    expect(window.setBounds).toHaveBeenNthCalledWith(2, tallBounds, false)
   })
 })

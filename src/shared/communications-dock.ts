@@ -142,6 +142,7 @@ export type CommunicationsDockDiscordCommand = CommunicationsDockIdentity & { ap
     | { method: 'set-self-mute'; muted: boolean }
     | { method: 'set-self-deaf'; deafened: boolean }
     | { method: 'leave-call' }
+    | { method: 'select-voice-channel'; channelId: string }
     | { method: 'set-overlay-open'; open: boolean }
   )
 export type CommunicationsDockDiscordStateRequest = CommunicationsDockIdentity & {

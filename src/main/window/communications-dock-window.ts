@@ -3,8 +3,8 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'node:path'
 import type { CommunicationsDockBounds } from '../../shared/communications-dock'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
+import { registerNativeAppearanceWindow } from '../native-appearance-windows'
 import {
-  COMMUNICATIONS_DOCK_MAX_HEIGHT,
   COMMUNICATIONS_DOCK_MAX_WIDTH,
   COMMUNICATIONS_DOCK_MIN_HEIGHT,
   COMMUNICATIONS_DOCK_MIN_WIDTH
@@ -27,10 +27,7 @@ export function clampCommunicationsDockBounds(
     Math.max(bounds.width, COMMUNICATIONS_DOCK_MIN_WIDTH),
     Math.min(COMMUNICATIONS_DOCK_MAX_WIDTH, area.width)
   )
-  const height = Math.min(
-    Math.max(bounds.height, COMMUNICATIONS_DOCK_MIN_HEIGHT),
-    Math.min(COMMUNICATIONS_DOCK_MAX_HEIGHT, area.height)
-  )
+  const height = Math.min(Math.max(bounds.height, COMMUNICATIONS_DOCK_MIN_HEIGHT), area.height)
   return {
     x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - width),
     y: Math.min(Math.max(bounds.y, area.y), area.y + area.height - height),
@@ -39,12 +36,17 @@ export function clampCommunicationsDockBounds(
   }
 }
 
+export function communicationsDockMaximumHeight(bounds: CommunicationsDockBounds): number {
+  return Math.max(COMMUNICATIONS_DOCK_MIN_HEIGHT, screen.getDisplayMatching(bounds).workArea.height)
+}
+
 export function createCommunicationsDockWindow(
   bounds: CommunicationsDockBounds,
   lifecycle: CommunicationsDockWindowLifecycle
 ): BrowserWindow {
+  const initialBounds = clampCommunicationsDockBounds(bounds)
   const window = new BrowserWindow({
-    ...clampCommunicationsDockBounds(bounds),
+    ...initialBounds,
     frame: false,
     transparent: false,
     thickFrame: process.platform === 'win32',
@@ -59,7 +61,7 @@ export function createCommunicationsDockWindow(
     minWidth: COMMUNICATIONS_DOCK_MIN_WIDTH,
     minHeight: COMMUNICATIONS_DOCK_MIN_HEIGHT,
     maxWidth: COMMUNICATIONS_DOCK_MAX_WIDTH,
-    maxHeight: COMMUNICATIONS_DOCK_MAX_HEIGHT,
+    maxHeight: communicationsDockMaximumHeight(initialBounds),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -69,6 +71,7 @@ export function createCommunicationsDockWindow(
       webviewTag: false
     }
   })
+  registerNativeAppearanceWindow(window)
   installPrivilegedWindowNavigationPolicy(window.webContents)
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false)
@@ -76,6 +79,7 @@ export function createCommunicationsDockWindow(
   window.webContents.session.setPermissionCheckHandler(() => false)
   let suppressBounds = false
   let boundsTimer: ReturnType<typeof setTimeout> | null = null
+  let maximumHeight = communicationsDockMaximumHeight(initialBounds)
   const saveBounds = (): void => {
     if (suppressBounds) {
       return
@@ -90,7 +94,14 @@ export function createCommunicationsDockWindow(
       }
     }, 200)
   }
-  window.on('move', saveBounds)
+  window.on('move', () => {
+    const nextMaximumHeight = communicationsDockMaximumHeight(window.getBounds())
+    if (nextMaximumHeight !== maximumHeight) {
+      maximumHeight = nextMaximumHeight
+      window.setMaximumSize(COMMUNICATIONS_DOCK_MAX_WIDTH, maximumHeight)
+    }
+    saveBounds()
+  })
   window.on('resize', saveBounds)
   window.on('close', (event) => {
     event.preventDefault()

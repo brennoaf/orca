@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import type { Store } from '../persistence'
+import { registerNativeAppearanceWindow } from '../native-appearance-windows'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { sendToTrustedUIRenderer } from '../ipc/ui'
 import { installPrivilegedWindowNavigationPolicy } from './privileged-window-navigation'
@@ -151,6 +152,7 @@ export function createOrFocusDashboardPopout(
       webviewTag: false
     }
   })
+  registerNativeAppearanceWindow(window)
   installPrivilegedWindowNavigationPolicy(window.webContents)
   // Why: isolated sessions do not inherit the main session's deny-by-default permission policy.
   window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
