@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url'
 import { resolvePullRequestDiffBase } from './git-pull-request-diff-base.mjs'
 
 const SOURCE_FILE_PATTERN = /\.(?:[cm]?[jt]sx?)$/
+const WINDOWS_OXLINT_FILE_LIMIT = 20
+const EXCLUDED_SOURCE_PATH_PATTERN = /^(?:\.codex-backups\/|scratchpad\/|NUL$|native\/.*\/build\/)/
 export const OXLINT_SCANS = [
   {
     // Why: no --config, so Oxlint keeps discovering nested configs. Pinning the root
@@ -56,6 +58,11 @@ function splitNullDelimited(output) {
   return output.split('\0').filter(Boolean)
 }
 
+export function isLintableSourceFile(file) {
+  const normalized = file.split(path.sep).join('/')
+  return SOURCE_FILE_PATTERN.test(normalized) && !EXCLUDED_SOURCE_PATH_PATTERN.test(normalized)
+}
+
 function resolveBase(root, requestedBase) {
   for (const candidate of [
     requestedBase,
@@ -90,7 +97,7 @@ export function collectAddedLineRanges(root, requestedBase) {
   const rangesByFile = new Map()
 
   for (const file of changedFiles) {
-    if (!SOURCE_FILE_PATTERN.test(file) || !existsSync(path.join(root, file))) {
+    if (!isLintableSourceFile(file) || !existsSync(path.join(root, file))) {
       continue
     }
     const diff = runGit(root, ['diff', '--unified=0', '--no-color', comparisonBase, '--', file])
@@ -102,7 +109,7 @@ export function collectAddedLineRanges(root, requestedBase) {
 
   for (const file of untrackedFiles) {
     const absolutePath = path.join(root, file)
-    if (!SOURCE_FILE_PATTERN.test(file) || !existsSync(absolutePath)) {
+    if (!isLintableSourceFile(file) || !existsSync(absolutePath)) {
       continue
     }
     const lineCount = readFileSync(absolutePath, 'utf8').split(/\r?\n/).length
@@ -165,21 +172,42 @@ function printDiagnostic(diagnostic, root) {
   console.error(`${file}:${line} ${code}: ${diagnostic.message}`)
 }
 
-function runOxlintScan(root, scan, files) {
-  const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
-  const result = spawnSync(pnpm, ['exec', 'oxlint', ...scan.args, '--format', 'json', ...files], {
-    cwd: root,
-    encoding: 'utf8',
-    maxBuffer: 128 * 1024 * 1024
-  })
-  if (result.error) {
-    throw result.error
+export function chunkOxlintFiles(files, platform = process.platform) {
+  if (platform !== 'win32') {
+    return [files]
   }
-  if (!result.stdout.trim()) {
-    process.stderr.write(result.stderr)
-    throw new Error(`${scan.label} failed before producing diagnostics.`)
+  const chunks = []
+  for (let index = 0; index < files.length; index += WINDOWS_OXLINT_FILE_LIMIT) {
+    chunks.push(files.slice(index, index + WINDOWS_OXLINT_FILE_LIMIT))
   }
-  return parseOxlintOutput(result.stdout, scan.label).diagnostics ?? []
+  return chunks
+}
+
+export function runOxlintScan(
+  root,
+  scan,
+  files,
+  { platform = process.platform, spawn = spawnSync } = {}
+) {
+  const pnpm = platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const diagnostics = []
+  for (const fileChunk of chunkOxlintFiles(files, platform)) {
+    const result = spawn(pnpm, ['exec', 'oxlint', ...scan.args, '--format', 'json', ...fileChunk], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 128 * 1024 * 1024,
+      shell: platform === 'win32'
+    })
+    if (result.error) {
+      throw result.error
+    }
+    if (!result.stdout.trim()) {
+      process.stderr.write(result.stderr)
+      throw new Error(`${scan.label} failed before producing diagnostics.`)
+    }
+    diagnostics.push(...(parseOxlintOutput(result.stdout, scan.label).diagnostics ?? []))
+  }
+  return diagnostics
 }
 
 export function main(

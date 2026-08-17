@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   OXLINT_SCANS,
+  chunkOxlintFiles,
   diagnosticTouchesAddedLines,
+  isLintableSourceFile,
   overlapsAddedLines,
-  parseAddedLineRanges
+  parseAddedLineRanges,
+  runOxlintScan
 } from './check-changed-code-quality.mjs'
 
 describe('changed-code quality line matching', () => {
@@ -50,5 +53,43 @@ describe('changed-code quality line matching', () => {
 
     expect(scan.args).not.toContain('--config')
     expect(scan.args).not.toContain('--disable-nested-config')
+  })
+
+  it('chunks large Windows scans while keeping POSIX scans intact', () => {
+    const files = Array.from({ length: 101 }, (_, index) => `src/file-${index}.ts`)
+
+    expect(chunkOxlintFiles(files, 'win32')).toEqual([
+      files.slice(0, 20),
+      files.slice(20, 40),
+      files.slice(40, 60),
+      files.slice(60, 80),
+      files.slice(80, 100),
+      files.slice(100)
+    ])
+    expect(chunkOxlintFiles(files, 'linux')).toEqual([files])
+  })
+
+  it('excludes backups and generated native output with Windows path separators', () => {
+    expect(isLintableSourceFile('src/main/spotify-playback.ts')).toBe(true)
+    expect(isLintableSourceFile('src\\main\\spotify-playback.ts')).toBe(true)
+    expect(isLintableSourceFile('.codex-backups/quality/file.ts')).toBe(false)
+    expect(isLintableSourceFile('scratchpad\\snapshot\\file.tsx')).toBe(false)
+    expect(isLintableSourceFile('NUL')).toBe(false)
+    expect(isLintableSourceFile('native/windows-media-control/build/output.ts')).toBe(false)
+  })
+
+  it('stops after a failed Windows chunk', () => {
+    const files = Array.from({ length: 51 }, (_, index) => `src/file-${index}.ts`)
+    const failure = new Error('spawn failed')
+    const spawn = vi
+      .fn()
+      .mockReturnValueOnce({ stdout: '{"diagnostics":[]}', stderr: '' })
+      .mockReturnValueOnce({ error: failure, stdout: '', stderr: '' })
+
+    expect(() =>
+      runOxlintScan(process.cwd(), OXLINT_SCANS[0], files, { platform: 'win32', spawn })
+    ).toThrow(failure)
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(spawn.mock.calls[0][2]).toMatchObject({ shell: true })
   })
 })

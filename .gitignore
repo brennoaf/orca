@@ -25,6 +25,7 @@ out/
 /build/
 release/
 native/**/.build/
+native/**/build/
 
 # pnpm
 .pnpm-store/
