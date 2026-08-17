@@ -79,6 +79,17 @@ describe('Electron Vite output contract', () => {
     expect(output.chunkFileNames).toBe('chunks/[name]-[hash].js')
   })
 
+  it('rebuilds sandbox preload entries as standalone artifacts', () => {
+    const plugins = electronViteConfig.main?.build?.rollupOptions?.plugins
+    if (!Array.isArray(plugins)) {
+      throw new Error('Expected main-process plugins')
+    }
+
+    expect(plugins).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'orca-sandbox-preload-bundles' })])
+    )
+  })
+
   it('externalizes packaged dependencies but bundles self-contained main dependencies', () => {
     const external = electronViteConfig.main?.build?.rollupOptions?.external
     if (typeof external !== 'function') {

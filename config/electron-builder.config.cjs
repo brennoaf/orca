@@ -15,6 +15,7 @@ const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cj
 const { writeMacBuildCompatibility } = require('./scripts/mac-build-compatibility.cjs')
 const { verifyPackagedPluginResources } = require('./scripts/verify-packaged-plugin-resources.cjs')
 const { verifySkillsCliRuntime } = require('./scripts/verify-skills-cli-runtime.cjs')
+const { applySandboxPreloadPackagingFileSet } = require('./scripts/sandbox-preload-packaging.cjs')
 
 // Why: dev-channel builds must carry the *release* identity — same bundle id,
 // Developer ID signature, and notarization ticket — or Squirrel.Mac refuses to
@@ -116,6 +117,7 @@ module.exports = {
     '!Casks{,/**/*}',
     '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md,ORCHESTRATION_IMPLEMENTATION_CHECKLIST.md,ORCHESTRATION_STRUCTURED_OUTPUT_DESIGN.md}',
     '!out/**/*.test.js',
+    '!out/sandbox-preload{,/**/*}',
     // Why: Vite's manifest is only used to project the paired web client.
     '!out/renderer/.vite{,/**/*}',
     '!electron.vite.config.{js,ts,mjs,cjs}',
@@ -182,6 +184,12 @@ module.exports = {
     'node_modules/yaml/**',
     'node_modules/sherpa-onnx*/**'
   ],
+  beforePack: async (context) => {
+    applySandboxPreloadPackagingFileSet(
+      context.packager.info.config,
+      context.packager.info.projectDir
+    )
+  },
   afterPack: async (context) => {
     // Why: a Linux runner-image glibc bump silently shipped a node-pty pty.node
     // requiring GLIBC_2.34, crashing the app on startup on Ubuntu 20.04 (#9902).
@@ -289,6 +297,10 @@ module.exports = {
       {
         from: 'native/windows-cli-launcher/.build/orca.exe',
         to: 'bin/orca.exe'
+      },
+      {
+        from: 'native/windows-media-control/build/Release/windows_media_control.node',
+        to: 'native/windows-media-control.node'
       },
       {
         from: 'node_modules/agent-browser/bin/agent-browser-win32-x64.exe',
