@@ -211,7 +211,7 @@ export function BrowserImportHintButton({
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuContent data-browser-page-pane-portal="" align="start" className="w-52">
                 {detectedBrowsers.map((browser) =>
                   browser.profiles.length > 1 ? (
                     <DropdownMenuSub key={browser.family}>
@@ -223,7 +223,7 @@ export function BrowserImportHintButton({
                         )}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuPortal>
-                        <DropdownMenuSubContent>
+                        <DropdownMenuSubContent data-browser-page-pane-portal="">
                           {browser.profiles.map((profile) => (
                             <DropdownMenuItem
                               key={profile.directory}

@@ -6,6 +6,7 @@
 @import './markdown-preview.css';
 @import './terminal.css';
 @import './mobile-page.css';
+@import './interface-theme-skins.css';
 
 @font-face {
   font-family: 'Geist';
@@ -333,6 +334,544 @@
   /* Brighter than terminal defaults so the always-visible line clears 3:1 on `--card`. */
   --tab-group-split-divider: #71717a;
   --tab-group-split-divider-strong: #a1a1aa;
+}
+
+:root:has(.app-layout)[data-orca-theme='blue-fantasy'] {
+  --background: rgb(232 236 245 / 0.82);
+  --foreground: #1d2539;
+  --card: rgb(243 245 251 / 0.5);
+  --card-foreground: var(--foreground);
+  --popover: rgb(238 241 249 / 0.92);
+  --popover-foreground: var(--foreground);
+  --primary: #4a5fa8;
+  --primary-foreground: #fff;
+  --secondary: rgb(233 237 247 / 0.55);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(233 237 247 / 0.55);
+  --muted-foreground: #4d5871;
+  --accent: #dce3f7;
+  --accent-foreground: var(--foreground);
+  --border: #7b88a8;
+  --input: #7b88a8;
+  --ring: #4a5fa8;
+  --sidebar: rgb(242 245 250 / 0.5);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='blue-fantasy'] {
+  --background: rgb(16 22 36 / 0.84);
+  --foreground: #dbe2f2;
+  --card: rgb(26 34 56 / 0.55);
+  --card-foreground: var(--foreground);
+  --popover: rgb(26 34 56 / 0.92);
+  --popover-foreground: var(--foreground);
+  --primary: #7f96d2;
+  --primary-foreground: #101624;
+  --secondary: rgb(32 42 68 / 0.6);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(32 42 68 / 0.6);
+  --muted-foreground: #b1bdd6;
+  --accent: #2c3765;
+  --accent-foreground: var(--foreground);
+  --border: #5b6e9e;
+  --input: #5b6e9e;
+  --ring: #7f96d2;
+  --sidebar: rgb(29 37 57 / 0.55);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='dragon-heir'] {
+  --background: rgb(244 239 228 / 0.84);
+  --foreground: #262319;
+  --card: rgb(244 239 228 / 0.38);
+  --card-foreground: var(--foreground);
+  --popover: rgb(248 243 232 / 0.88);
+  --popover-foreground: var(--foreground);
+  --primary: #c3272b;
+  --primary-foreground: #fff;
+  --secondary: rgb(237 229 213 / 0.43);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(237 229 213 / 0.43);
+  --muted-foreground: #655f50;
+  --accent: #f2cdcc;
+  --accent-foreground: var(--foreground);
+  --border: #877b68;
+  --input: #877b68;
+  --ring: #c3272b;
+  --sidebar: rgb(246 241 230 / 0.32);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='dragon-heir'] {
+  --background: rgb(18 22 31 / 0.86);
+  --foreground: #eef1f6;
+  --card: rgb(26 33 48 / 0.4);
+  --card-foreground: var(--foreground);
+  --popover: rgb(24 30 44 / 0.88);
+  --popover-foreground: var(--foreground);
+  --primary: #c8a24a;
+  --primary-foreground: #12161f;
+  --secondary: rgb(33 41 60 / 0.46);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(33 41 60 / 0.46);
+  --muted-foreground: #c3cad8;
+  --accent: #2a344c;
+  --accent-foreground: var(--foreground);
+  --border: #5a6880;
+  --input: #5a6880;
+  --ring: #c8a24a;
+  --sidebar: rgb(22 28 41 / 0.36);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='miku'] {
+  --background: rgb(238 245 255 / 0.84);
+  --foreground: #1d2f52;
+  --card: rgb(243 248 255 / 0.78);
+  --card-foreground: var(--foreground);
+  --popover: #eefaf7;
+  --popover-foreground: var(--foreground);
+  --primary: #2e9bff;
+  --primary-foreground: #0a1430;
+  --secondary: #e4f0ff;
+  --secondary-foreground: var(--foreground);
+  --muted: #e4f0ff;
+  --muted-foreground: #496488;
+  --accent: #dcebff;
+  --accent-foreground: var(--foreground);
+  --border: #728eb5;
+  --input: #728eb5;
+  --ring: #1677c7;
+  --sidebar: #2e9bff;
+  --sidebar-foreground: #0a1430;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='miku'] {
+  --background: rgb(10 20 48 / 0.86);
+  --foreground: #c2d4f0;
+  --card: rgb(18 36 74 / 0.78);
+  --card-foreground: var(--foreground);
+  --popover: #12244a;
+  --popover-foreground: var(--foreground);
+  --primary: #2e9bff;
+  --primary-foreground: #0a1430;
+  --secondary: #182e5c;
+  --secondary-foreground: var(--foreground);
+  --muted: #182e5c;
+  --muted-foreground: #9bb5dd;
+  --accent: #162a52;
+  --accent-foreground: var(--foreground);
+  --border: #5274ad;
+  --input: #5274ad;
+  --ring: #62b4ff;
+  --sidebar: #1e4f9e;
+  --sidebar-foreground: #fff;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='minecraft'] {
+  --app-font-family: 'Courier New', monospace;
+  --radius: 0;
+  --background: rgb(13 24 16 / 0.42);
+  --foreground: #e7ead7;
+  --card: rgb(14 28 17 / 0.28);
+  --card-foreground: var(--foreground);
+  --popover: rgb(14 28 17 / 0.88);
+  --popover-foreground: var(--foreground);
+  --primary: #38628f;
+  --primary-foreground: #fff;
+  --secondary: rgb(14 28 17 / 0.45);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(14 28 17 / 0.45);
+  --muted-foreground: #c6cdbd;
+  --accent: #2b4f78;
+  --accent-foreground: #fff;
+  --border: #0b0f14;
+  --input: #0b0f14;
+  --ring: #38628f;
+  --sidebar: rgb(13 24 16 / 0.42);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='minecraft'] {
+  --background: rgb(6 10 7 / 0.66);
+  --foreground: #e7ead7;
+  --card: rgb(6 10 7 / 0.66);
+  --card-foreground: var(--foreground);
+  --popover: rgb(5 9 6 / 0.5);
+  --popover-foreground: var(--foreground);
+  --primary: #38628f;
+  --primary-foreground: #fff;
+  --secondary: rgb(26 37 29 / 0.72);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(26 37 29 / 0.72);
+  --muted-foreground: #bdc9b7;
+  --accent: #83c94e;
+  --accent-foreground: #0b0f14;
+  --border: #71816e;
+  --input: #71816e;
+  --ring: #83c94e;
+  --sidebar: rgb(6 10 7 / 0.66);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='qq98'] {
+  --app-font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --background: #0e2f5e;
+  --foreground: #dcebfa;
+  --card: #f2f7fc;
+  --card-foreground: #0e2f5e;
+  --popover: #eef4fa;
+  --popover-foreground: #0e2f5e;
+  --primary: #2877d1;
+  --primary-foreground: #fff;
+  --secondary: #e8f1fa;
+  --secondary-foreground: #0e2f5e;
+  --muted: #e8f1fa;
+  --muted-foreground: #395778;
+  --accent: #cfe4f8;
+  --accent-foreground: #0e2f5e;
+  --border: #6c90b7;
+  --input: #6c90b7;
+  --ring: #2b7cd9;
+  --sidebar: #2b7cd9;
+  --sidebar-foreground: #fff;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='qq98'] {
+  --background: #081a33;
+  --foreground: #c2d6ec;
+  --card: #15233a;
+  --card-foreground: var(--foreground);
+  --popover: #15233a;
+  --popover-foreground: var(--foreground);
+  --primary: #5d9fe8;
+  --primary-foreground: #081a33;
+  --secondary: #1a2a42;
+  --secondary-foreground: var(--foreground);
+  --muted: #1a2a42;
+  --muted-foreground: #9db9d5;
+  --accent: #1e3a5e;
+  --accent-foreground: var(--foreground);
+  --border: #54749b;
+  --input: #54749b;
+  --ring: #5d9fe8;
+  --sidebar: #1e4f8f;
+  --sidebar-foreground: #fff;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='ths'] {
+  --app-font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --radius: 0.125rem;
+  --background: #e9edf2;
+  --foreground: #1f2733;
+  --card: #f5f7f9;
+  --card-foreground: var(--foreground);
+  --popover: #eef1f5;
+  --popover-foreground: var(--foreground);
+  --primary: #56799a;
+  --primary-foreground: #fff;
+  --secondary: #eef1f5;
+  --secondary-foreground: var(--foreground);
+  --muted: #eef1f5;
+  --muted-foreground: #4f5f72;
+  --accent: #fdecea;
+  --accent-foreground: #1f2733;
+  --border: #71849a;
+  --input: #71849a;
+  --ring: #56799a;
+  --sidebar: #1b2636;
+  --sidebar-foreground: #f5f7f9;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='ths'] {
+  --background: #10151d;
+  --foreground: #d7dde6;
+  --card: #1a222d;
+  --card-foreground: var(--foreground);
+  --popover: #1d2631;
+  --popover-foreground: var(--foreground);
+  --primary: #5f81a4;
+  --primary-foreground: #10151d;
+  --secondary: #1f2834;
+  --secondary-foreground: var(--foreground);
+  --muted: #1f2834;
+  --muted-foreground: #b0bccb;
+  --accent: #33262c;
+  --accent-foreground: var(--foreground);
+  --border: #5c738c;
+  --input: #5c738c;
+  --ring: #79a0c7;
+  --sidebar: #0f141c;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='trading'] {
+  --app-font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --radius: 0.1875rem;
+  --background: #eef1f5;
+  --foreground: #1b2431;
+  --card: #f5f7fa;
+  --card-foreground: var(--foreground);
+  --popover: #fff;
+  --popover-foreground: var(--foreground);
+  --primary: #56799a;
+  --primary-foreground: #fff;
+  --secondary: #eef1f5;
+  --secondary-foreground: var(--foreground);
+  --muted: #eef1f5;
+  --muted-foreground: #536477;
+  --accent: #fdecec;
+  --accent-foreground: var(--foreground);
+  --border: #71849a;
+  --input: #71849a;
+  --ring: #56799a;
+  --sidebar: #f6f8fa;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='trading'] {
+  --background: #0a0e15;
+  --foreground: #dbe2ec;
+  --card: #151b25;
+  --card-foreground: var(--foreground);
+  --popover: #161d27;
+  --popover-foreground: var(--foreground);
+  --primary: #5f81a4;
+  --primary-foreground: #0a0e15;
+  --secondary: #1a222e;
+  --secondary-foreground: var(--foreground);
+  --muted: #1a222e;
+  --muted-foreground: #b5c0cf;
+  --accent: #1f2836;
+  --accent-foreground: var(--foreground);
+  --border: #546c85;
+  --input: #546c85;
+  --ring: #79a0c7;
+  --sidebar: #10151d;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='whale-song'] {
+  --background: rgb(208 232 248 / 0.82);
+  --foreground: #0a1e4a;
+  --card: rgb(244 248 253 / 0.48);
+  --card-foreground: var(--foreground);
+  --popover: rgb(240 246 252 / 0.92);
+  --popover-foreground: var(--foreground);
+  --primary: #4d8fd4;
+  --primary-foreground: #0a1e4a;
+  --secondary: rgb(235 242 250 / 0.52);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(235 242 250 / 0.52);
+  --muted-foreground: #395d88;
+  --accent: #d9e9f5;
+  --accent-foreground: var(--foreground);
+  --border: #668caf;
+  --input: #668caf;
+  --ring: #2370bc;
+  --sidebar: rgb(242 247 252 / 0.56);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout).dark[data-orca-theme='whale-song'] {
+  --background: rgb(8 26 64 / 0.84);
+  --foreground: #d8e5f5;
+  --card: rgb(18 36 76 / 0.55);
+  --card-foreground: var(--foreground);
+  --popover: rgb(18 36 76 / 0.92);
+  --popover-foreground: var(--foreground);
+  --primary: #8ab4de;
+  --primary-foreground: #081a40;
+  --secondary: rgb(23 44 88 / 0.6);
+  --secondary-foreground: var(--foreground);
+  --muted: rgb(23 44 88 / 0.6);
+  --muted-foreground: #aec4df;
+  --accent: #1c3460;
+  --accent-foreground: var(--foreground);
+  --border: #526e9e;
+  --input: #526e9e;
+  --ring: #8ab4de;
+  --sidebar: rgb(14 30 64 / 0.72);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root:has(.app-layout)[data-orca-theme='xp'] {
+  --app-font-family: Tahoma, 'Segoe UI', sans-serif;
+  --background: #fff;
+  --editor-surface: #fff;
+  --foreground: #0b1019;
+  --card: #f6f4ec;
+  --card-foreground: #0b1019;
+  --popover: #ece9d8;
+  --popover-foreground: #0b1019;
+  --primary: #316ac5;
+  --primary-foreground: #fff;
+  --secondary: #ece9d8;
+  --secondary-foreground: #0b1019;
+  --muted: #ece9d8;
+  --muted-foreground: #4c5360;
+  --accent: #dbe9fc;
+  --accent-foreground: #0b1019;
+  --border: #b3ad95;
+  --input: #7f9db9;
+  --ring: #0a246a;
+  --worktree-sidebar: #f6f4ec;
+  --worktree-sidebar-foreground: #0b1019;
+  --worktree-sidebar-accent: #dbe9fc;
+  --worktree-sidebar-accent-foreground: #0b1019;
+  --worktree-sidebar-border: #b3ad95;
+  --worktree-sidebar-ring: #0a246a;
+  --sidebar: #f6f4ec;
+  --sidebar-foreground: #0b1019;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --xp-desktop: #fff;
+  --xp-panel: #f6f4ec;
+  --xp-elevated: #ece9d8;
+  --xp-border: #b3ad95;
+  --xp-input-border: #7f9db9;
+  --xp-button-border: #003c74;
+}
+
+:root:has(.app-layout).dark[data-orca-theme='xp'] {
+  --background: #0d0f12;
+  --editor-surface: #0d0f12;
+  --foreground: #e8eaed;
+  --card: #15171b;
+  --card-foreground: var(--foreground);
+  --popover: #1b1d21;
+  --popover-foreground: var(--foreground);
+  --primary: #5f81a4;
+  --primary-foreground: #0d0f12;
+  --secondary: #1b1d21;
+  --secondary-foreground: var(--foreground);
+  --muted: #1b1d21;
+  --muted-foreground: #b9bec5;
+  --accent: #232a36;
+  --accent-foreground: var(--foreground);
+  --border: #3a3d42;
+  --input: #4a4e55;
+  --ring: #7d9dbc;
+  --worktree-sidebar: #15171b;
+  --worktree-sidebar-foreground: #e8eaed;
+  --worktree-sidebar-accent: #232a36;
+  --worktree-sidebar-accent-foreground: #e8eaed;
+  --worktree-sidebar-border: #3a3d42;
+  --worktree-sidebar-ring: #7d9dbc;
+  --sidebar: #15171b;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --xp-desktop: #0d0f12;
+  --xp-panel: #15171b;
+  --xp-elevated: #1b1d21;
+  --xp-border: #3a3d42;
+  --xp-input-border: #4a4e55;
+  --xp-button-border: #59606a;
 }
 
 .plugin-security-chrome {

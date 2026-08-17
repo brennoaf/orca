@@ -8,8 +8,11 @@ import {
   installRendererCrashDiagnostics,
   recordRendererCrashBreadcrumb
 } from './lib/crash-diagnostics'
-import { applyDocumentTheme } from './lib/document-theme'
-import { buildAppFontFamily } from './lib/app-font-family'
+import {
+  initializeNativeDocumentTheme,
+  subscribeNativeDocumentTheme
+} from './lib/native-document-theme'
+import { applyDocumentInterfaceTheme } from './lib/document-theme'
 import { I18nProvider } from './i18n/I18nProvider'
 import { translate } from './i18n/i18n'
 import { useAppStore } from './store'
@@ -24,11 +27,7 @@ recordRendererCrashBreadcrumb('popout_bootstrap_started', { dev: import.meta.env
 installRendererCrashDiagnostics('dashboard-popout')
 
 function applyPopoutAppearance(settings: GlobalSettings | null): void {
-  applyDocumentTheme(settings?.theme ?? 'system', { disableTransitions: false })
-  document.documentElement.style.setProperty(
-    '--app-font-family',
-    buildAppFontFamily(settings?.appFontFamily)
-  )
+  applyDocumentInterfaceTheme(settings?.interfaceTheme, settings?.appFontFamily)
 }
 
 // Why: the popout owns a separate renderer store; seed appearance synchronously
@@ -85,13 +84,9 @@ function PopoutSettingsSync(): null {
 
   useEffect(() => {
     applyPopoutAppearance(settings)
-    if (settings?.theme !== 'system') {
-      return
-    }
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (): void => applyDocumentTheme('system')
-    media.addEventListener('change', handleChange)
-    return () => media.removeEventListener('change', handleChange)
+    return subscribeNativeDocumentTheme(settings?.theme ?? 'system', {
+      disableTransitions: false
+    })
   }, [settings])
 
   return null
@@ -114,12 +109,16 @@ function PopoutRoot(): React.JSX.Element {
   )
 }
 
-getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
-  <StrictMode>
-    <I18nProvider>
-      <PopoutSettingsSync />
-      <PopoutRoot />
-    </I18nProvider>
-  </StrictMode>
-)
-recordRendererCrashBreadcrumb('popout_bootstrap_rendered')
+void initializeNativeDocumentTheme(startupSettings?.theme ?? 'system', {
+  disableTransitions: false
+}).then(() => {
+  getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
+    <StrictMode>
+      <I18nProvider>
+        <PopoutSettingsSync />
+        <PopoutRoot />
+      </I18nProvider>
+    </StrictMode>
+  )
+  recordRendererCrashBreadcrumb('popout_bootstrap_rendered')
+})

@@ -2,13 +2,17 @@ import './assets/main.css'
 
 import { StrictMode } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { InterfaceTheme } from '../../shared/interface-theme'
+import type { GlobalSettings } from '../../shared/types'
 import App from './App'
 import { RecoverableRenderErrorBoundary } from './components/error-boundaries/RecoverableRenderErrorBoundary'
 import {
   installRendererCrashDiagnostics,
   recordRendererCrashBreadcrumb
 } from './lib/crash-diagnostics'
-import { applyDocumentTheme } from './lib/document-theme'
+import { initializeNativeDocumentTheme } from './lib/native-document-theme'
+import { applyDocumentInterfaceTheme } from './lib/document-theme'
+import { normalizeInterfaceTheme } from '../../shared/interface-theme'
 import { installTypingLatencyDiagnostic } from './lib/typing-latency-diagnostic'
 import { shouldEnableReactGrab } from './lib/react-grab-dev-gate'
 import { I18nProvider } from './i18n/I18nProvider'
@@ -29,8 +33,6 @@ if (
   void import('react-grab').then(({ init }) => init())
   void import('react-grab/styles.css')
 }
-
-applyDocumentTheme('system', { disableTransitions: false })
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {
@@ -55,11 +57,25 @@ function RendererRoot(): React.JSX.Element {
   )
 }
 
-getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
-  <StrictMode>
-    <I18nProvider>
-      <RendererRoot />
-    </I18nProvider>
-  </StrictMode>
-)
-recordRendererCrashBreadcrumb('renderer_bootstrap_rendered')
+let startupTheme: 'system' | 'light' | 'dark' = 'system'
+let startupInterfaceTheme: InterfaceTheme | undefined
+let startupAppFontFamily: GlobalSettings['appFontFamily'] | undefined = undefined
+try {
+  const startupSettings = window.api.settings.getSync()
+  startupTheme = startupSettings?.theme ?? 'system'
+  startupInterfaceTheme = normalizeInterfaceTheme(startupSettings?.interfaceTheme)
+  startupAppFontFamily = startupSettings?.appFontFamily
+} catch (error) {
+  console.error('[appearance] startup settings unavailable:', error)
+}
+applyDocumentInterfaceTheme(startupInterfaceTheme, startupAppFontFamily)
+void initializeNativeDocumentTheme(startupTheme, { disableTransitions: false }).then(() => {
+  getOrCreateRendererRoot(rootElement, import.meta.hot?.data).render(
+    <StrictMode>
+      <I18nProvider>
+        <RendererRoot />
+      </I18nProvider>
+    </StrictMode>
+  )
+  recordRendererCrashBreadcrumb('renderer_bootstrap_rendered')
+})

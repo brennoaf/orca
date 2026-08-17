@@ -43,8 +43,8 @@ vi.mock('./useContextualCopySetup', () => ({
 
 import MonacoEditor from './MonacoEditor'
 
-function renderEditor(): void {
-  render(
+function renderEditor(): ReturnType<typeof render> {
+  return render(
     <MonacoEditor
       fileId="file"
       filePath="/repo/file.py"
@@ -65,9 +65,23 @@ afterEach(() => {
 })
 
 describe('MonacoEditor font family', () => {
+  it('keeps the built-in Monaco theme when the interface theme is default', () => {
+    storeState.current = {
+      theme: 'light',
+      interfaceTheme: 'default',
+      terminalFontSize: 13,
+      terminalFontFamily: 'D2Coding Nerd Font Mono',
+      editorFontFamily: ''
+    }
+    renderEditor()
+
+    expect(editorProps.current?.theme).toBe('vs')
+  })
+
   it('follows the terminal font when no editor font override is set', () => {
     storeState.current = {
       theme: 'dark',
+      interfaceTheme: 'miku',
       terminalFontSize: 13,
       terminalFontFamily: 'D2Coding Nerd Font Mono',
       editorFontFamily: ''
@@ -75,11 +89,13 @@ describe('MonacoEditor font family', () => {
     renderEditor()
     const options = editorProps.current?.options as Record<string, unknown> | undefined
     expect(options?.fontFamily).toBe('D2Coding Nerd Font Mono')
+    expect(editorProps.current?.theme).toBe('orca-miku-dark')
   })
 
   it('uses the opt-in editor font override instead of the terminal font', () => {
     storeState.current = {
       theme: 'dark',
+      interfaceTheme: 'xp',
       terminalFontSize: 13,
       terminalFontFamily: 'D2Coding Nerd Font Mono',
       editorFontFamily: 'D2Coding Nerd Font'
@@ -87,5 +103,36 @@ describe('MonacoEditor font family', () => {
     renderEditor()
     const options = editorProps.current?.options as Record<string, unknown> | undefined
     expect(options?.fontFamily).toBe('D2Coding Nerd Font')
+    expect(editorProps.current?.theme).toBe('orca-xp-dark')
+  })
+
+  it('updates the interface theme without remounting the application', () => {
+    storeState.current = {
+      theme: 'light',
+      interfaceTheme: 'qq98',
+      terminalFontSize: 13,
+      terminalFontFamily: 'D2Coding Nerd Font Mono',
+      editorFontFamily: ''
+    }
+    const view = renderEditor()
+
+    expect(editorProps.current?.theme).toBe('orca-qq98-light')
+
+    storeState.current = { ...storeState.current, interfaceTheme: 'minecraft' }
+    view.rerender(
+      <MonacoEditor
+        fileId="file"
+        filePath="/repo/file.py"
+        viewStateKey="pane:file"
+        relativePath="file.py"
+        content="# 한글 주석"
+        language="python"
+        onContentChange={vi.fn()}
+        onSave={vi.fn()}
+        readOnly
+      />
+    )
+
+    expect(editorProps.current?.theme).toBe('orca-minecraft-light')
   })
 })

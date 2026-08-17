@@ -31,6 +31,29 @@ export const getThemeEntries = createLocalizedCatalog((): SettingsSearchEntry[] 
   }
 ])
 
+export const getInterfaceThemeEntries = createLocalizedCatalog((): SettingsSearchEntry[] => [
+  {
+    title: translate('settings.appearance.interfaceTheme.title', 'Interface Theme'),
+    description: translate(
+      'settings.appearance.interfaceTheme.description',
+      'Choose the visual style used throughout Orca.'
+    ),
+    keywords: [
+      ...translateSearchKeyword('settings.appearance.interfaceTheme.title', 'Interface Theme'),
+      ...translateSearchKeyword('settings.appearance.interfaceTheme.default', 'Default'),
+      'blue fantasy',
+      'dragon heir',
+      'miku',
+      'minecraft',
+      'qq98',
+      'ths',
+      'trading',
+      'whale song',
+      'xp'
+    ]
+  }
+])
+
 export const getLanguageEntries = createLocalizedCatalog((): SettingsSearchEntry[] => [
   {
     title: translate('settings.appearance.language.title', 'Language'),
@@ -232,6 +255,7 @@ function buildAppearancePaneSearchEntries(
   return [
     ...getAppearanceSectionEntries(),
     ...getThemeEntries(),
+    ...getInterfaceThemeEntries(),
     ...(SHOW_UI_LANGUAGE_SETTING ? getLanguageEntries() : []),
     ...getTypographyEntries(),
     ...getZoomEntries(),

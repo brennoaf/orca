@@ -29,6 +29,11 @@ import { publishTerminalViewAttributes } from './terminal-view-attributes-publis
 import { normalizeTerminalLineHeight } from '../../../../shared/terminal-line-height-settings'
 import { maybePushMode2031Flip } from './terminal-mode-2031-replies'
 import { resolveTerminalMinimumContrastRatio } from '@/lib/terminal-contrast-correction'
+import {
+  getInterfaceThemeSurfacePalette,
+  normalizeInterfaceTheme,
+  type InterfaceThemeMode
+} from '../../../../shared/interface-theme'
 
 export function hexToRgba(hex: string, alpha: number): string {
   let clean = hex.replace('#', '')
@@ -53,12 +58,19 @@ export function composeActiveTerminalTheme(
   baseTheme: ITheme | null,
   settings: Pick<
     GlobalSettings,
-    'terminalColorOverrides' | 'terminalBackgroundOpacity' | 'terminalCursorOpacity'
-  >
+    | 'interfaceTheme'
+    | 'terminalColorOverrides'
+    | 'terminalBackgroundOpacity'
+    | 'terminalCursorOpacity'
+  >,
+  mode: InterfaceThemeMode
 ): ITheme | null {
   if (!baseTheme) {
     return null
   }
+  const interfaceTheme = normalizeInterfaceTheme(settings.interfaceTheme)
+  const interfacePalette =
+    interfaceTheme === 'default' ? {} : getInterfaceThemeSurfacePalette(interfaceTheme, mode)
   // Why transparent ruler border: scrollbar.width enables xterm's overview ruler, whose border would paint a bright line.
   // Why raised slider alpha: xterm's default (~0.2) is nearly invisible on dark bg. Before the spread so explicit theme wins.
   let theme: ITheme = {
@@ -66,7 +78,8 @@ export function composeActiveTerminalTheme(
     scrollbarSliderBackground: 'rgba(180, 180, 185, 0.4)',
     scrollbarSliderHoverBackground: 'rgba(180, 180, 185, 0.6)',
     scrollbarSliderActiveBackground: 'rgba(180, 180, 185, 0.8)',
-    ...baseTheme
+    ...baseTheme,
+    ...interfacePalette
   }
   // Why: merge Ghostty color overrides atop the base theme so individual colors can be tweaked without losing the rest.
   if (settings.terminalColorOverrides) {
@@ -101,7 +114,7 @@ export function publishTerminalViewAttributesAtAppStart(
   }
   const appearance = resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
   const baseTheme: ITheme | null = appearance.theme ?? getBuiltinTheme(appearance.themeName)
-  const theme = composeActiveTerminalTheme(baseTheme, settings)
+  const theme = composeActiveTerminalTheme(baseTheme, settings, appearance.mode)
   return send !== undefined
     ? publishTerminalViewAttributes(theme, appearance.mode, settings, send)
     : publishTerminalViewAttributes(theme, appearance.mode, settings)
@@ -145,7 +158,7 @@ export function applyTerminalAppearance(
   const appearance = resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
   const paneStyles = resolvePaneStyleOptions(settings)
   const baseTheme: ITheme | null = appearance.theme ?? getBuiltinTheme(appearance.themeName)
-  const theme = composeActiveTerminalTheme(baseTheme, settings)
+  const theme = composeActiveTerminalTheme(baseTheme, settings, appearance.mode)
   // Publish composed appearance to main's hidden-PTY query responder — the only point it exists; deduped in the publisher.
   publishTerminalViewAttributes(theme, appearance.mode, settings)
   const paneBackground = theme?.background ?? '#000000'

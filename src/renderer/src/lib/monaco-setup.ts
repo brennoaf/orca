@@ -16,6 +16,7 @@ import { installMonacoDelayerCancellationGuard } from './monaco-delayer-cancella
 import { installMonacoDiffEditorDisposalGuard } from './monaco-diff-editor-disposal'
 import { installMonacoPeekReferencesPreviewOptions } from './monaco-peek-preview-options'
 import { installMonacoContextMenuPaste } from '@/components/editor/install-monaco-context-menu-paste'
+import { registerInterfaceThemeMonacoThemes } from './interface-theme-monaco-theme'
 
 globalThis.MonacoEnvironment = {
   getWorker(_workerId, label) {
@@ -82,6 +83,7 @@ registerJsonlLanguage(monaco)
 installMonacoDelayerCancellationGuard()
 installMonacoDiffEditorDisposalGuard(monaco)
 installMonacoPeekReferencesPreviewOptions()
+registerInterfaceThemeMonacoThemes(monaco.editor)
 // Why: Monaco's built-in context-menu Paste reads navigator.clipboard, which is
 // blocked in Orca's sandboxed renderer. Route it through the trusted IPC bridge
 // so right-click Paste works like Cmd+V (which already works via native events).

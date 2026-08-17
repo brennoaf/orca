@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  applyDocumentInterfaceTheme,
   applyDocumentTheme,
   resolveDocumentTheme,
   THEME_TRANSITION_DISABLED_CLASS
@@ -42,8 +43,20 @@ class FakeClassList {
   }
 }
 
-function createThemeRoot(): { classList: FakeClassList } {
-  return { classList: new FakeClassList() }
+function createThemeRoot(): {
+  classList: FakeClassList
+  dataset: DOMStringMap
+  style: Pick<CSSStyleDeclaration, 'removeProperty' | 'setProperty'>
+} {
+  const properties = new Map<string, string>()
+  return {
+    classList: new FakeClassList(),
+    dataset: {} as DOMStringMap,
+    style: {
+      removeProperty: (property) => (properties.delete(property) ? '' : ''),
+      setProperty: (property, value) => void properties.set(property, value ?? '')
+    }
+  }
 }
 
 function createFrameQueue(): {
@@ -151,5 +164,22 @@ describe('document theme', () => {
     frames.flushNextFrame()
     expect(root.classList.contains(THEME_TRANSITION_DISABLED_CLASS)).toBe(false)
     expect(frames.pendingCount()).toBe(0)
+  })
+
+  it('preserves theme-owned fonts and restores the default font override', () => {
+    const root = createThemeRoot()
+    const setProperty = vi.spyOn(root.style, 'setProperty')
+    const removeProperty = vi.spyOn(root.style, 'removeProperty')
+
+    applyDocumentInterfaceTheme('qq98', 'Inter', root)
+    expect(root.dataset.orcaTheme).toBe('qq98')
+    expect(removeProperty).toHaveBeenCalledWith('--app-font-family')
+
+    applyDocumentInterfaceTheme('default', 'Inter', root)
+    expect(root.dataset.orcaTheme).toBe('default')
+    expect(setProperty).toHaveBeenLastCalledWith(
+      '--app-font-family',
+      '"Inter", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    )
   })
 })

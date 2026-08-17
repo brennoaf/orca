@@ -11,6 +11,9 @@ import {
   BRACKETED_PASTE_END,
   BRACKETED_PASTE_START
 } from '@/components/terminal-pane/terminal-bracketed-paste'
+import { getDefaultSettings } from '../../../../shared/constants'
+import type { GlobalSettings } from '../../../../shared/types'
+import { getInterfaceThemeSurfacePalette } from '../../../../shared/interface-theme'
 
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as {
@@ -24,6 +27,7 @@ const terminalHarness = vi.hoisted(() => ({
     input: ReturnType<typeof vi.fn>
     scrollToTop: ReturnType<typeof vi.fn>
     scrollToBottom: ReturnType<typeof vi.fn>
+    options: Record<string, unknown>
     modes: { bracketedPasteMode: boolean }
     selectionText: string
     customKeyHandler: ((event: KeyboardEvent) => boolean) | null
@@ -34,7 +38,7 @@ const terminalHarness = vi.hoisted(() => ({
 
 const platformState = vi.hoisted(() => ({ value: 'linux' }))
 const storeState = vi.hoisted(() => ({
-  settings: null,
+  settings: null as GlobalSettings | null,
   keybindings: {} as Record<string, string[]>
 }))
 
@@ -83,6 +87,7 @@ vi.mock('@xterm/xterm', () => ({
     attachCustomWheelEventHandler = vi.fn()
     scrollToTop = vi.fn()
     scrollToBottom = vi.fn()
+    options: Record<string, unknown>
     getSelection = vi.fn(() => this.selectionText)
     attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
       this.customKeyHandler = handler
@@ -92,7 +97,8 @@ vi.mock('@xterm/xterm', () => ({
       return { dispose: vi.fn() }
     })
 
-    constructor() {
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = { ...options }
       terminalHarness.instances.push(this)
     }
   }
@@ -162,6 +168,7 @@ describe('AgentTerminalPreview', () => {
     terminalHarness.userInputListener = null
     platformState.value = 'linux'
     storeState.keybindings = {}
+    storeState.settings = null
     imeHarness.forwarders.length = 0
     imeHarness.trackers.length = 0
     imeHarness.claimResult = false
@@ -225,6 +232,31 @@ describe('AgentTerminalPreview', () => {
 
     act(() => terminal.writeCallbacks.shift()?.())
     expect(ack).toHaveBeenCalledWith('pty-1', 4)
+  })
+
+  it('updates the interface theme without reconnecting the preview terminal', async () => {
+    storeState.settings = {
+      ...getDefaultSettings('/tmp'),
+      theme: 'dark',
+      interfaceTheme: 'default',
+      terminalThemeDark: 'Builtin Dracula'
+    }
+    const view = render(<AgentTerminalPreview ptyId="pty-1" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    const terminal = terminalHarness.instances[0]!
+
+    storeState.settings = { ...storeState.settings, interfaceTheme: 'miku' }
+    view.rerender(<AgentTerminalPreview ptyId="pty-1" />)
+
+    await waitFor(() =>
+      expect((terminal.options.theme as Record<string, unknown>).background).toBe(
+        getInterfaceThemeSurfacePalette('miku', 'dark').background
+      )
+    )
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).not.toHaveBeenCalled()
+    expect(terminal.dispose).not.toHaveBeenCalled()
+    expect(terminalHarness.instances).toHaveLength(1)
   })
 
   it('installs the macOS IME native-text forwarder and lets its claims bypass chord handling', async () => {

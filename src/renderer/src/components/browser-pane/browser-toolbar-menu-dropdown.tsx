@@ -72,7 +72,7 @@ export function BrowserToolbarMenuDropdown({
           <Ellipsis className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent data-browser-page-pane-portal="" align="end" className="w-56">
         {allProfiles.map((profile) => {
           const isSelectedProfile = profile.id === effectiveProfileId
           return (
@@ -126,7 +126,7 @@ export function BrowserToolbarMenuDropdown({
             )}
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuSubContent>
+            <DropdownMenuSubContent data-browser-page-pane-portal="">
               {detectedBrowsers.map((browser) =>
                 browser.profiles.length > 1 ? (
                   <DropdownMenuSub key={browser.family}>
@@ -138,7 +138,7 @@ export function BrowserToolbarMenuDropdown({
                       )}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuPortal>
-                      <DropdownMenuSubContent>
+                      <DropdownMenuSubContent data-browser-page-pane-portal="">
                         {browser.profiles.map((profile) => (
                           <DropdownMenuItem
                             key={profile.directory}
@@ -185,7 +185,7 @@ export function BrowserToolbarMenuDropdown({
             )}
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuSubContent>
+            <DropdownMenuSubContent data-browser-page-pane-portal="">
               {/* Why: Viewport is a "pick one of N" control, so use a radio group
                   for proper a11y semantics (role="menuitemradio", aria-checked).
                   The "Default" option represents a null preset (no override),

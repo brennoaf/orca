@@ -17,6 +17,7 @@ import {
 import { DEFAULT_APP_FONT_FAMILY } from '../../../../shared/constants'
 import {
   getLanguageEntries,
+  getInterfaceThemeEntries,
   getMenuBarIconEntries,
   getSystemTrayEntries,
   getThemeEntries,
@@ -33,6 +34,7 @@ import { translate } from '@/i18n/i18n'
 import type { UiLanguage } from '../../../../shared/ui-language'
 import { matchesSettingsSearch, normalizeSettingsSearchQuery } from './settings-search'
 import { usePluginLanguagePacks } from '@/store/plugin-language-packs'
+import { InterfaceThemeSection } from './InterfaceThemeSection'
 
 type AppearanceInterfaceSectionProps = {
   settings: GlobalSettings
@@ -64,6 +66,7 @@ export function AppearanceInterfaceSection({
   const menuBarIconEntry = getMenuBarIconEntries({ showMenuBarIcon: true })[0]
   const systemTrayEntry = getSystemTrayEntries({ showSystemTray: true })[0]
   const themeEntry = getThemeEntries()[0]
+  const interfaceThemeEntry = getInterfaceThemeEntries()[0]
   const themeLabel = translate('auto.components.settings.AppearancePane.932ff1fbff', 'Theme')
   const titlebarEntry = getTitlebarEntries()[0]
   const typographyEntry = getTypographyEntries()[0]
@@ -110,6 +113,18 @@ export function AppearanceInterfaceSection({
               ]}
             />
           }
+        />
+      </SearchableSetting>
+
+      <SearchableSetting
+        title={interfaceThemeEntry?.title ?? 'Interface Theme'}
+        description={interfaceThemeEntry?.description}
+        keywords={interfaceThemeEntry?.keywords ?? []}
+        forceVisible={forceVisiblePrimary}
+      >
+        <InterfaceThemeSection
+          value={settings.interfaceTheme}
+          onChange={(interfaceTheme) => updateSettings({ interfaceTheme })}
         />
       </SearchableSetting>
 

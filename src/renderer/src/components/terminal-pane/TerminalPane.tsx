@@ -23,6 +23,7 @@ import {
   resolveOpaqueTerminalBackground,
   resolveEffectiveTerminalAppearance
 } from '@/lib/terminal-theme'
+import { composeActiveTerminalTheme } from './terminal-appearance'
 import type {
   ManagedPane,
   PaneExternalDropTarget,
@@ -2716,7 +2717,10 @@ function TerminalPane(
     ? resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
     : null
   const terminalBackground =
-    settings?.terminalColorOverrides?.background ?? effectiveAppearance?.theme?.background
+    settings && effectiveAppearance
+      ? composeActiveTerminalTheme(effectiveAppearance.theme, settings, effectiveAppearance.mode)
+          ?.background
+      : undefined
   // Why: app light/dark can diverge from the terminal theme, so pane-title contrast follows the effective terminal surface.
   const titleUsesLightSurface = isTerminalBackgroundLight(terminalBackground, {
     appSurface: effectiveAppearance?.mode,

@@ -66,6 +66,8 @@ import {
 import { installMonacoE2EProbe } from './monaco-e2e-probe'
 import { monacoFindOptions } from './monaco-find-options'
 import { matchesPendingEditorFocusRequest } from './pending-editor-focus-request'
+import { getInterfaceThemeMonacoThemeName } from '@/lib/interface-theme-monaco-theme'
+import { useSystemPrefersDark } from '@/components/terminal-pane/use-system-prefers-dark'
 
 type MonacoEditorProps = {
   fileId: string
@@ -193,9 +195,12 @@ export default function MonacoEditor({
   useEffect(() => {
     commentPopoverRef.current = commentPopover
   }, [commentPopover])
-  const isDark =
-    settings?.theme === 'dark' ||
-    (settings?.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const systemPrefersDark = useSystemPrefersDark()
+  const isDark = settings?.theme === 'dark' || (settings?.theme === 'system' && systemPrefersDark)
+  const interfaceThemeMonacoTheme = getInterfaceThemeMonacoThemeName(
+    settings?.interfaceTheme,
+    isDark ? 'dark' : 'light'
+  )
 
   const updateMarkdownCompletionDocuments = useCallback((): void => {
     const modelKey = editorRef.current?.getModel()?.uri.toString() ?? null
@@ -839,7 +844,7 @@ export default function MonacoEditor({
         language={language}
         // Why: defaultValue, not controlled value — Orca owns post-mount content sync; a controlled path would double setValue.
         defaultValue={content}
-        theme={isDark ? 'vs-dark' : 'vs'}
+        theme={interfaceThemeMonacoTheme}
         onChange={handleChange}
         onMount={handleMount}
         options={{

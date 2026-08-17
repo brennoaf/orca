@@ -1,4 +1,6 @@
 import type { GlobalSettings } from '../../../shared/types'
+import { normalizeInterfaceTheme, type InterfaceTheme } from '../../../shared/interface-theme'
+import { buildAppFontFamily } from './app-font-family'
 
 export type DocumentThemePreference = GlobalSettings['theme']
 
@@ -14,6 +16,8 @@ type ThemeClassList = {
 
 type ThemeRoot = {
   classList: ThemeClassList
+  dataset?: DOMStringMap
+  style?: Pick<CSSStyleDeclaration, 'removeProperty' | 'setProperty'>
 }
 
 type ThemeMediaMatcher = (query: string) => Pick<MediaQueryList, 'matches'>
@@ -26,6 +30,7 @@ type ApplyDocumentThemeOptions = {
   requestAnimationFrame?: ThemeAnimationFrame
   cancelAnimationFrame?: ThemeCancelAnimationFrame
   disableTransitions?: boolean
+  systemShouldUseDarkColors?: boolean
 }
 
 let pendingTransitionDisableFrames: number[] = []
@@ -45,7 +50,8 @@ function systemPrefersDark(
 
 export function resolveDocumentTheme(
   theme: DocumentThemePreference,
-  matchMedia?: ThemeMediaMatcher
+  matchMedia?: ThemeMediaMatcher,
+  systemShouldUseDarkColors?: boolean
 ): boolean {
   if (theme === 'dark') {
     return true
@@ -53,7 +59,7 @@ export function resolveDocumentTheme(
   if (theme === 'light') {
     return false
   }
-  return systemPrefersDark(matchMedia)
+  return systemShouldUseDarkColors ?? systemPrefersDark(matchMedia)
 }
 
 export function applyDocumentTheme(
@@ -62,7 +68,11 @@ export function applyDocumentTheme(
 ): void {
   const root = options.root ?? document.documentElement
   const disableTransitions = options.disableTransitions ?? true
-  const shouldUseDarkTheme = resolveDocumentTheme(theme, options.matchMedia)
+  const shouldUseDarkTheme = resolveDocumentTheme(
+    theme,
+    options.matchMedia,
+    options.systemShouldUseDarkColors
+  )
 
   if (disableTransitions) {
     root.classList.add(THEME_TRANSITION_DISABLED_CLASS)
@@ -96,4 +106,23 @@ export function applyDocumentTheme(
     pendingTransitionDisableFrames.push(secondFrame)
   })
   pendingTransitionDisableFrames.push(firstFrame)
+}
+
+export function applyDocumentInterfaceTheme(
+  theme: InterfaceTheme | undefined,
+  appFontFamily?: GlobalSettings['appFontFamily'],
+  root: ThemeRoot = document.documentElement
+): void {
+  const normalized = normalizeInterfaceTheme(theme)
+  if (root.dataset) {
+    root.dataset.orcaTheme = normalized
+  }
+  if (!root.style) {
+    return
+  }
+  if (normalized === 'default') {
+    root.style.setProperty('--app-font-family', buildAppFontFamily(appFontFamily))
+    return
+  }
+  root.style.removeProperty('--app-font-family')
 }
