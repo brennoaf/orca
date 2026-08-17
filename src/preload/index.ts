@@ -30,10 +30,29 @@ import type {
 import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type {
   WhatsAppFastResponseAttach,
+  WhatsAppFastResponseBrowserRegistration,
   WhatsAppFastResponseSnapshot,
   WhatsAppFastResponseStateChanged,
+  WhatsAppFastResponseUnregisterBrowserSurfaceRequest,
   WhatsAppFastResponseVisibility
 } from '../shared/whatsapp-fast-response'
+import type {
+  SlackFastResponseAttach,
+  SlackFastResponseBrowserRegistration,
+  SlackFastResponseSnapshot,
+  SlackFastResponseStateChanged,
+  SlackFastResponseUnregisterBrowserSurfaceRequest,
+  SlackFastResponseVisibility
+} from '../shared/slack-fast-response'
+import type {
+  DiscordWebFastResponseAttach,
+  DiscordWebCompactModeChanged,
+  DiscordWebFastResponseSnapshot,
+  DiscordWebFastResponseStateChanged,
+  DiscordWebFastResponseVisibility
+} from '../shared/discord-web-fast-response'
+import { subscribeDiscordWebCompactModeChanged } from './discord-web-fast-response-subscriptions'
+import type { NativeThemeSnapshot } from '../shared/native-appearance'
 import type {
   DashboardRevealAgentArgs,
   DashboardSleepWorkspaceArgs,
@@ -43,14 +62,11 @@ import type {
 import type {
   FloatingCommsAction,
   FloatingCommsCloseAttachedRequest,
-  FloatingCommsCloseDetachedRequest,
   FloatingCommsDetachRequest,
   FloatingCommsDisableRequest,
   FloatingCommsDiscordCommand,
-  FloatingCommsFocusDetachedRequest,
   FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
-  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
   FloatingCommsPresentationTarget,
@@ -134,6 +150,7 @@ import type {
   GitForkSyncResult,
   GitUpstreamStatus,
   GhosttyImportPreview,
+  BrowserSessionProfile,
   ListWorkItemsResult,
   LinearProjectDetail,
   MemorySnapshot,
@@ -539,7 +556,25 @@ ipcRenderer.on('ui:findInBrowserPage', (_event, source: unknown) => {
 
 // Custom APIs for renderer
 const api = {
+  appearance: {
+    getNativeTheme: (): Promise<NativeThemeSnapshot> =>
+      ipcRenderer.invoke('appearance:getNativeTheme'),
+    onNativeThemeChanged: (callback: (snapshot: NativeThemeSnapshot) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: NativeThemeSnapshot): void =>
+        callback(snapshot)
+      ipcRenderer.on('appearance:nativeThemeChanged', listener)
+      return () => ipcRenderer.removeListener('appearance:nativeThemeChanged', listener)
+    }
+  },
   whatsappFastResponse: {
+    registerBrowserSurface: (
+      request: WhatsAppFastResponseBrowserRegistration
+    ): Promise<{ registrationToken: string }> =>
+      ipcRenderer.invoke('whatsappFastResponse:registerBrowserSurface', request),
+    unregisterBrowserSurface: (
+      request: WhatsAppFastResponseUnregisterBrowserSurfaceRequest
+    ): Promise<void> =>
+      ipcRenderer.invoke('whatsappFastResponse:unregisterBrowserSurface', request),
     attach: (request: WhatsAppFastResponseAttach): Promise<WhatsAppFastResponseSnapshot> =>
       ipcRenderer.invoke('whatsappFastResponse:attach', request),
     updateBounds: (request: WhatsAppFastResponseAttach): Promise<WhatsAppFastResponseSnapshot> =>
@@ -566,6 +601,57 @@ const api = {
       ipcRenderer.on('whatsappFastResponse:attentionChanged', listener)
       return () => ipcRenderer.removeListener('whatsappFastResponse:attentionChanged', listener)
     }
+  },
+  slackFastResponse: {
+    registerBrowserSurface: (
+      request: SlackFastResponseBrowserRegistration
+    ): Promise<{ registrationToken: string }> =>
+      ipcRenderer.invoke('slackFastResponse:registerBrowserSurface', request),
+    unregisterBrowserSurface: (
+      request: SlackFastResponseUnregisterBrowserSurfaceRequest
+    ): Promise<void> => ipcRenderer.invoke('slackFastResponse:unregisterBrowserSurface', request),
+    attach: (request: SlackFastResponseAttach): Promise<SlackFastResponseSnapshot> =>
+      ipcRenderer.invoke('slackFastResponse:attach', request),
+    updateBounds: (request: SlackFastResponseAttach): Promise<SlackFastResponseSnapshot> =>
+      ipcRenderer.invoke('slackFastResponse:updateBounds', request),
+    show: (request: SlackFastResponseVisibility): Promise<SlackFastResponseSnapshot> =>
+      ipcRenderer.invoke('slackFastResponse:show', request),
+    hide: (request: SlackFastResponseVisibility): Promise<SlackFastResponseSnapshot> =>
+      ipcRenderer.invoke('slackFastResponse:hide', request),
+    onStateChanged: (callback: (state: SlackFastResponseStateChanged) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: SlackFastResponseStateChanged
+      ): void => callback(state)
+      ipcRenderer.on('slackFastResponse:stateChanged', listener)
+      return () => ipcRenderer.removeListener('slackFastResponse:stateChanged', listener)
+    }
+  },
+  discordWebFastResponse: {
+    resolveSessionProfile: (): Promise<BrowserSessionProfile> =>
+      ipcRenderer.invoke('discordWebFastResponse:resolveSessionProfile'),
+    attach: (request: DiscordWebFastResponseAttach): Promise<DiscordWebFastResponseSnapshot> =>
+      ipcRenderer.invoke('discordWebFastResponse:attach', request),
+    updateBounds: (
+      request: DiscordWebFastResponseAttach
+    ): Promise<DiscordWebFastResponseSnapshot> =>
+      ipcRenderer.invoke('discordWebFastResponse:updateBounds', request),
+    show: (request: DiscordWebFastResponseVisibility): Promise<DiscordWebFastResponseSnapshot> =>
+      ipcRenderer.invoke('discordWebFastResponse:show', request),
+    hide: (request: DiscordWebFastResponseVisibility): Promise<DiscordWebFastResponseSnapshot> =>
+      ipcRenderer.invoke('discordWebFastResponse:hide', request),
+    onStateChanged: (
+      callback: (state: DiscordWebFastResponseStateChanged) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: DiscordWebFastResponseStateChanged
+      ): void => callback(state)
+      ipcRenderer.on('discordWebFastResponse:stateChanged', listener)
+      return () => ipcRenderer.removeListener('discordWebFastResponse:stateChanged', listener)
+    },
+    onCompactModeChanged: (callback: (state: DiscordWebCompactModeChanged) => void): (() => void) =>
+      subscribeDiscordWebCompactModeChanged(ipcRenderer, callback)
   },
   app: {
     getIdentity: (): Promise<AppIdentity> => ipcRenderer.invoke('app:getIdentity'),
@@ -2376,16 +2462,8 @@ const api = {
       ipcRenderer.invoke('floatingComms:update', request),
     closeAttached: (request: FloatingCommsCloseAttachedRequest): Promise<void> =>
       ipcRenderer.invoke('floatingComms:closeAttached', request),
-    detach: (request: FloatingCommsDetachRequest): Promise<FloatingCommsSurfacePresentation> =>
+    detach: (request: FloatingCommsDetachRequest): Promise<CommunicationsDockSnapshot> =>
       ipcRenderer.invoke('floatingComms:detach', request),
-    minimizeDetached: (request: FloatingCommsMinimizeDetachedRequest): Promise<void> =>
-      ipcRenderer.invoke('floatingComms:minimizeDetached', request),
-    focusDetached: (
-      request: FloatingCommsFocusDetachedRequest
-    ): Promise<FloatingCommsSurfacePresentation> =>
-      ipcRenderer.invoke('floatingComms:focusDetached', request),
-    closeDetached: (request: FloatingCommsCloseDetachedRequest): Promise<void> =>
-      ipcRenderer.invoke('floatingComms:closeDetached', request),
     disable: (request: FloatingCommsDisableRequest): Promise<void> =>
       ipcRenderer.invoke('floatingComms:disable', request),
     listPresentations: (): Promise<FloatingCommsSurfacePresentation[]> =>
@@ -2396,6 +2474,8 @@ const api = {
       ipcRenderer.invoke('floatingComms:getPresentation', target),
     measure: (request: FloatingCommsMeasureRequest): Promise<void> =>
       ipcRenderer.invoke('floatingComms:measure', request),
+    resize: (request: FloatingCommsMeasureRequest): Promise<void> =>
+      ipcRenderer.invoke('floatingComms:resize', request),
     getState: (): Promise<FloatingCommsSurfacePresentation | null> =>
       ipcRenderer.invoke('floatingComms:getState'),
     getIntegrationStatuses: (): Promise<readonly CommunicationIntegrationStatus[]> =>

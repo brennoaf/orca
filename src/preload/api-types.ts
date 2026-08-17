@@ -9,13 +9,31 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { NativeThemeSnapshot } from '../shared/native-appearance'
 import type { FloatingWorkspaceAppId } from '../shared/floating-workspace-apps'
 import type {
   WhatsAppFastResponseAttach,
+  WhatsAppFastResponseBrowserRegistration,
   WhatsAppFastResponseSnapshot,
   WhatsAppFastResponseStateChanged,
+  WhatsAppFastResponseUnregisterBrowserSurfaceRequest,
   WhatsAppFastResponseVisibility
 } from '../shared/whatsapp-fast-response'
+import type {
+  SlackFastResponseAttach,
+  SlackFastResponseBrowserRegistration,
+  SlackFastResponseSnapshot,
+  SlackFastResponseStateChanged,
+  SlackFastResponseUnregisterBrowserSurfaceRequest,
+  SlackFastResponseVisibility
+} from '../shared/slack-fast-response'
+import type {
+  DiscordWebFastResponseAttach,
+  DiscordWebCompactModeChanged,
+  DiscordWebFastResponseSnapshot,
+  DiscordWebFastResponseStateChanged,
+  DiscordWebFastResponseVisibility
+} from '../shared/discord-web-fast-response'
 import type {
   CommunicationsDockAckRequest,
   CommunicationsDockAction,
@@ -50,14 +68,11 @@ import type {
 import type {
   FloatingCommsAction,
   FloatingCommsCloseAttachedRequest,
-  FloatingCommsCloseDetachedRequest,
   FloatingCommsDetachRequest,
   FloatingCommsDisableRequest,
   FloatingCommsDiscordCommand,
-  FloatingCommsFocusDetachedRequest,
   FloatingCommsGeometryRequest,
   FloatingCommsMeasureRequest,
-  FloatingCommsMinimizeDetachedRequest,
   FloatingCommsOpenRequest,
   FloatingCommsOpenResult,
   FloatingCommsPresentationTarget,
@@ -1233,7 +1248,17 @@ export type PluginMarketplaceHostInstallPreview = {
 
 export type PreloadApi = {
   app: AppApi
+  appearance: {
+    getNativeTheme: () => Promise<NativeThemeSnapshot>
+    onNativeThemeChanged: (callback: (snapshot: NativeThemeSnapshot) => void) => () => void
+  }
   whatsappFastResponse: {
+    registerBrowserSurface: (
+      request: WhatsAppFastResponseBrowserRegistration
+    ) => Promise<{ registrationToken: string }>
+    unregisterBrowserSurface: (
+      request: WhatsAppFastResponseUnregisterBrowserSurfaceRequest
+    ) => Promise<void>
     attach: (request: WhatsAppFastResponseAttach) => Promise<WhatsAppFastResponseSnapshot>
     updateBounds: (request: WhatsAppFastResponseAttach) => Promise<WhatsAppFastResponseSnapshot>
     show: (request: WhatsAppFastResponseVisibility) => Promise<WhatsAppFastResponseSnapshot>
@@ -1242,22 +1267,40 @@ export type PreloadApi = {
     onStateChanged: (callback: (state: WhatsAppFastResponseStateChanged) => void) => () => void
     onAttentionChanged: (callback: (attention: { hasUnread: boolean }) => void) => () => void
   }
+  slackFastResponse: {
+    registerBrowserSurface: (
+      request: SlackFastResponseBrowserRegistration
+    ) => Promise<{ registrationToken: string }>
+    unregisterBrowserSurface: (
+      request: SlackFastResponseUnregisterBrowserSurfaceRequest
+    ) => Promise<void>
+    attach: (request: SlackFastResponseAttach) => Promise<SlackFastResponseSnapshot>
+    updateBounds: (request: SlackFastResponseAttach) => Promise<SlackFastResponseSnapshot>
+    show: (request: SlackFastResponseVisibility) => Promise<SlackFastResponseSnapshot>
+    hide: (request: SlackFastResponseVisibility) => Promise<SlackFastResponseSnapshot>
+    onStateChanged: (callback: (state: SlackFastResponseStateChanged) => void) => () => void
+  }
+  discordWebFastResponse: {
+    resolveSessionProfile: () => Promise<BrowserSessionProfile>
+    attach: (request: DiscordWebFastResponseAttach) => Promise<DiscordWebFastResponseSnapshot>
+    updateBounds: (request: DiscordWebFastResponseAttach) => Promise<DiscordWebFastResponseSnapshot>
+    show: (request: DiscordWebFastResponseVisibility) => Promise<DiscordWebFastResponseSnapshot>
+    hide: (request: DiscordWebFastResponseVisibility) => Promise<DiscordWebFastResponseSnapshot>
+    onStateChanged: (callback: (state: DiscordWebFastResponseStateChanged) => void) => () => void
+    onCompactModeChanged: (callback: (state: DiscordWebCompactModeChanged) => void) => () => void
+  }
   floatingComms: {
     open: (request: FloatingCommsOpenRequest) => Promise<FloatingCommsOpenResult>
     update: (request: FloatingCommsUpdateRequest) => Promise<FloatingCommsOpenResult>
     closeAttached: (request: FloatingCommsCloseAttachedRequest) => Promise<void>
-    detach: (request: FloatingCommsDetachRequest) => Promise<FloatingCommsSurfacePresentation>
-    minimizeDetached: (request: FloatingCommsMinimizeDetachedRequest) => Promise<void>
-    focusDetached: (
-      request: FloatingCommsFocusDetachedRequest
-    ) => Promise<FloatingCommsSurfacePresentation>
-    closeDetached: (request: FloatingCommsCloseDetachedRequest) => Promise<void>
+    detach: (request: FloatingCommsDetachRequest) => Promise<CommunicationsDockSnapshot>
     disable: (request: FloatingCommsDisableRequest) => Promise<void>
     listPresentations: () => Promise<FloatingCommsSurfacePresentation[]>
     getPresentation: (
       target: FloatingCommsPresentationTarget
     ) => Promise<FloatingCommsSurfacePresentation | null>
     measure: (request: FloatingCommsMeasureRequest) => Promise<void>
+    resize: (request: FloatingCommsMeasureRequest) => Promise<void>
     getState: () => Promise<FloatingCommsSurfacePresentation | null>
     getIntegrationStatuses: () => Promise<readonly CommunicationIntegrationStatus[]>
     discordCommand: (command: FloatingCommsDiscordCommand) => Promise<DiscordVoiceSnapshot>
